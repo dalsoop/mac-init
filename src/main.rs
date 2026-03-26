@@ -1,5 +1,6 @@
 mod common;
 mod config;
+mod github;
 mod mount;
 mod network;
 mod obsidian;
@@ -50,6 +51,11 @@ enum Commands {
     Setup {
         #[command(subcommand)]
         cmd: SetupCmd,
+    },
+    /// GitHub CLI 설치 및 연동
+    Github {
+        #[command(subcommand)]
+        cmd: GithubCmd,
     },
     /// Obsidian vault 관리
     Obsidian {
@@ -129,6 +135,30 @@ enum SetupCmd {
     InstallSshpass,
     /// macFUSE 커널 확장 로드
     LoadMacfuse,
+}
+
+// === GITHUB ===
+#[derive(Subcommand)]
+enum GithubCmd {
+    /// GitHub 상태 확인
+    Status,
+    /// gh CLI 설치 + 인증
+    Install,
+    /// GitHub 인증 (브라우저)
+    Auth,
+    /// git config 설정 (user.name, user.email)
+    SetupGit {
+        /// 이름
+        #[arg(long)]
+        name: String,
+        /// 이메일
+        #[arg(long)]
+        email: String,
+    },
+    /// SSH 키를 GitHub에 등록
+    SetupSsh,
+    /// 레포 목록 조회
+    Repos,
 }
 
 // === OBSIDIAN ===
@@ -215,6 +245,15 @@ fn main() {
             SetupCmd::InstallSshfs => setup::install_sshfs(),
             SetupCmd::InstallSshpass => setup::install_sshpass(),
             SetupCmd::LoadMacfuse => setup::load_macfuse(),
+        },
+
+        Commands::Github { cmd } => match cmd {
+            GithubCmd::Status => github::status(),
+            GithubCmd::Install => github::install(),
+            GithubCmd::Auth => github::auth(),
+            GithubCmd::SetupGit { name, email } => github::setup_git(&name, &email),
+            GithubCmd::SetupSsh => github::setup_ssh(),
+            GithubCmd::Repos => github::repos(),
         },
 
         Commands::Obsidian { cmd } => match cmd {
