@@ -145,7 +145,7 @@ method = "sshfs"
 # --- Synology 전체 (Proxmox /mnt/synology 경유) ---
 [[mount.targets]]
 name = "synology"
-remote_path = "/mnt/synology"
+remote_path = "/mnt/synology-organized"
 method = "sshfs"
 
 # --- TrueNAS 전체 (Proxmox /mnt/truenas 경유) ---
