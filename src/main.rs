@@ -1,5 +1,6 @@
 mod common;
 mod config;
+mod dal;
 mod files;
 mod github;
 mod mount;
@@ -64,6 +65,11 @@ enum Commands {
     Setup {
         #[command(subcommand)]
         cmd: SetupCmd,
+    },
+    /// Dalcenter dal 관리
+    Dal {
+        #[command(subcommand)]
+        cmd: DalCmd,
     },
     /// 파일 자동 정리/분류
     Files {
@@ -191,6 +197,51 @@ enum SetupCmd {
     InstallSshpass,
     /// macFUSE 커널 확장 로드
     LoadMacfuse,
+}
+
+// === DAL ===
+#[derive(Subcommand)]
+enum DalCmd {
+    /// dalcenter 상태 확인
+    Status,
+    /// 실행 중인 dal 목록
+    Ps {
+        /// 레포 (dalcenter, veilkey, gaya, veilkey-v2)
+        #[arg(default_value = "dalcenter")]
+        repo: String,
+    },
+    /// dal 깨우기
+    Wake {
+        /// 레포
+        #[arg(long, default_value = "dalcenter")]
+        repo: String,
+        /// dal 이름
+        dal: String,
+    },
+    /// dal 종료
+    Sleep {
+        /// 레포
+        #[arg(long, default_value = "dalcenter")]
+        repo: String,
+        /// dal 이름
+        dal: String,
+    },
+    /// dal 접속
+    Attach {
+        /// 레포
+        #[arg(long, default_value = "dalcenter")]
+        repo: String,
+        /// dal 이름
+        dal: String,
+    },
+    /// dal 로그
+    Logs {
+        /// 레포
+        #[arg(long, default_value = "dalcenter")]
+        repo: String,
+        /// dal 이름
+        dal: String,
+    },
 }
 
 // === FILES ===
@@ -361,6 +412,15 @@ fn main() {
             SetupCmd::InstallSshfs => setup::install_sshfs(),
             SetupCmd::InstallSshpass => setup::install_sshpass(),
             SetupCmd::LoadMacfuse => setup::load_macfuse(),
+        },
+
+        Commands::Dal { cmd } => match cmd {
+            DalCmd::Status => dal::status(),
+            DalCmd::Ps { repo } => dal::ps(&repo),
+            DalCmd::Wake { repo, dal } => dal::wake(&repo, &dal),
+            DalCmd::Sleep { repo, dal } => dal::sleep_dal(&repo, &dal),
+            DalCmd::Attach { repo, dal } => dal::attach(&repo, &dal),
+            DalCmd::Logs { repo, dal } => dal::logs(&repo, &dal),
         },
 
         Commands::Files { cmd } => match cmd {
