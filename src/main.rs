@@ -3,6 +3,7 @@ mod config;
 mod mount;
 mod network;
 mod proxmox;
+mod setup;
 mod ssh;
 
 use clap::{Parser, Subcommand};
@@ -43,6 +44,11 @@ enum Commands {
     Proxmox {
         #[command(subcommand)]
         cmd: ProxmoxCmd,
+    },
+    /// 의존성 설치 및 초기 설정
+    Setup {
+        #[command(subcommand)]
+        cmd: SetupCmd,
     },
 }
 
@@ -104,6 +110,21 @@ enum SshCmd {
     },
 }
 
+// === SETUP ===
+#[derive(Subcommand)]
+enum SetupCmd {
+    /// 의존성 상태 확인
+    Status,
+    /// 전체 부트스트랩 (sshpass + macFUSE + sshfs + 설정)
+    Bootstrap,
+    /// macFUSE + sshfs 설치
+    InstallSshfs,
+    /// sshpass 설치
+    InstallSshpass,
+    /// macFUSE 커널 확장 로드
+    LoadMacfuse,
+}
+
 // === PROXMOX ===
 #[derive(Subcommand)]
 enum ProxmoxCmd {
@@ -131,6 +152,8 @@ fn main() {
     match cli.command {
         Commands::Status => {
             config::Config::status();
+            println!("\n{}\n", "─".repeat(50));
+            setup::status();
             println!("\n{}\n", "─".repeat(50));
             network::status();
             println!("\n{}\n", "─".repeat(50));
@@ -163,6 +186,14 @@ fn main() {
             SshCmd::Status => ssh::status(),
             SshCmd::CopyKey { host } => ssh::copy_key(&host),
             SshCmd::Test { host } => ssh::test(&host),
+        },
+
+        Commands::Setup { cmd } => match cmd {
+            SetupCmd::Status => setup::status(),
+            SetupCmd::Bootstrap => setup::bootstrap(),
+            SetupCmd::InstallSshfs => setup::install_sshfs(),
+            SetupCmd::InstallSshpass => setup::install_sshpass(),
+            SetupCmd::LoadMacfuse => setup::load_macfuse(),
         },
 
         Commands::Proxmox { cmd } => match cmd {
