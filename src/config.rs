@@ -125,14 +125,34 @@ host = "192.168.2.50"
 user = "root"
 port = 22
 
+[synology]
+host = "192.168.2.15"
+user = "proxmox"
+
+[truenas]
+host = "192.168.2.5"
+user = "root"
+
 [mount]
 base_path = "/Volumes"
 
+# --- Proxmox ---
 [[mount.targets]]
 name = "proxmox"
 remote_path = "/"
 method = "sshfs"
-# host, user 미지정 시 [proxmox] 설정 사용
+
+# --- Synology 전체 (Proxmox /mnt/synology 경유) ---
+[[mount.targets]]
+name = "synology"
+remote_path = "/mnt/synology"
+method = "sshfs"
+
+# --- TrueNAS 전체 (Proxmox /mnt/truenas 경유) ---
+[[mount.targets]]
+name = "truenas"
+remote_path = "/mnt/truenas"
+method = "sshfs"
 "#;
 
         fs::write(&cfg_path, template).expect("설정 파일 생성 실패");
