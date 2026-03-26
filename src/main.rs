@@ -2,6 +2,7 @@ mod common;
 mod config;
 mod mount;
 mod network;
+mod obsidian;
 mod proxmox;
 mod setup;
 mod ssh;
@@ -49,6 +50,11 @@ enum Commands {
     Setup {
         #[command(subcommand)]
         cmd: SetupCmd,
+    },
+    /// Obsidian vault 관리
+    Obsidian {
+        #[command(subcommand)]
+        cmd: ObsidianCmd,
     },
 }
 
@@ -125,6 +131,19 @@ enum SetupCmd {
     LoadMacfuse,
 }
 
+// === OBSIDIAN ===
+#[derive(Subcommand)]
+enum ObsidianCmd {
+    /// Obsidian 상태 확인
+    Status,
+    /// Obsidian + vault 설치/초기화
+    Install,
+    /// Obsidian 실행
+    Open,
+    /// Git sync (pull + commit + push)
+    Sync,
+}
+
 // === PROXMOX ===
 #[derive(Subcommand)]
 enum ProxmoxCmd {
@@ -162,6 +181,8 @@ fn main() {
             mount::status();
             println!("\n{}\n", "─".repeat(50));
             proxmox::status();
+            println!("\n{}\n", "─".repeat(50));
+            obsidian::status();
         }
 
         Commands::Config { cmd } => match cmd {
@@ -194,6 +215,13 @@ fn main() {
             SetupCmd::InstallSshfs => setup::install_sshfs(),
             SetupCmd::InstallSshpass => setup::install_sshpass(),
             SetupCmd::LoadMacfuse => setup::load_macfuse(),
+        },
+
+        Commands::Obsidian { cmd } => match cmd {
+            ObsidianCmd::Status => obsidian::status(),
+            ObsidianCmd::Install => obsidian::install(),
+            ObsidianCmd::Open => obsidian::open(),
+            ObsidianCmd::Sync => obsidian::sync(),
         },
 
         Commands::Proxmox { cmd } => match cmd {
