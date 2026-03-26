@@ -202,46 +202,14 @@ enum SetupCmd {
 // === DAL ===
 #[derive(Subcommand)]
 enum DalCmd {
-    /// dalcenter 상태 확인
+    /// dalcenter 상태 확인 (바이너리, PATH, 환경변수)
     Status,
-    /// 실행 중인 dal 목록
-    Ps {
-        /// 레포 (dalcenter, veilkey, gaya, veilkey-v2)
-        #[arg(default_value = "dalcenter")]
-        repo: String,
-    },
-    /// dal 깨우기
-    Wake {
-        /// 레포
-        #[arg(long, default_value = "dalcenter")]
-        repo: String,
-        /// dal 이름
-        dal: String,
-    },
-    /// dal 종료
-    Sleep {
-        /// 레포
-        #[arg(long, default_value = "dalcenter")]
-        repo: String,
-        /// dal 이름
-        dal: String,
-    },
-    /// dal 접속
-    Attach {
-        /// 레포
-        #[arg(long, default_value = "dalcenter")]
-        repo: String,
-        /// dal 이름
-        dal: String,
-    },
-    /// dal 로그
-    Logs {
-        /// 레포
-        #[arg(long, default_value = "dalcenter")]
-        repo: String,
-        /// dal 이름
-        dal: String,
-    },
+    /// dalcenter 설치 (클론 + 빌드 + PATH + DALCENTER_URL)
+    Install,
+    /// dalcenter 재빌드
+    Build,
+    /// PATH + DALCENTER_URL 설정 (.zprofile)
+    SetupPath,
 }
 
 // === FILES ===
@@ -416,11 +384,9 @@ fn main() {
 
         Commands::Dal { cmd } => match cmd {
             DalCmd::Status => dal::status(),
-            DalCmd::Ps { repo } => dal::ps(&repo),
-            DalCmd::Wake { repo, dal } => dal::wake(&repo, &dal),
-            DalCmd::Sleep { repo, dal } => dal::sleep_dal(&repo, &dal),
-            DalCmd::Attach { repo, dal } => dal::attach(&repo, &dal),
-            DalCmd::Logs { repo, dal } => dal::logs(&repo, &dal),
+            DalCmd::Install => dal::install(),
+            DalCmd::Build => dal::build(),
+            DalCmd::SetupPath => dal::setup_path(),
         },
 
         Commands::Files { cmd } => match cmd {
