@@ -175,6 +175,148 @@ pub fn sync() {
     }
 }
 
+pub fn install_plugin(repo: &str) {
+    let vp = vault_path();
+    if !vp.exists() {
+        eprintln!("[obsidian] Vault가 없습니다.");
+        std::process::exit(1);
+    }
+
+    // repo에서 owner/name 추출 (URL이든 owner/name이든)
+    let repo_name = repo
+        .trim_end_matches('/')
+        .rsplit('/')
+        .take(2)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect::<Vec<_>>()
+        .join("/");
+
+    let plugin_id = repo_name.rsplit('/').next().unwrap_or(&repo_name);
+    let plugin_dir = vp.join(format!(".obsidian/plugins/{plugin_id}"));
+
+    if plugin_dir.exists() {
+        println!("[obsidian] 플러그인 '{plugin_id}' 이미 설치됨");
+        return;
+    }
+
+    println!("[obsidian] 플러그인 '{plugin_id}' 설치 중...");
+
+    // GitHub latest release에서 main.js, manifest.json, styles.css 다운로드
+    let (ok, release_json) = common::run_cmd_quiet("gh", &[
+        "api", &format!("repos/{repo_name}/releases/latest"),
+        "--jq", ".assets[].name",
+    ]);
+
+    if !ok {
+        eprintln!("[obsidian] GitHub release를 찾을 수 없습니다: {repo_name}");
+        std::process::exit(1);
+    }
+
+    std::fs::create_dir_all(&plugin_dir).expect("플러그인 디렉토리 생성 실패");
+
+    let required_files = ["main.js", "manifest.json"];
+    let optional_files = ["styles.css"];
+
+    for file in required_files {
+        if !release_json.contains(file) {
+            eprintln!("[obsidian] release에 {file}이 없습니다.");
+            let _ = std::fs::remove_dir_all(&plugin_dir);
+            std::process::exit(1);
+        }
+        let (ok, _, _) = common::run_cmd("gh", &[
+            "release", "download", "--repo", &repo_name,
+            "--pattern", file, "--dir", &plugin_dir.to_string_lossy(),
+            "--clobber",
+        ]);
+        if !ok {
+            eprintln!("[obsidian] {file} 다운로드 실패");
+            let _ = std::fs::remove_dir_all(&plugin_dir);
+            std::process::exit(1);
+        }
+        println!("  ✓ {file}");
+    }
+
+    for file in optional_files {
+        if release_json.contains(file) {
+            let _ = common::run_cmd("gh", &[
+                "release", "download", "--repo", &repo_name,
+                "--pattern", file, "--dir", &plugin_dir.to_string_lossy(),
+                "--clobber",
+            ]);
+            println!("  ✓ {file}");
+        }
+    }
+
+    // community-plugins.json에 등록
+    let cp_path = vp.join(".obsidian/community-plugins.json");
+    let cp_content = std::fs::read_to_string(&cp_path).unwrap_or_else(|_| "[]".to_string());
+    if !cp_content.contains(plugin_id) {
+        let mut plugins: Vec<String> = serde_json::from_str(&cp_content).unwrap_or_default();
+        plugins.push(plugin_id.to_string());
+        let new_content = serde_json::to_string_pretty(&plugins).unwrap_or_default();
+        std::fs::write(&cp_path, new_content).expect("community-plugins.json 업데이트 실패");
+    }
+
+    println!("[obsidian] '{plugin_id}' 설치 완료. Obsidian 재시작 후 활성화하세요.");
+}
+
+pub fn remove_plugin(name: &str) {
+    let vp = vault_path();
+    let plugin_dir = vp.join(format!(".obsidian/plugins/{name}"));
+
+    if !plugin_dir.exists() {
+        eprintln!("[obsidian] 플러그인 '{name}'이 설치되어 있지 않습니다.");
+        std::process::exit(1);
+    }
+
+    std::fs::remove_dir_all(&plugin_dir).expect("플러그인 디렉토리 삭제 실패");
+
+    // community-plugins.json에서 제거
+    let cp_path = vp.join(".obsidian/community-plugins.json");
+    let cp_content = std::fs::read_to_string(&cp_path).unwrap_or_else(|_| "[]".to_string());
+    let mut plugins: Vec<String> = serde_json::from_str(&cp_content).unwrap_or_default();
+    plugins.retain(|p| p != name);
+    let new_content = serde_json::to_string_pretty(&plugins).unwrap_or_default();
+    std::fs::write(&cp_path, new_content).expect("community-plugins.json 업데이트 실패");
+
+    println!("[obsidian] '{name}' 제거 완료");
+}
+
+pub fn list_plugins() {
+    let vp = vault_path();
+    let plugins_dir = vp.join(".obsidian/plugins");
+
+    println!("=== Obsidian 플러그인 ===\n");
+
+    if !plugins_dir.exists() {
+        println!("  (설치된 플러그인 없음)");
+        return;
+    }
+
+    let entries = std::fs::read_dir(&plugins_dir).unwrap();
+    for entry in entries {
+        let entry = entry.unwrap();
+        if entry.file_type().unwrap().is_dir() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            let manifest = entry.path().join("manifest.json");
+            if manifest.exists() {
+                let content = std::fs::read_to_string(&manifest).unwrap_or_default();
+                let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+                let version = data["version"].as_str().unwrap_or("?");
+                let desc = data["description"].as_str().unwrap_or("");
+                println!("  {name} (v{version})");
+                if !desc.is_empty() {
+                    println!("    {desc}");
+                }
+            } else {
+                println!("  {name}");
+            }
+        }
+    }
+}
+
 fn chrono_now() -> String {
     let output = Command::new("date")
         .args(["+%Y-%m-%d %H:%M"])

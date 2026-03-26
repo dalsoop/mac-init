@@ -222,6 +222,18 @@ enum ObsidianCmd {
     Open,
     /// Git sync (pull + commit + push)
     Sync,
+    /// 플러그인 설치 (GitHub repo URL 또는 owner/name)
+    PluginInstall {
+        /// GitHub 레포 (예: anareaty/pretty-properties)
+        repo: String,
+    },
+    /// 플러그인 제거
+    PluginRemove {
+        /// 플러그인 이름
+        name: String,
+    },
+    /// 설치된 플러그인 목록
+    PluginList,
 }
 
 // === PROXMOX ===
@@ -331,6 +343,9 @@ fn main() {
             ObsidianCmd::Install => obsidian::install(),
             ObsidianCmd::Open => obsidian::open(),
             ObsidianCmd::Sync => obsidian::sync(),
+            ObsidianCmd::PluginInstall { repo } => obsidian::install_plugin(&repo),
+            ObsidianCmd::PluginRemove { name } => obsidian::remove_plugin(&name),
+            ObsidianCmd::PluginList => obsidian::list_plugins(),
         },
 
         Commands::Proxmox { cmd } => match cmd {
