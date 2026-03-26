@@ -10,6 +10,7 @@ mod proxmox;
 mod setup;
 mod ssh;
 mod veil;
+mod worktree;
 mod workspace;
 
 use clap::{Parser, Subcommand};
@@ -55,6 +56,11 @@ enum Commands {
     Veil {
         #[command(subcommand)]
         cmd: VeilCmd,
+    },
+    /// Git worktree 관리 (브랜치별 폴더)
+    Worktree {
+        #[command(subcommand)]
+        cmd: WorktreeCmd,
     },
     /// 작업 환경 (tmux, 셸, CLI 도구)
     Workspace {
@@ -167,6 +173,35 @@ enum VeilCmd {
     Start,
     /// LocalVault 중지
     Stop,
+}
+
+// === WORKTREE ===
+#[derive(Subcommand)]
+enum WorktreeCmd {
+    /// worktree 상태 확인
+    Status,
+    /// worktree 생성 ({project}@{type}-{name})
+    Add {
+        /// 프로젝트 이름
+        project: String,
+        /// 브랜치 타입 (feat, fix, refactor, docs, test, release, hotfix)
+        #[arg(name = "type")]
+        btype: String,
+        /// 브랜치 이름
+        name: String,
+    },
+    /// worktree 제거
+    Remove {
+        /// 프로젝트 이름
+        project: String,
+        /// 브랜치 타입
+        #[arg(name = "type")]
+        btype: String,
+        /// 브랜치 이름
+        name: String,
+    },
+    /// 머지 완료 + stale worktree 자동 정리
+    Clean,
 }
 
 // === WORKSPACE ===
@@ -364,6 +399,13 @@ fn main() {
             VeilCmd::Check => veil::check(),
             VeilCmd::Start => veil::localvault_start(),
             VeilCmd::Stop => veil::localvault_stop(),
+        },
+
+        Commands::Worktree { cmd } => match cmd {
+            WorktreeCmd::Status => worktree::status(),
+            WorktreeCmd::Add { project, btype, name } => worktree::add(&project, &btype, &name),
+            WorktreeCmd::Remove { project, btype, name } => worktree::remove(&project, &btype, &name),
+            WorktreeCmd::Clean => worktree::clean(),
         },
 
         Commands::Workspace { cmd } => match cmd {
