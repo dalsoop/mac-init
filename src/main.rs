@@ -7,6 +7,7 @@ mod obsidian;
 mod proxmox;
 mod setup;
 mod ssh;
+mod workspace;
 
 use clap::{Parser, Subcommand};
 
@@ -46,6 +47,11 @@ enum Commands {
     Proxmox {
         #[command(subcommand)]
         cmd: ProxmoxCmd,
+    },
+    /// 작업 환경 (tmux, 셸, CLI 도구)
+    Workspace {
+        #[command(subcommand)]
+        cmd: WorkspaceCmd,
     },
     /// 의존성 설치 및 초기 설정
     Setup {
@@ -120,6 +126,21 @@ enum SshCmd {
         #[arg(default_value = "")]
         host: String,
     },
+}
+
+// === WORKSPACE ===
+#[derive(Subcommand)]
+enum WorkspaceCmd {
+    /// 작업 환경 상태 확인
+    Status,
+    /// 전체 부트스트랩 (tmux + CLI 도구 + 셸)
+    Bootstrap,
+    /// tmux + TPM 설치
+    InstallTmux,
+    /// CLI 도구 설치 (bat, eza, fzf, fd, ripgrep, lazygit, jq, htop)
+    InstallTools,
+    /// 셸 환경 설정 (p10k, zsh 플러그인)
+    SetupShell,
 }
 
 // === SETUP ===
@@ -237,6 +258,14 @@ fn main() {
             SshCmd::Status => ssh::status(),
             SshCmd::CopyKey { host } => ssh::copy_key(&host),
             SshCmd::Test { host } => ssh::test(&host),
+        },
+
+        Commands::Workspace { cmd } => match cmd {
+            WorkspaceCmd::Status => workspace::status(),
+            WorkspaceCmd::Bootstrap => workspace::bootstrap(),
+            WorkspaceCmd::InstallTmux => workspace::install_tmux(),
+            WorkspaceCmd::InstallTools => workspace::install_tools(),
+            WorkspaceCmd::SetupShell => workspace::setup_shell(),
         },
 
         Commands::Setup { cmd } => match cmd {
