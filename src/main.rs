@@ -211,6 +211,14 @@ enum FilesCmd {
         /// 대상 폴더
         dir: String,
     },
+    /// SD 카드 자동 백업 상태
+    SdStatus,
+    /// SD 카드 자동 백업 활성화
+    SdEnable,
+    /// SD 카드 자동 백업 비활성화
+    SdDisable,
+    /// SD 카드 수동 백업 실행
+    SdRun,
 }
 
 // === GITHUB ===
@@ -362,6 +370,10 @@ fn main() {
             FilesCmd::SetupAuto => files::setup_auto(),
             FilesCmd::DisableAuto => files::disable_auto(),
             FilesCmd::Rename { dir } => files::rename_format(&dir),
+            FilesCmd::SdStatus => files::sd_status(),
+            FilesCmd::SdEnable => files::sd_enable(),
+            FilesCmd::SdDisable => files::sd_disable(),
+            FilesCmd::SdRun => files::sd_run(),
         },
 
         Commands::Github { cmd } => match cmd {
