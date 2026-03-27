@@ -29,6 +29,12 @@ struct Cli {
 enum Commands {
     /// 새 Mac 초기 셋업 (폴더 + 도구 + 마운트 + 자동화 전부)
     Init,
+    /// 웹 대시보드 (http://localhost:8900)
+    Dashboard {
+        /// 포트 (기본: 8900)
+        #[arg(default_value = "8900")]
+        port: String,
+    },
     /// 전체 도메인 상태 한 번에 확인
     Status,
     /// 설정 관리 (~/.mac-host-commands/)
@@ -402,6 +408,11 @@ fn main() {
 
     match cli.command {
         Commands::Init => init::run(false),
+
+        Commands::Dashboard { port } => {
+            let script = format!("{}/문서/프로젝트/mac-host-commands/dashboard/server.sh", std::env::var("HOME").unwrap_or_default());
+            let _ = std::process::Command::new("bash").args([&script, &port]).status();
+        }
 
         Commands::Status => {
             config::Config::status();
