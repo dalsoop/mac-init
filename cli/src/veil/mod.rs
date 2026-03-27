@@ -7,9 +7,7 @@ fn home() -> String {
     std::env::var("HOME").unwrap_or_else(|_| "/Users/jeonghan".to_string())
 }
 
-const VAULTCENTER_LXC: &str = "110";
-const VAULTCENTER_URL: &str = "http://10.50.0.110:11181";
-const LOCALVAULT_URL: &str = "http://127.0.0.1:10180";
+use crate::constants::{VAULTCENTER_LXC, VAULTCENTER_URL, LOCALVAULT_URL};
 
 pub fn status() {
     println!("=== VeilKey 상태 ===\n");

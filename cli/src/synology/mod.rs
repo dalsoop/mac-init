@@ -3,40 +3,11 @@ use std::process::Command;
 use crate::common;
 use crate::config::Config;
 
-const SYNOLOGY_IP: &str = "192.168.2.15";
-const SYNOLOGY_USER: &str = "botnex";
+use crate::constants;
 
-// Mac 폴더명 → Synology 실제 경로 매핑
-const PATH_MAP: &[(&str, &str)] = &[
-    // 미디어
-    ("미디어/미러리스", "/volume1/사진 미러리스 백업"),
-    ("미디어/휴대폰", "/volume1/사진 휴대폰 백업"),
-    ("미디어/편집본", "/volume1/사진 편집본"),
-    ("미디어/그림", "/volume1/그림"),
-    ("미디어/디자인", "/volume1/디자인"),
-    ("미디어/영상", "/volume1/영상편집"),
-    // 업무
-    ("업무/진행중", "/volume1/업무"),
-    ("업무/종료", "/volume1/업무 종료"),
-    ("업무/서류", "/volume1/서류"),
-    ("업무/마케팅", "/volume1/마케팅"),
-    // 창작
-    ("창작/게임", "/volume1/게임"),
-    // 학습
-    ("학습/도서", "/volume2/컨텐츠/도서"),
-    ("학습/강의", "/volume2/컨텐츠/강의"),
-    ("학습/소설", "/volume2/컨텐츠/소설"),
-    // 프로젝트
-    ("프로젝트/docker", "/volume1/docker"),
-    ("프로젝트/AI", "/volume1/AI_미분류"),
-    // 아카이브
-    ("아카이브/proxmox", "/volume1/Vol1-14TB-Backups-Proxmox"),
-    ("아카이브/Vol-Main", "/volume1/Vol2-3-10TB-Main"),
-    ("아카이브/Vol-Contents", "/volume1/Vol4-10TB-Contents"),
-    // trash
-    ("trash/Vol1-14TB-Backups", "/volume1/Vol1-14TB-Backups"),
-    ("trash/업무", "/volume1/업무"),
-];
+const SYNOLOGY_IP: &str = constants::SYNOLOGY_HOST;
+const SYNOLOGY_USER: &str = constants::SYNOLOGY_USER;
+const PATH_MAP: &[(&str, &str)] = constants::SYNOLOGY_PATH_MAP;
 
 /// Mac 경로 → Synology 실제 경로 변환
 /// 예: "미디어/편집본/2207_애들모임" → "/volume1/사진 편집본/2207_애들모임"
