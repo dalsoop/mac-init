@@ -5,7 +5,7 @@ use crate::common;
 
 fn vault_path() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeonghan".to_string());
-    PathBuf::from(home).join("문서/obsidian-vault")
+    PathBuf::from(home).join("문서/옵시디언/vault")
 }
 
 pub fn status() {
