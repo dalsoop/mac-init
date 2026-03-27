@@ -6,7 +6,7 @@ use crate::common;
 use super::{home, count_files, dir_size};
 
 pub const SD_PLIST: &str = "com.mac-host.sd-backup.plist";
-const SD_SCRIPT: &str = "시스템/bin/sd-backup.sh";
+const SD_SCRIPT: &str = "문서/시스템/bin/sd-backup.sh";
 
 pub fn sd_status() {
     let h = home();

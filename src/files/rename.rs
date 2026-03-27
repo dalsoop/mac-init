@@ -11,18 +11,18 @@ pub fn classify_file(path: &Path) -> &'static str {
         .to_lowercase();
 
     match ext.as_str() {
-        "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "ico" | "bmp" | "tiff" => "미디어/사진",
-        "psd" | "ai" | "sketch" | "fig" | "xd" => "미디어/디자인",
-        "mp4" | "mov" | "avi" | "mkv" | "webm" => "미디어/영상",
-        "mp3" | "wav" | "flac" | "aac" | "ogg" | "m4a" => "미디어/음악",
-        "pdf" | "doc" | "docx" | "hwp" | "hwpx" => "업무/문서",
-        "xls" | "xlsx" | "csv" => "업무/문서",
-        "ppt" | "pptx" | "key" => "업무/문서",
-        "zip" | "tar" | "gz" | "7z" | "rar" => "임시/압축",
-        "dmg" | "pkg" | "app" => "임시/설치파일",
-        "conf" | "toml" | "yaml" | "yml" => "시스템",
-        "ttf" | "otf" | "woff" | "woff2" => "미디어/디자인/폰트",
-        _ => "임시",
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "ico" | "bmp" | "tiff" => "문서/미디어/사진",
+        "psd" | "ai" | "sketch" | "fig" | "xd" => "문서/미디어/디자인",
+        "mp4" | "mov" | "avi" | "mkv" | "webm" => "문서/미디어/영상",
+        "mp3" | "wav" | "flac" | "aac" | "ogg" | "m4a" => "문서/미디어/음악",
+        "pdf" | "doc" | "docx" | "hwp" | "hwpx" => "문서/업무/문서",
+        "xls" | "xlsx" | "csv" => "문서/업무/문서",
+        "ppt" | "pptx" | "key" => "문서/업무/문서",
+        "zip" | "tar" | "gz" | "7z" | "rar" => "문서/임시/압축",
+        "dmg" | "pkg" | "app" => "문서/임시/설치파일",
+        "conf" | "toml" | "yaml" | "yml" => "문서/시스템",
+        "ttf" | "otf" | "woff" | "woff2" => "문서/미디어/디자인/폰트",
+        _ => "문서/임시",
     }
 }
 

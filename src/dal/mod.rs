@@ -27,7 +27,7 @@ pub fn status() {
     let zprofile = format!("{h}/.zprofile");
     let content = fs::read_to_string(&zprofile).unwrap_or_default();
     let has_url = content.contains("DALCENTER_URL");
-    let has_path = content.contains("시스템/bin");
+    let has_path = content.contains("문서/시스템/bin");
     println!("[DALCENTER_URL] {}", if has_url { "✓ .zprofile에 설정됨" } else { "✗ 미설정" });
     println!("[시스템/bin PATH] {}", if has_path { "✓ .zprofile에 등록됨" } else { "✗ 미등록" });
 
@@ -94,7 +94,7 @@ pub fn setup_path() {
     let mut changed = false;
 
     // ~/시스템/bin을 PATH에 추가
-    if !content.contains("시스템/bin") {
+    if !content.contains("문서/시스템/bin") {
         content.push_str("\n# mac-host-commands: 시스템 바이너리\nexport PATH=\"$HOME/시스템/bin:$PATH\"\n");
         changed = true;
         println!("[dal] PATH에 ~/시스템/bin 추가");

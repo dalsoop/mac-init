@@ -10,7 +10,7 @@ const STALE_DAYS: u64 = 7;
 
 fn projects_dir() -> String {
     let home = std::env::var("HOME").unwrap_or_default();
-    format!("{home}/프로젝트")
+    format!("{home}/문서/프로젝트")
 }
 
 fn parse_worktree_folder(folder: &str) -> Option<(&str, &str, &str)> {
