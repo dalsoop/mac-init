@@ -332,6 +332,8 @@ enum FilesCmd {
     SdDisable,
     /// SD 카드 수동 백업 실행
     SdRun,
+    /// 노트/파일 규칙 검사 (frontmatter, 파일명, 폴더 구조)
+    Lint,
 }
 
 // === GITHUB ===
@@ -519,6 +521,7 @@ fn main() {
             FilesCmd::SdEnable => files::sd_enable(),
             FilesCmd::SdDisable => files::sd_disable(),
             FilesCmd::SdRun => files::sd_run(),
+            FilesCmd::Lint => files::lint(),
         },
 
         Commands::Github { cmd } => match cmd {

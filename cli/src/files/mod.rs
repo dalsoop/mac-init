@@ -1,3 +1,4 @@
+pub mod lint;
 pub mod organize;
 pub mod rename;
 pub mod sd;
@@ -69,3 +70,4 @@ pub fn status() {
 pub use organize::{organize, cleanup_temp, setup_auto, disable_auto};
 pub use rename::rename_format;
 pub use sd::{sd_status, sd_enable, sd_disable, sd_run};
+pub use lint::lint;
