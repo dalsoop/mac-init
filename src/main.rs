@@ -193,20 +193,29 @@ enum SynologyCmd {
         /// 명령어
         cmd: String,
     },
-    /// 파일/폴더 이동 (로컬 mv, 빠름)
+    /// 파일/폴더 이동 (Mac 경로명 사용, 예: 미디어/편집본/파일 → 아카이브/)
     Mv {
-        /// 원본 경로 (/volume1/...)
+        /// 원본 (예: 미디어/편집본/2207_애들모임)
         src: String,
-        /// 대상 경로
+        /// 대상 (예: 아카이브/)
         dest: String,
     },
-    /// 파일/폴더 목록
+    /// 파일/폴더 이름 변경
+    Rename {
+        /// 폴더 경로 (예: 미디어/편집본)
+        path: String,
+        /// 현재 이름
+        old_name: String,
+        /// 새 이름
+        new_name: String,
+    },
+    /// 파일/폴더 목록 (경로 없으면 매핑 테이블 표시)
     Ls {
-        /// 경로 (기본: /volume1)
+        /// 경로 (예: 미디어/편집본)
         #[arg(default_value = "")]
         path: String,
     },
-    /// 파일 검색
+    /// 파일 검색 (결과를 Mac 경로로 표시)
     Find {
         /// 검색어
         pattern: String,
@@ -446,6 +455,7 @@ fn main() {
             SynologyCmd::Ssh => synology::ssh(),
             SynologyCmd::Exec { cmd } => synology::exec(&cmd),
             SynologyCmd::Mv { src, dest } => synology::mv(&src, &dest),
+            SynologyCmd::Rename { path, old_name, new_name } => synology::rename(&path, &old_name, &new_name),
             SynologyCmd::Ls { path } => synology::ls(&path),
             SynologyCmd::Find { pattern } => synology::find(&pattern),
             SynologyCmd::CleanupMeta => synology::cleanup_meta(),
