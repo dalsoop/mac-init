@@ -39,6 +39,7 @@ pub fn status() {
         ("fd", "find 대체"),
         ("ripgrep", "grep 대체"),
         ("lazygit", "Git TUI"),
+        ("lazydocker", "Docker TUI"),
         ("jq", "JSON 파서"),
         ("htop", "프로세스 모니터"),
         ("neovim", "에디터"),
@@ -106,6 +107,7 @@ pub fn install_tools() {
         "fd",
         "ripgrep",
         "lazygit",
+        "lazydocker",
         "jq",
         "htop",
     ];
