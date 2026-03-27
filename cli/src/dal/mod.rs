@@ -14,7 +14,7 @@ pub fn status() {
     println!("=== Dalcenter 상태 ===\n");
 
     let h = home();
-    let bin = format!("{h}/시스템/bin/dalcenter");
+    let bin = format!("{h}/문서/시스템/bin/dalcenter");
     let has_bin = Path::new(&bin).exists();
     println!("[바이너리] {} {}", &bin, if has_bin { "✓" } else { "✗" });
 
@@ -36,9 +36,9 @@ pub fn status() {
     println!("[Daemon] {url} {}", if ok { "✓ 연결됨" } else { "✗ 미연결" });
 
     // 소스 레포
-    let repo = format!("{h}/프로젝트/dalcenter");
+    let repo = format!("{h}/문서/프로젝트/dalcenter");
     println!("[소스] {} {}", &repo, if Path::new(&repo).exists() { "✓" } else { "✗" });
-    let symlink = format!("{h}/시스템/dalcenter");
+    let symlink = format!("{h}/문서/시스템/dalcenter");
     println!("[심볼릭] {} {}", &symlink, if Path::new(&symlink).exists() { "✓" } else { "✗" });
 }
 
@@ -46,7 +46,7 @@ pub fn install() {
     let h = home();
 
     // 1. 소스 클론
-    let repo = format!("{h}/프로젝트/dalcenter");
+    let repo = format!("{h}/문서/프로젝트/dalcenter");
     if Path::new(&repo).exists() {
         println!("[dal] 소스 이미 존재: {repo}");
     } else {
@@ -59,7 +59,7 @@ pub fn install() {
     }
 
     // 2. 심볼릭 링크
-    let symlink = format!("{h}/시스템/dalcenter");
+    let symlink = format!("{h}/문서/시스템/dalcenter");
     if !Path::new(&symlink).exists() {
         let _ = std::os::unix::fs::symlink(&repo, &symlink);
         println!("[dal] 심볼릭 링크: {symlink} → {repo}");
@@ -67,7 +67,7 @@ pub fn install() {
 
     // 3. 빌드
     println!("[dal] 빌드 중...");
-    let bin_dir = format!("{h}/시스템/bin");
+    let bin_dir = format!("{h}/문서/시스템/bin");
     common::ensure_dir(Path::new(&bin_dir));
     let ok = Command::new("go")
         .args(["build", "-o", &format!("{bin_dir}/dalcenter"), "./cmd/dalcenter"])
@@ -119,8 +119,8 @@ pub fn setup_path() {
 
 pub fn build() {
     let h = home();
-    let repo = format!("{h}/프로젝트/dalcenter");
-    let bin_dir = format!("{h}/시스템/bin");
+    let repo = format!("{h}/문서/프로젝트/dalcenter");
+    let bin_dir = format!("{h}/문서/시스템/bin");
 
     if !Path::new(&repo).exists() {
         eprintln!("[dal] 소스가 없습니다. 먼저 install 하세요.");
