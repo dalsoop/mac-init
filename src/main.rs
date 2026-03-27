@@ -10,6 +10,7 @@ mod proxmox;
 mod setup;
 mod ssh;
 mod veil;
+mod synology;
 mod worktree;
 mod workspace;
 
@@ -56,6 +57,11 @@ enum Commands {
     Veil {
         #[command(subcommand)]
         cmd: VeilCmd,
+    },
+    /// Synology NAS 직접 관리 (SSH)
+    Synology {
+        #[command(subcommand)]
+        cmd: SynologyCmd,
     },
     /// Git worktree 관리 (브랜치별 폴더)
     Worktree {
@@ -173,6 +179,40 @@ enum VeilCmd {
     Start,
     /// LocalVault 중지
     Stop,
+}
+
+// === SYNOLOGY ===
+#[derive(Subcommand)]
+enum SynologyCmd {
+    /// Synology 상태 확인
+    Status,
+    /// Synology SSH 접속
+    Ssh,
+    /// 원격 명령 실행
+    Exec {
+        /// 명령어
+        cmd: String,
+    },
+    /// 파일/폴더 이동 (로컬 mv, 빠름)
+    Mv {
+        /// 원본 경로 (/volume1/...)
+        src: String,
+        /// 대상 경로
+        dest: String,
+    },
+    /// 파일/폴더 목록
+    Ls {
+        /// 경로 (기본: /volume1)
+        #[arg(default_value = "")]
+        path: String,
+    },
+    /// 파일 검색
+    Find {
+        /// 검색어
+        pattern: String,
+    },
+    /// macOS 메타파일 정리 (._*, .DS_Store, Thumbs.db)
+    CleanupMeta,
 }
 
 // === WORKTREE ===
@@ -399,6 +439,16 @@ fn main() {
             VeilCmd::Check => veil::check(),
             VeilCmd::Start => veil::localvault_start(),
             VeilCmd::Stop => veil::localvault_stop(),
+        },
+
+        Commands::Synology { cmd } => match cmd {
+            SynologyCmd::Status => synology::status(),
+            SynologyCmd::Ssh => synology::ssh(),
+            SynologyCmd::Exec { cmd } => synology::exec(&cmd),
+            SynologyCmd::Mv { src, dest } => synology::mv(&src, &dest),
+            SynologyCmd::Ls { path } => synology::ls(&path),
+            SynologyCmd::Find { pattern } => synology::find(&pattern),
+            SynologyCmd::CleanupMeta => synology::cleanup_meta(),
         },
 
         Commands::Worktree { cmd } => match cmd {
