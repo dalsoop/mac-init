@@ -126,6 +126,124 @@ pub fn setup_path() {
     }
 }
 
+/// dalcenter task 완료 대기 + macOS 알림
+pub fn watch(team: &str, interval_secs: u64) {
+    let url = resolve_team_url(team);
+    println!("[dal] watching {url} ({}초 간격)", interval_secs);
+
+    loop {
+        let output = Command::new("curl")
+            .args(["-s", "--connect-timeout", "3", &format!("{url}/api/tasks")])
+            .output();
+
+        match output {
+            Ok(o) => {
+                let body = String::from_utf8_lossy(&o.stdout);
+                // count running tasks
+                let running = body.matches("\"status\":\"running\"").count();
+                let done = body.matches("\"status\":\"done\"").count();
+                let failed = body.matches("\"status\":\"failed\"").count();
+
+                if running == 0 && (done > 0 || failed > 0) {
+                    println!("[dal] 모든 task 완료 (done:{done}, failed:{failed})");
+                    // macOS 알림
+                    let msg = format!("done:{done} failed:{failed}");
+                    let _ = Command::new("osascript")
+                        .args(["-e", &format!(
+                            "display notification \"{}\" with title \"dalcenter ({})\" sound name \"Glass\"",
+                            msg, team
+                        )])
+                        .status();
+
+                    // PR 목록 출력
+                    let pr_out = Command::new("ssh")
+                        .args([
+                            &format!("{}@{}", crate::constants::PROXMOX_USER, crate::constants::PROXMOX_HOST),
+                            &format!("pct exec 105 -- bash -c 'cd /root/project && gh pr list --limit 10 2>/dev/null'"),
+                        ])
+                        .output();
+                    if let Ok(pr) = pr_out {
+                        let prs = String::from_utf8_lossy(&pr.stdout);
+                        if !prs.is_empty() {
+                            println!("\n=== PRs ===\n{prs}");
+                        }
+                    }
+                    break;
+                }
+
+                println!("[dal] running:{running} done:{done} failed:{failed}");
+            }
+            Err(e) => println!("[dal] 연결 실패: {e}"),
+        }
+
+        std::thread::sleep(std::time::Duration::from_secs(interval_secs));
+    }
+}
+
+/// dalcenter에 task 전송
+pub fn task(team: &str, dal_name: &str, prompt: &str, async_mode: bool) {
+    let url = resolve_team_url(team);
+    let async_flag = if async_mode { "--async" } else { "" };
+
+    let ssh_cmd = format!(
+        "pct exec 105 -- bash -c 'export PATH=/usr/local/go/bin:/usr/local/bin:$PATH DALCENTER_URL={url} && dalcenter task {dal_name} {async_flag} \"{prompt}\"'"
+    );
+
+    let (ok, stdout, stderr) = common::run_cmd("ssh", &[
+        &format!("{}@{}", crate::constants::PROXMOX_USER, crate::constants::PROXMOX_HOST),
+        &ssh_cmd,
+    ]);
+
+    if ok {
+        println!("{stdout}");
+    } else {
+        eprintln!("[dal] task 전송 실패: {stderr}");
+    }
+}
+
+/// dalcenter tell (팀에 메시지 전송)
+pub fn tell(team: &str, message: &str) {
+    let url = resolve_team_url(team);
+
+    let ssh_cmd = format!(
+        "pct exec 105 -- bash -c 'export PATH=/usr/local/go/bin:/usr/local/bin:$PATH DALCENTER_URL={url} && dalcenter tell {team} \"{message}\"'"
+    );
+
+    let (ok, stdout, stderr) = common::run_cmd("ssh", &[
+        &format!("{}@{}", crate::constants::PROXMOX_USER, crate::constants::PROXMOX_HOST),
+        &ssh_cmd,
+    ]);
+
+    if ok {
+        println!("{stdout}");
+    } else {
+        eprintln!("[dal] tell 실패: {stderr}");
+    }
+}
+
+/// dalcenter task-list
+pub fn task_list(team: &str) {
+    let url = resolve_team_url(team);
+    let ssh_cmd = format!(
+        "pct exec 105 -- bash -c 'export PATH=/usr/local/go/bin:/usr/local/bin:$PATH DALCENTER_URL={url} && dalcenter task-list'"
+    );
+
+    let (_, stdout, _) = common::run_cmd("ssh", &[
+        &format!("{}@{}", crate::constants::PROXMOX_USER, crate::constants::PROXMOX_HOST),
+        &ssh_cmd,
+    ]);
+    println!("{stdout}");
+}
+
+fn resolve_team_url(team: &str) -> String {
+    for (name, _, port) in crate::constants::DALCENTER_PORTS {
+        if *name == team {
+            return format!("http://{}:{port}", crate::constants::DALCENTER_HOST);
+        }
+    }
+    format!("http://{}:{}", crate::constants::DALCENTER_HOST, crate::constants::DALCENTER_DEFAULT_PORT)
+}
+
 pub fn build() {
     let h = home();
     let repo = format!("{h}/문서/프로젝트/dalcenter");

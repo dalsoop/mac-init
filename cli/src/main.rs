@@ -304,6 +304,41 @@ enum DalCmd {
     Build,
     /// PATH + DALCENTER_URL 설정 (.zprofile)
     SetupPath,
+    /// task 완료 대기 + macOS 알림 (polling)
+    Watch {
+        /// 팀 이름 (기본: dalcenter)
+        #[arg(default_value = "dalcenter")]
+        team: String,
+        /// 폴링 간격 (초, 기본: 30)
+        #[arg(long, default_value = "30")]
+        interval: u64,
+    },
+    /// dal에게 task 전송
+    Task {
+        /// dal 이름 (dalops, dal 등)
+        dal: String,
+        /// 프롬프트
+        prompt: String,
+        /// 팀 이름
+        #[arg(long, default_value = "dalcenter")]
+        team: String,
+        /// 비동기 실행
+        #[arg(long)]
+        r#async: bool,
+    },
+    /// task 목록 조회
+    TaskList {
+        /// 팀 이름
+        #[arg(default_value = "dalcenter")]
+        team: String,
+    },
+    /// 팀에 메시지 전송 (dalcenter tell)
+    Tell {
+        /// 팀 이름
+        team: String,
+        /// 메시지
+        message: String,
+    },
 }
 
 // === FILES ===
@@ -508,6 +543,10 @@ fn main() {
             DalCmd::Install => dal::install(),
             DalCmd::Build => dal::build(),
             DalCmd::SetupPath => dal::setup_path(),
+            DalCmd::Watch { team, interval } => dal::watch(&team, interval),
+            DalCmd::Task { dal: dal_name, prompt, team, r#async: async_mode } => dal::task(&team, &dal_name, &prompt, async_mode),
+            DalCmd::TaskList { team } => dal::task_list(&team),
+            DalCmd::Tell { team, message } => dal::tell(&team, &message),
         },
 
         Commands::Files { cmd } => match cmd {
