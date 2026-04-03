@@ -2,6 +2,7 @@ use std::process::Command;
 
 use crate::common;
 use crate::config::Config;
+use crate::network;
 
 pub fn status() {
     println!("=== 마운트 상태 ===\n");
@@ -32,6 +33,13 @@ pub fn status() {
 }
 
 pub fn mount(name: &str) {
+    // VPN 상태 사전 체크
+    if !network::is_vpn_connected() {
+        eprintln!("[mount] ⚠️  WireGuard VPN이 연결되어 있지 않거나 Proxmox에 도달할 수 없습니다.");
+        eprintln!("  VPN 연결 후 다시 시도하세요.");
+        std::process::exit(1);
+    }
+
     let cfg = Config::load();
 
     let target = cfg.mount.targets.iter().find(|t| t.name == name);
@@ -120,6 +128,36 @@ pub fn unmount(name: &str) {
     }
 }
 
+/// 끊긴 마운트만 재연결
+pub fn reconnect_all() {
+    let cfg = Config::load();
+    if cfg.mount.targets.is_empty() {
+        println!("[mount] 설정된 마운트 타겟이 없습니다.");
+        return;
+    }
+
+    let (_, mounts) = common::run_cmd_quiet("mount", &[]);
+    let mut reconnected = 0;
+
+    for target in &cfg.mount.targets {
+        let mount_point = if target.mount_point.is_empty() {
+            format!("{}/{}", cfg.mount.base_path, target.name)
+        } else {
+            target.mount_point.clone()
+        };
+
+        if !mounts.contains(&mount_point) {
+            println!("[mount] '{}' 끊김 감지 → 재연결 시도...", target.name);
+            mount(&target.name);
+            reconnected += 1;
+        }
+    }
+
+    if reconnected == 0 {
+        println!("[mount] 모든 마운트 정상 연결 중");
+    }
+}
+
 pub fn unmount_all() {
     let cfg = Config::load();
     for target in &cfg.mount.targets {
@@ -140,6 +178,9 @@ fn mount_sshfs(host: &str, user: &str, remote_path: &str, mount_point: &str, nam
 
     println!("[mount] sshfs {user}@{host}:{remote_path} -> {mount_point}");
 
+    // SSH keepalive: 30초마다 ping, 최대 5회 실패 시 재연결
+    let ssh_opts = "ServerAliveInterval=30,ServerAliveCountMax=5";
+
     let sshfs_args = if mount_point.starts_with("/Volumes") {
         // /Volumes 하위는 sudo 필요
         vec![
@@ -150,6 +191,7 @@ fn mount_sshfs(host: &str, user: &str, remote_path: &str, mount_point: &str, nam
             "-o".to_string(), format!("volname={name}"),
             "-o".to_string(), "follow_symlinks".to_string(),
             "-o".to_string(), "allow_other".to_string(),
+            "-o".to_string(), format!("ssh_command=ssh -o {ssh_opts}"),
         ]
     } else {
         vec![]
@@ -165,6 +207,7 @@ fn mount_sshfs(host: &str, user: &str, remote_path: &str, mount_point: &str, nam
             "-o", "reconnect",
             "-o", &format!("volname={name}"),
             "-o", "follow_symlinks",
+            "-o", &format!("ssh_command=ssh -o {ssh_opts}"),
         ])
     };
 

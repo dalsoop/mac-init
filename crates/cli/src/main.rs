@@ -140,6 +140,8 @@ enum MountCmd {
     },
     /// 전체 타겟 언마운트
     DownAll,
+    /// 끊긴 마운트 재연결
+    Reconnect,
 }
 
 // === NETWORK ===
@@ -591,6 +593,7 @@ fn main() {
             MountCmd::UpAll => mount::mount_all(),
             MountCmd::Down { name } => mount::unmount(&name),
             MountCmd::DownAll => mount::unmount_all(),
+            MountCmd::Reconnect => mount::reconnect_all(),
         },
 
         Commands::Network { cmd } => match cmd {
