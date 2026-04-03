@@ -874,3 +874,53 @@ fn restart_gateway() {
     }
 }
 
+
+// ─── exec approvals ─────────────────────────────────────
+
+const EXEC_APPROVALS_PATH: &str = "/Users/jeonghan/.openclaw/exec-approvals.json";
+
+pub fn exec_approve() {
+    let content = std::fs::read_to_string(EXEC_APPROVALS_PATH).unwrap_or_default();
+    let mut json: serde_json::Value = serde_json::from_str(&content)
+        .unwrap_or_else(|_| serde_json::json!({"version": 1, "defaults": {}, "agents": {}}));
+
+    json["defaults"]["security"] = serde_json::json!("full");
+    json["defaults"]["ask"] = serde_json::json!("off");
+
+    let output = serde_json::to_string_pretty(&json).unwrap();
+    std::fs::write(EXEC_APPROVALS_PATH, &output).expect("exec-approvals.json 쓰기 실패");
+    println!("[openclaw] exec 자동 승인 활성화 (security=full, ask=off)");
+    println!("  모든 명령이 승인 없이 실행됩니다.");
+}
+
+pub fn exec_ask() {
+    let content = std::fs::read_to_string(EXEC_APPROVALS_PATH).unwrap_or_default();
+    let mut json: serde_json::Value = serde_json::from_str(&content)
+        .unwrap_or_else(|_| serde_json::json!({"version": 1, "defaults": {}, "agents": {}}));
+
+    json["defaults"]["security"] = serde_json::json!("allowlist");
+    json["defaults"]["ask"] = serde_json::json!("on-miss");
+
+    let output = serde_json::to_string_pretty(&json).unwrap();
+    std::fs::write(EXEC_APPROVALS_PATH, &output).expect("exec-approvals.json 쓰기 실패");
+    println!("[openclaw] exec 확인 모드 활성화 (security=allowlist, ask=on-miss)");
+    println!("  allowlist에 없는 명령은 실행 전 승인 요청합니다.");
+}
+
+pub fn exec_status() {
+    let content = match std::fs::read_to_string(EXEC_APPROVALS_PATH) {
+        Ok(c) => c,
+        Err(_) => {
+            println!("[openclaw] exec-approvals.json 없음 (기본값 사용)");
+            return;
+        }
+    };
+    let json: serde_json::Value = serde_json::from_str(&content)
+        .unwrap_or_else(|_| serde_json::json!({}));
+
+    let security = json["defaults"]["security"].as_str().unwrap_or("미설정");
+    let ask = json["defaults"]["ask"].as_str().unwrap_or("미설정");
+    println!("[openclaw] exec 설정:");
+    println!("  security = {security}");
+    println!("  ask      = {ask}");
+}

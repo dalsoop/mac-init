@@ -532,6 +532,12 @@ enum OpenclawCmd {
         /// 페어링 코드
         code: String,
     },
+    /// exec 승인 설정 - 모든 명령 자동 승인 (full)
+    ExecApprove,
+    /// exec 승인 설정 - 필요 시마다 확인 (ask)
+    ExecAsk,
+    /// exec 현재 설정 확인
+    ExecStatus,
 }
 
 // === PROXMOX ===
@@ -724,6 +730,9 @@ fn main() {
             OpenclawCmd::SyncAuthDisable => openclaw::sync_auth_disable(),
             OpenclawCmd::Telegram { token } => openclaw::telegram(&token),
             OpenclawCmd::TelegramApprove { code } => openclaw::telegram_approve(&code),
+            OpenclawCmd::ExecApprove => openclaw::exec_approve(),
+            OpenclawCmd::ExecAsk => openclaw::exec_ask(),
+            OpenclawCmd::ExecStatus => openclaw::exec_status(),
         },
 
         Commands::Obsidian { cmd } => match cmd {
