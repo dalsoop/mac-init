@@ -165,10 +165,7 @@ pub fn reconnect_all() {
                 .output();
             std::thread::sleep(std::time::Duration::from_millis(500));
             mount(&target.name);
-            // Finder 사이드바 북마크 갱신
-            let _ = Command::new("sfltool")
-                .args(["add-item", "com.apple.LSSharedFileList.FavoriteVolumes", &mount_point])
-                .output();
+
             reconnected += 1;
         }
     }

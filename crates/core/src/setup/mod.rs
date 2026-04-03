@@ -164,6 +164,24 @@ pub fn install_sshfs() {
         }
     }
 
+    // mysides - Finder 사이드바 관리
+    let (has_mysides, _) = common::run_cmd_quiet("which", &["mysides"]);
+    if has_mysides {
+        println!("[setup] mysides 이미 설치됨");
+    } else {
+        println!("[setup] mysides 설치 중...");
+        let ok = Command::new("brew")
+            .args(["install", "mysides"])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if ok {
+            println!("[setup] mysides 설치 완료");
+        } else {
+            eprintln!("[setup] mysides 설치 실패 (무시하고 계속)");
+        }
+    }
+
     println!("\n[setup] sshfs 마운트 준비 완료!");
     println!("  mac-host-commands mount up proxmox");
 }
