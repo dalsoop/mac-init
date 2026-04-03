@@ -40,7 +40,7 @@ pub fn status() {
 /// VPN(WireGuard) 연결 여부 반환
 /// utun 인터페이스 + Proxmox ping 두 가지로 판단
 pub fn is_vpn_connected() -> bool {
-    let (_, ifconfig) = common::run_cmd_quiet("ifconfig", &[]);
+    let (_, ifconfig) = common::run_cmd_quiet("/sbin/ifconfig", &[]);
     let has_utun = ifconfig.contains("utun");
     if !has_utun {
         return false;

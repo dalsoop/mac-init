@@ -128,7 +128,19 @@ pub fn unmount(name: &str) {
     }
 }
 
-/// 끊긴 마운트만 재연결
+/// 마운트 포인트가 실제로 살아있는지 확인 (좀비 마운트 감지)
+fn is_mount_alive(mount_point: &str) -> bool {
+    // mount 명령 대신 실제 ls로 접근 테스트
+    let result = Command::new("ls")
+        .arg(mount_point)
+        .output();
+    match result {
+        Ok(out) => out.status.success(),
+        Err(_) => false,
+    }
+}
+
+/// 끊긴 마운트만 재연결 (좀비 마운트 포함)
 pub fn reconnect_all() {
     let cfg = Config::load();
     if cfg.mount.targets.is_empty() {
@@ -136,7 +148,6 @@ pub fn reconnect_all() {
         return;
     }
 
-    let (_, mounts) = common::run_cmd_quiet("mount", &[]);
     let mut reconnected = 0;
 
     for target in &cfg.mount.targets {
@@ -146,15 +157,20 @@ pub fn reconnect_all() {
             target.mount_point.clone()
         };
 
-        if !mounts.contains(&mount_point) {
-            println!("[mount] '{}' 끊김 감지 → 재연결 시도...", target.name);
+        if !is_mount_alive(&mount_point) {
+            println!("[mount] '{}' 끊김 감지 → 강제 해제 후 재연결...", target.name);
+            // 좀비 마운트 강제 해제
+            let _ = Command::new("sudo")
+                .args(["umount", "-f", &mount_point])
+                .output();
+            std::thread::sleep(std::time::Duration::from_millis(500));
             mount(&target.name);
             reconnected += 1;
         }
     }
 
     if reconnected == 0 {
-        println!("[mount] 모든 마운트 정상 연결 중");
+        println!("[mount] 모든 마운트 정상");
     }
 }
 
