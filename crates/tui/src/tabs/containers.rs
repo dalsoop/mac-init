@@ -5,13 +5,13 @@ use ratatui::{prelude::*, widgets::*};
 use mac_host_core::cron;
 use mac_host_core::models::cron::LaunchAgent;
 
-pub struct ServicesTab {
+pub struct ContainersTab {
     agents: Vec<LaunchAgent>,
     selected: usize,
     output: String,
 }
 
-impl ServicesTab {
+impl ContainersTab {
     pub fn new() -> Self {
         Self {
             agents: Vec::new(),

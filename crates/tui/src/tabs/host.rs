@@ -5,19 +5,19 @@ use ratatui::{prelude::*, widgets::*};
 use mac_host_core::common;
 
 #[derive(Clone, Copy, PartialEq)]
-enum InfraView {
+enum HostView {
     Overview,
     Proxmox,
     Synology,
     Workspace,
 }
 
-impl InfraView {
-    const ALL: &[InfraView] = &[
-        InfraView::Overview,
-        InfraView::Proxmox,
-        InfraView::Synology,
-        InfraView::Workspace,
+impl HostView {
+    const ALL: &[HostView] = &[
+        HostView::Overview,
+        HostView::Proxmox,
+        HostView::Synology,
+        HostView::Workspace,
     ];
 
     fn label(&self) -> &'static str {
@@ -39,18 +39,18 @@ impl InfraView {
     }
 }
 
-pub struct InfraTab {
-    view: InfraView,
+pub struct HostTab {
+    view: HostView,
     view_index: usize,
     content: String,
     scroll: u16,
     output: String,
 }
 
-impl InfraTab {
+impl HostTab {
     pub fn new() -> Self {
         Self {
-            view: InfraView::Overview,
+            view: HostView::Overview,
             view_index: 0,
             content: String::new(),
             scroll: 0,
@@ -71,7 +71,7 @@ impl InfraTab {
             .split(area);
 
         // Sub-tab bar
-        let titles: Vec<&str> = InfraView::ALL.iter().map(|v| v.label()).collect();
+        let titles: Vec<&str> = HostView::ALL.iter().map(|v| v.label()).collect();
         let tabs = Tabs::new(titles)
             .select(self.view_index)
             .style(Style::default().fg(Color::Gray))
@@ -168,14 +168,14 @@ impl InfraTab {
             KeyCode::Left | KeyCode::Char('h') => {
                 if self.view_index > 0 {
                     self.view_index -= 1;
-                    self.view = InfraView::ALL[self.view_index];
+                    self.view = HostView::ALL[self.view_index];
                     self.load().await?;
                 }
             }
             KeyCode::Right | KeyCode::Char('l') if key.modifiers.is_empty() => {
-                if self.view_index + 1 < InfraView::ALL.len() {
+                if self.view_index + 1 < HostView::ALL.len() {
                     self.view_index += 1;
-                    self.view = InfraView::ALL[self.view_index];
+                    self.view = HostView::ALL[self.view_index];
                     self.load().await?;
                 }
             }

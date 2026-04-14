@@ -16,8 +16,8 @@ use crate::tabs::configs::ConfigsTab;
 #[cfg(domain = "defaults")]
 use crate::tabs::defaults::DefaultsTab;
 use crate::tabs::env::EnvTab;
-use crate::tabs::infra::InfraTab;
-use crate::tabs::services::ServicesTab;
+use crate::tabs::host::HostTab;
+use crate::tabs::containers::ContainersTab;
 use crate::tabs::status::StatusTab;
 use crate::tabs::store::StoreTab;
 use crate::ui::tabbar::render_tabbar;
@@ -28,9 +28,9 @@ pub struct App {
     #[cfg(domain = "brew")]
     brew_tab: BrewTab,
     env_tab: EnvTab,
-    services_tab: ServicesTab,
+    containers_tab: ContainersTab,
     configs_tab: ConfigsTab,
-    infra_tab: InfraTab,
+    host_tab: HostTab,
     #[cfg(domain = "defaults")]
     defaults_tab: DefaultsTab,
     store_tab: StoreTab,
@@ -47,9 +47,9 @@ impl App {
             #[cfg(domain = "brew")]
             brew_tab: BrewTab::new(),
             env_tab: EnvTab::new(),
-            services_tab: ServicesTab::new(),
+            containers_tab: ContainersTab::new(),
             configs_tab: ConfigsTab::new(),
-            infra_tab: InfraTab::new(),
+            host_tab: HostTab::new(),
             #[cfg(domain = "defaults")]
             defaults_tab: DefaultsTab::new(),
             store_tab: StoreTab::new(),
@@ -78,7 +78,7 @@ impl App {
 
         self.loading_msg = "Loading services...".to_string();
         terminal.draw(|frame| self.render(frame))?;
-        self.services_tab.load().await?;
+        self.containers_tab.load().await?;
 
         self.loading_msg = "Loading status...".to_string();
         terminal.draw(|frame| self.render(frame))?;
@@ -158,9 +158,9 @@ impl App {
             #[cfg(domain = "brew")]
             TabId::Brew => self.brew_tab.render(frame, chunks[1]),
             TabId::Env => self.env_tab.render(frame, chunks[1]),
-            TabId::Services => self.services_tab.render(frame, chunks[1]),
+            TabId::Containers => self.containers_tab.render(frame, chunks[1]),
             TabId::Configs => self.configs_tab.render(frame, chunks[1]),
-            TabId::Infra => self.infra_tab.render(frame, chunks[1]),
+            TabId::Host => self.host_tab.render(frame, chunks[1]),
             #[cfg(domain = "defaults")]
             TabId::Defaults => self.defaults_tab.render(frame, chunks[1]),
             TabId::Store => self.store_tab.render(frame, chunks[1]),
@@ -171,9 +171,9 @@ impl App {
             #[cfg(domain = "brew")]
             TabId::Brew => "/:search u:update r:remove",
             TabId::Env => "d:decrypt /:search e:encrypt",
-            TabId::Services => "l:load s:stop r:restart",
+            TabId::Containers => "l:load s:stop r:restart",
             TabId::Configs => "e:edit d/u:scroll",
-            TabId::Infra => "h/l:switch view r:refresh",
+            TabId::Host => "h/l:switch view r:refresh",
             #[cfg(domain = "defaults")]
             TabId::Defaults => "enter:open esc:back",
             TabId::Store => "i:install d:remove u:update",
@@ -233,9 +233,9 @@ impl App {
                     #[cfg(domain = "brew")]
                     TabId::Brew => self.brew_tab.handle_key(key).await?,
                     TabId::Env => self.env_tab.handle_key(key).await?,
-                    TabId::Services => self.services_tab.handle_key(key).await?,
+                    TabId::Containers => self.containers_tab.handle_key(key).await?,
                     TabId::Configs => self.configs_tab.handle_key(key).await?,
-                    TabId::Infra => self.infra_tab.handle_key(key).await?,
+                    TabId::Host => self.host_tab.handle_key(key).await?,
                     #[cfg(domain = "defaults")]
                     TabId::Defaults => self.defaults_tab.handle_key(key).await?,
                     TabId::Store => self.store_tab.handle_key(key).await?,

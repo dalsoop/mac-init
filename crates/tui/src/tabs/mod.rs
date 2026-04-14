@@ -1,11 +1,11 @@
 #[cfg(domain = "brew")]
 pub mod brew;
 pub mod configs;
+pub mod containers;
 #[cfg(domain = "defaults")]
 pub mod defaults;
 pub mod env;
-pub mod infra;
-pub mod services;
+pub mod host;
 pub mod status;
 pub mod store;
 
@@ -15,9 +15,9 @@ pub enum TabId {
     #[cfg(domain = "brew")]
     Brew,
     Env,
-    Services,
+    Containers,
     Configs,
-    Infra,
+    Host,
     #[cfg(domain = "defaults")]
     Defaults,
     Store,
@@ -30,9 +30,9 @@ impl TabId {
             #[cfg(domain = "brew")]
             TabId::Brew,
             TabId::Env,
-            TabId::Services,
+            TabId::Containers,
             TabId::Configs,
-            TabId::Infra,
+            TabId::Host,
             #[cfg(domain = "defaults")]
             TabId::Defaults,
             TabId::Store,
@@ -69,9 +69,9 @@ impl TabId {
             #[cfg(domain = "brew")]
             Self::Brew => "Brew",
             Self::Env => "Env",
-            Self::Services => "Services",
+            Self::Containers => "Containers",
             Self::Configs => "Configs",
-            Self::Infra => "Infra",
+            Self::Host => "Host",
             #[cfg(domain = "defaults")]
             Self::Defaults => "Defaults",
             Self::Store => "Store",
