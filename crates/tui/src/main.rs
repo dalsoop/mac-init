@@ -1,6 +1,4 @@
 mod app;
-mod models;
-mod services;
 mod tabs;
 mod ui;
 

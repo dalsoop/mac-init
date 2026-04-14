@@ -1,46 +1,109 @@
 # mac-app-init
 
-macOS 설정/인프라/자동화 통합 관리 도구. CLI + TUI.
+macOS 설정/자동화 통합 관리 도구. 도메인 기반 플러그인 시스템.
+
+## 설치
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dalsoop/mac-app-init/main/install.sh | bash
+```
+
+## 시작
+
+```bash
+mac setup                  # 자동 업데이트 등록
+mac install bootstrap      # 의존성 확인 (brew, gh, dotenvx, nickel, rust)
+mac install keyboard       # 도메인 설치
+mac doctor                 # 상태 확인
+```
+
+## 사용
+
+```bash
+# 도메인 관리
+mac available              # 사용 가능한 도메인
+mac install <domain>       # 설치 (GitHub Release에서 다운)
+mac remove <domain>        # 삭제
+mac update <domain>        # 업데이트
+mac upgrade                # 전체 업그레이드
+
+# 도메인 실행
+mac run keyboard status
+mac run cron list
+mac run connect add proxmox
+
+# TUI
+mac-host-tui               # 시각적 관리
+```
+
+## 도메인
+
+| 도메인 | 설명 |
+|--------|------|
+| bootstrap | 의존성 설치 (brew, gh, dotenvx, rust, nickel) |
+| keyboard | Caps Lock → F18 한영 전환 (hidutil) |
+| connect | 외부 서비스 연결 관리 (.env + dotenvx) |
+| scheduler | 통합 스케줄러 (cron/interval/watch) |
+| cron | LaunchAgents 스케줄 관리 |
+| defaults | macOS 시스템 설정 |
+| dotfiles | 설정 파일 스캔/읽기 |
+| files | 파일 자동 분류, SD 백업 |
+| projects | 프로젝트 스캔/동기화 |
+| worktree | Git worktree 관리 |
+
+## TUI
+
+```
+1:Env | 2:Cron | 3:Configs | 4:Host | 5:Defaults | 6:Store
+```
+
+| 탭 | 기능 |
+|----|------|
+| Env | .env 추가/수정/삭제 + dotenvx 자동 암호화 |
+| Cron | schedule.json 작업 관리 |
+| Configs | dotfiles 보기/편집 |
+| Host | /etc/hosts 관리 |
+| Defaults | macOS defaults 탐색 |
+| Store | 도메인 설치/삭제/업데이트 |
 
 ## 구조
 
 ```
 mac-app-init/
 ├── crates/
-│   ├── core/    # mac-host-core — 20개 도메인 공통 로직
-│   ├── cli/     # mac-host-commands — CLI 바이너리
-│   └── tui/     # mac-host-tui — TUI 바이너리
-└── ncl/         # Nickel 스키마 (도메인 메타데이터, lint, worktree)
+│   ├── core/              # 공통 라이브러리
+│   ├── cli/               # mac-host-commands CLI
+│   ├── tui/               # mac-host-tui TUI
+│   └── domains/           # 독립 바이너리
+│       ├── manager/       # mac (패키지 매니저)
+│       ├── bootstrap/
+│       ├── keyboard/
+│       ├── connect/
+│       ├── scheduler/
+│       └── ...
+├── ncl/                   # Nickel 스키마
+│   ├── domains.ncl        # 도메인 메타데이터
+│   └── schedule.ncl       # 스케줄러 작업 정의
+├── example.env            # 환경변수 템플릿
+└── install.sh             # 한 줄 설치 스크립트
 ```
 
-## 설치
+## 플러그인 시스템
 
-```bash
-# CLI
-cargo install --path crates/cli --locked
+각 도메인은 `domain.ncl` 파일 유무로 활성/비활성:
 
-# TUI
-cargo install --path crates/tui --locked
+```
+crates/core/src/keyboard/
+├── domain.ncl    ← 있으면 활성
+└── mod.rs
+
+# domain.ncl 삭제 → 비활성화 (컴파일에서 제외)
 ```
 
-## 도메인
+## 라이센스
 
-| 번들 | 도메인 | 설명 |
-|------|--------|------|
-| init | keyboard, setup, workspace, github, config | macOS 초기 세팅 |
-| infra | mount, network, ssh, proxmox, synology | 인프라 연결 |
-| auto | cron, files, worktree | 자동화/스케줄 |
-| vault | veil, openclaw | 시크릿/보안 |
-| knowledge | obsidian, dal | 지식 관리 |
+[Business Source License 1.1](LICENSE)
 
-## 사용
-
-```bash
-# CLI
-mac-host-commands status
-mac-host-commands keyboard setup
-mac-host-commands cron list
-
-# TUI
-mac-host-tui
-```
+- 개인/교육/내부 사용: 허용
+- 상업적 사용: 별도 라이센스 (urit245@gmail.com)
+- 2030-04-14 이후: Apache-2.0
