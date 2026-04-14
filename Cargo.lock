@@ -865,6 +865,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "mac-domain-quickaction"
+version = "0.1.0"
+dependencies = [
+ "clap",
+]
+
+[[package]]
 name = "mac-domain-scheduler"
 version = "0.1.0"
 dependencies = [

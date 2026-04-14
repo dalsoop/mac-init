@@ -55,6 +55,7 @@ const KNOWN: &[(&str, &str)] = &[
     ("connect", "외부 서비스 연결 관리 (.env + dotenvx)"),
     ("container", "Docker/OrbStack 컨테이너 관리"),
     ("wireguard", "WireGuard VPN 관리"),
+    ("quickaction", "Finder 우클릭 Quick Actions"),
     ("cron", "LaunchAgents 스케줄 관리"),
     ("defaults", "macOS 시스템 설정"),
     ("dotfiles", "설정 파일 스캔/읽기"),
