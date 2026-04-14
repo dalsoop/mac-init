@@ -3,9 +3,11 @@ use ratatui::{prelude::*, widgets::Tabs};
 use crate::tabs::TabId;
 
 pub fn render_tabbar(frame: &mut Frame, area: Rect, active: &TabId) {
-    let titles: Vec<String> = TabId::ALL
+    let all = TabId::all();
+    let titles: Vec<String> = all
         .iter()
-        .map(|t| format!(" {}:{} ", t.key(), t.label()))
+        .enumerate()
+        .map(|(i, t)| format!(" {}:{} ", i + 1, t.label()))
         .collect();
 
     let tabs = Tabs::new(titles)
