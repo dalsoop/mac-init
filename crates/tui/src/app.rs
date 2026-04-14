@@ -18,6 +18,8 @@ use crate::tabs::defaults::DefaultsTab;
 use crate::tabs::env::EnvTab;
 use crate::tabs::host::HostTab;
 use crate::tabs::containers::ContainersTab;
+#[cfg(domain = "cron")]
+use crate::tabs::cron::CronTab;
 use crate::tabs::status::StatusTab;
 use crate::tabs::store::StoreTab;
 use crate::ui::tabbar::render_tabbar;
@@ -29,6 +31,8 @@ pub struct App {
     brew_tab: BrewTab,
     env_tab: EnvTab,
     containers_tab: ContainersTab,
+    #[cfg(domain = "cron")]
+    cron_tab: CronTab,
     configs_tab: ConfigsTab,
     host_tab: HostTab,
     #[cfg(domain = "defaults")]
@@ -48,6 +52,8 @@ impl App {
             brew_tab: BrewTab::new(),
             env_tab: EnvTab::new(),
             containers_tab: ContainersTab::new(),
+            #[cfg(domain = "cron")]
+            cron_tab: CronTab::new(),
             configs_tab: ConfigsTab::new(),
             host_tab: HostTab::new(),
             #[cfg(domain = "defaults")]
@@ -76,9 +82,16 @@ impl App {
         terminal.draw(|frame| self.render(frame))?;
         self.configs_tab.load().await?;
 
-        self.loading_msg = "Loading services...".to_string();
+        self.loading_msg = "Loading containers...".to_string();
         terminal.draw(|frame| self.render(frame))?;
         self.containers_tab.load().await?;
+
+        #[cfg(domain = "cron")]
+        {
+            self.loading_msg = "Loading cron...".to_string();
+            terminal.draw(|frame| self.render(frame))?;
+            self.cron_tab.load().await?;
+        }
 
         self.loading_msg = "Loading status...".to_string();
         terminal.draw(|frame| self.render(frame))?;
@@ -159,6 +172,8 @@ impl App {
             TabId::Brew => self.brew_tab.render(frame, chunks[1]),
             TabId::Env => self.env_tab.render(frame, chunks[1]),
             TabId::Containers => self.containers_tab.render(frame, chunks[1]),
+            #[cfg(domain = "cron")]
+            TabId::Cron => self.cron_tab.render(frame, chunks[1]),
             TabId::Configs => self.configs_tab.render(frame, chunks[1]),
             TabId::Host => self.host_tab.render(frame, chunks[1]),
             #[cfg(domain = "defaults")]
@@ -172,6 +187,8 @@ impl App {
             TabId::Brew => "/:search u:update r:remove",
             TabId::Env => "d:decrypt /:search e:encrypt",
             TabId::Containers => "l:load s:stop r:restart",
+            #[cfg(domain = "cron")]
+            TabId::Cron => "a:add x:del Enter:edit l:load s:stop",
             TabId::Configs => "e:edit d/u:scroll",
             TabId::Host => "h/l:switch view r:refresh",
             #[cfg(domain = "defaults")]
@@ -234,6 +251,8 @@ impl App {
                     TabId::Brew => self.brew_tab.handle_key(key).await?,
                     TabId::Env => self.env_tab.handle_key(key).await?,
                     TabId::Containers => self.containers_tab.handle_key(key).await?,
+                    #[cfg(domain = "cron")]
+                    TabId::Cron => self.cron_tab.handle_key(key).await?,
                     TabId::Configs => self.configs_tab.handle_key(key).await?,
                     TabId::Host => self.host_tab.handle_key(key).await?,
                     #[cfg(domain = "defaults")]

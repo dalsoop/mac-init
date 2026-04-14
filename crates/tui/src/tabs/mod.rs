@@ -2,6 +2,8 @@
 pub mod brew;
 pub mod configs;
 pub mod containers;
+#[cfg(domain = "cron")]
+pub mod cron;
 #[cfg(domain = "defaults")]
 pub mod defaults;
 pub mod env;
@@ -16,6 +18,8 @@ pub enum TabId {
     Brew,
     Env,
     Containers,
+    #[cfg(domain = "cron")]
+    Cron,
     Configs,
     Host,
     #[cfg(domain = "defaults")]
@@ -31,6 +35,8 @@ impl TabId {
             TabId::Brew,
             TabId::Env,
             TabId::Containers,
+            #[cfg(domain = "cron")]
+            TabId::Cron,
             TabId::Configs,
             TabId::Host,
             #[cfg(domain = "defaults")]
@@ -70,6 +76,8 @@ impl TabId {
             Self::Brew => "Brew",
             Self::Env => "Env",
             Self::Containers => "Containers",
+            #[cfg(domain = "cron")]
+            Self::Cron => "Cron",
             Self::Configs => "Configs",
             Self::Host => "Host",
             #[cfg(domain = "defaults")]
