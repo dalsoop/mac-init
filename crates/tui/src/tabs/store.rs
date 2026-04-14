@@ -51,6 +51,7 @@ fn load_installed() -> Vec<(String, String)> {
 const KNOWN: &[(&str, &str)] = &[
     ("keyboard", "Caps Lock → F18 한영 전환"),
     ("brew", "Homebrew 패키지 관리"),
+    ("connect", "외부 서비스 연결 관리 (.env + dotenvx)"),
     ("cron", "LaunchAgents 스케줄 관리"),
     ("defaults", "macOS 시스템 설정"),
     ("dotfiles", "설정 파일 스캔/읽기"),

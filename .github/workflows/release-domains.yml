@@ -15,6 +15,7 @@ jobs:
         domain:
           - keyboard
           - brew
+          - connect
           - cron
           - defaults
           - dotfiles
