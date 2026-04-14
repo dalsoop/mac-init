@@ -5,6 +5,7 @@ mod dal;
 mod files;
 mod init;
 mod github;
+mod keyboard;
 mod mount;
 mod network;
 mod obsidian;
@@ -97,6 +98,11 @@ enum Commands {
     Files {
         #[command(subcommand)]
         cmd: FilesCmd,
+    },
+    /// 키보드 매핑 (Caps Lock → F18 한영 전환)
+    Keyboard {
+        #[command(subcommand)]
+        cmd: KeyboardCmd,
     },
     /// GitHub CLI 설치 및 연동
     Github {
@@ -383,6 +389,17 @@ enum FilesCmd {
     Lint,
 }
 
+// === KEYBOARD ===
+#[derive(Subcommand)]
+enum KeyboardCmd {
+    /// 키보드 매핑 상태 확인
+    Status,
+    /// Caps Lock → F18 매핑 설정 + LaunchAgent 등록
+    Setup,
+    /// 매핑 제거 + LaunchAgent 삭제
+    Remove,
+}
+
 // === GITHUB ===
 #[derive(Subcommand)]
 enum GithubCmd {
@@ -573,6 +590,12 @@ fn main() {
             FilesCmd::SdDisable => files::sd_disable(),
             FilesCmd::SdRun => files::sd_run(),
             FilesCmd::Lint => files::lint(),
+        },
+
+        Commands::Keyboard { cmd } => match cmd {
+            KeyboardCmd::Status => keyboard::status(),
+            KeyboardCmd::Setup => keyboard::setup(),
+            KeyboardCmd::Remove => keyboard::remove(),
         },
 
         Commands::Github { cmd } => match cmd {
