@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use crate::common;
+use crate::models::keyboard::KeyboardStatus;
 
 const PLIST_LABEL: &str = "com.mac-host-commands.keyboard-remap";
 
@@ -13,53 +14,25 @@ fn plist_path() -> PathBuf {
         .join(format!("{}.plist", PLIST_LABEL))
 }
 
-pub fn status() {
-    println!("=== 키보드 설정 ===\n");
-
-    // Check current hidutil mapping
+/// Query keyboard mapping status (no side effects)
+pub fn get_status() -> KeyboardStatus {
     let (ok, stdout, _) = common::run_cmd("hidutil", &["property", "--get", "UserKeyMapping"]);
-    let has_mapping = ok && stdout.contains("30064771181"); // F18 dst
+    let mapping_active = ok && stdout.contains("30064771181");
+    let launch_agent_exists = plist_path().exists();
+    let karabiner_installed = std::path::Path::new("/Applications/Karabiner-Elements.app").exists();
 
-    println!(
-        "[Caps Lock → F18] {}",
-        if has_mapping {
-            "✓ 적용됨 (hidutil)"
-        } else {
-            "✗ 미적용"
-        }
-    );
-
-    // Check LaunchAgent
-    let plist = plist_path();
-    let has_plist = plist.exists();
-    println!(
-        "[부팅 시 자동 적용] {}",
-        if has_plist {
-            "✓ LaunchAgent 등록됨"
-        } else {
-            "✗ LaunchAgent 없음"
-        }
-    );
-
-    // Check if Karabiner is still installed
-    let has_karabiner = std::path::Path::new("/Applications/Karabiner-Elements.app").exists();
-    if has_karabiner {
-        println!("[Karabiner] ⚠ 아직 설치되어 있음 (hidutil 사용 시 불필요)");
-    } else {
-        println!("[Karabiner] ✓ 미설치 (hidutil로 대체됨)");
+    KeyboardStatus {
+        mapping_active,
+        launch_agent_exists,
+        karabiner_installed,
     }
-
-    // Check input source shortcut
-    println!("\n[입력 소스 단축키 확인]");
-    println!("  시스템 설정 → 키보드 → 키보드 단축키 → 입력 소스");
-    println!("  '이전 입력 소스 선택' = F18 인지 확인 필요");
 }
 
-pub fn setup() {
-    println!("=== 키보드 설정: Caps Lock → F18 (한영 전환) ===\n");
+/// Apply hidutil mapping + create LaunchAgent
+pub fn setup() -> Result<Vec<String>, String> {
+    let mut log = Vec::new();
 
-    // 1. Apply hidutil mapping
-    println!("[1/3] Caps Lock → F18 매핑 적용 중...");
+    // 1. Apply hidutil
     let (ok, _, stderr) = common::run_cmd(
         "hidutil",
         &[
@@ -69,14 +42,12 @@ pub fn setup() {
         ],
     );
     if ok {
-        println!("  ✓ Caps Lock → F18 적용됨");
+        log.push("Caps Lock → F18 적용됨".to_string());
     } else {
-        println!("  ✗ 적용 실패: {}", stderr.trim());
-        return;
+        return Err(format!("hidutil 적용 실패: {}", stderr.trim()));
     }
 
     // 2. Create LaunchAgent
-    println!("[2/3] LaunchAgent 생성 중...");
     let plist = plist_path();
     let content = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -99,60 +70,83 @@ pub fn setup() {
         PLIST_LABEL
     );
 
-    if let Err(e) = fs::write(&plist, content) {
-        println!("  ✗ plist 생성 실패: {}", e);
-        return;
-    }
-    println!("  ✓ {}", plist.display());
+    fs::write(&plist, content).map_err(|e| format!("plist 생성 실패: {}", e))?;
+    log.push(format!("LaunchAgent 생성: {}", plist.display()));
 
-    // 3. Load agent
-    println!("[3/3] LaunchAgent 로드 중...");
+    // 3. Load
     let _ = Command::new("launchctl")
         .args(["unload", &plist.to_string_lossy()])
         .output();
     let (ok, _, stderr) = common::run_cmd("launchctl", &["load", &plist.to_string_lossy()]);
     if ok {
-        println!("  ✓ LaunchAgent 로드됨");
+        log.push("LaunchAgent 로드됨".to_string());
     } else {
-        println!("  ✗ 로드 실패: {}", stderr.trim());
+        return Err(format!("LaunchAgent 로드 실패: {}", stderr.trim()));
     }
 
-    println!("\n=== 완료 ===");
-    println!("  Caps Lock → F18 → 한영 전환");
-    println!("  부팅 시 자동 적용됨");
-    println!("\n  확인: 시스템 설정 → 키보드 → 키보드 단축키 → 입력 소스");
-    println!("        '이전 입력 소스 선택' = F18 인지 확인");
+    Ok(log)
 }
 
-pub fn remove() {
-    println!("=== 키보드 매핑 제거 ===\n");
+/// Remove hidutil mapping + LaunchAgent
+pub fn remove() -> Result<Vec<String>, String> {
+    let mut log = Vec::new();
 
-    // 1. Clear hidutil mapping
-    println!("[1/2] hidutil 매핑 해제 중...");
     let (ok, _, _) = common::run_cmd(
         "hidutil",
         &["property", "--set", r#"{"UserKeyMapping":[]}"#],
     );
     if ok {
-        println!("  ✓ 매핑 해제됨 (재부팅 전까지 유효)");
+        log.push("hidutil 매핑 해제됨".to_string());
     }
 
-    // 2. Remove LaunchAgent
-    println!("[2/2] LaunchAgent 제거 중...");
     let plist = plist_path();
     if plist.exists() {
         let _ = Command::new("launchctl")
             .args(["unload", &plist.to_string_lossy()])
             .output();
-        if let Err(e) = fs::remove_file(&plist) {
-            println!("  ✗ 삭제 실패: {}", e);
-        } else {
-            println!("  ✓ LaunchAgent 제거됨");
-        }
+        fs::remove_file(&plist).map_err(|e| format!("plist 삭제 실패: {}", e))?;
+        log.push("LaunchAgent 제거됨".to_string());
     } else {
-        println!("  - LaunchAgent 없음 (이미 제거됨)");
+        log.push("LaunchAgent 없음 (이미 제거됨)".to_string());
     }
 
-    println!("\n=== 완료 ===");
-    println!("  Caps Lock은 기본 동작으로 복원됩니다.");
+    Ok(log)
+}
+
+// === CLI 표시용 (하위 호환) ===
+pub fn print_status() {
+    let s = get_status();
+    println!("=== 키보드 설정 ===\n");
+    println!("[Caps Lock → F18] {}", if s.mapping_active { "✓ 적용됨 (hidutil)" } else { "✗ 미적용" });
+    println!("[부팅 시 자동 적용] {}", if s.launch_agent_exists { "✓ LaunchAgent 등록됨" } else { "✗ LaunchAgent 없음" });
+    if s.karabiner_installed {
+        println!("[Karabiner] ⚠ 아직 설치되어 있음 (hidutil 사용 시 불필요)");
+    } else {
+        println!("[Karabiner] ✓ 미설치 (hidutil로 대체됨)");
+    }
+    println!("\n[입력 소스 단축키 확인]");
+    println!("  시스템 설정 → 키보드 → 키보드 단축키 → 입력 소스");
+    println!("  '이전 입력 소스 선택' = F18 인지 확인 필요");
+}
+
+pub fn print_setup() {
+    println!("=== 키보드 설정: Caps Lock → F18 (한영 전환) ===\n");
+    match setup() {
+        Ok(logs) => {
+            for l in &logs { println!("  ✓ {}", l); }
+            println!("\n=== 완료 ===");
+        }
+        Err(e) => println!("  ✗ {}", e),
+    }
+}
+
+pub fn print_remove() {
+    println!("=== 키보드 매핑 제거 ===\n");
+    match remove() {
+        Ok(logs) => {
+            for l in &logs { println!("  ✓ {}", l); }
+            println!("\n=== 완료 ===");
+        }
+        Err(e) => println!("  ✗ {}", e),
+    }
 }

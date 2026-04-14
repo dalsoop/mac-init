@@ -2,8 +2,8 @@ use color_eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{prelude::*, widgets::*};
 
-use crate::models::LaunchAgent;
-use crate::services;
+use mac_host_core::cron;
+use mac_host_core::models::cron::LaunchAgent;
 
 pub struct ServicesTab {
     agents: Vec<LaunchAgent>,
@@ -21,7 +21,7 @@ impl ServicesTab {
     }
 
     pub async fn load(&mut self) -> Result<()> {
-        self.agents = services::launch_agents::scan_agents()?;
+        self.agents = cron::get_agents();
         Ok(())
     }
 
@@ -31,7 +31,6 @@ impl ServicesTab {
             .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
             .split(area);
 
-        // Left: agents table
         let visible_height = chunks[0].height.saturating_sub(2) as usize;
         let scroll = self.selected.saturating_sub(visible_height.saturating_sub(1));
 
@@ -65,16 +64,18 @@ impl ServicesTab {
                 Row::new(vec![
                     Cell::from(status).style(if is_selected { base_style } else { status_style }),
                     Cell::from(agent.label.as_str()).style(base_style),
+                    Cell::from(agent.schedule.as_str()).style(base_style),
                 ])
             })
             .collect();
 
-        let header = Row::new(vec!["Status", "Label"])
+        let header = Row::new(vec!["Status", "Label", "Schedule"])
             .style(Style::default().fg(Color::Yellow).bold());
 
         let table = Table::new(rows, [
             Constraint::Length(18),
             Constraint::Min(20),
+            Constraint::Length(25),
         ])
         .header(header)
         .block(
@@ -85,7 +86,6 @@ impl ServicesTab {
         );
         frame.render_widget(table, chunks[0]);
 
-        // Right: details + output
         let right = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
@@ -100,11 +100,8 @@ impl ServicesTab {
                 "Stopped".to_string()
             };
             format!(
-                "Label: {}\nStatus: {}\nPath: {}\nProgram: {}",
-                agent.label,
-                status,
-                agent.path.display(),
-                agent.program,
+                "Label: {}\nStatus: {}\nSchedule: {}\nPath: {}\nProgram: {}",
+                agent.label, status, agent.schedule, agent.path.display(), agent.program,
             )
         } else {
             "No agent selected".to_string()
@@ -141,25 +138,33 @@ impl ServicesTab {
                 }
             }
             KeyCode::Char('l') => {
-                // Load/start agent
                 if let Some(agent) = self.agents.get(self.selected) {
-                    if !agent.loaded {
-                        let label = agent.label.clone();
-                        let path = agent.path.clone();
-                        self.output = services::launch_agents::load_agent(&label, &path)?;
-                        self.load().await?;
+                    let label = agent.label.clone();
+                    match cron::load_agent(&label) {
+                        Ok(msg) => self.output = msg,
+                        Err(msg) => self.output = msg,
                     }
+                    self.load().await?;
                 }
             }
             KeyCode::Char('s') => {
-                // Stop/unload agent
                 if let Some(agent) = self.agents.get(self.selected) {
-                    if agent.loaded {
-                        let label = agent.label.clone();
-                        let path = agent.path.clone();
-                        self.output = services::launch_agents::unload_agent(&label, &path)?;
-                        self.load().await?;
+                    let label = agent.label.clone();
+                    match cron::unload_agent(&label) {
+                        Ok(msg) => self.output = msg,
+                        Err(msg) => self.output = msg,
                     }
+                    self.load().await?;
+                }
+            }
+            KeyCode::Char('r') => {
+                if let Some(agent) = self.agents.get(self.selected) {
+                    let label = agent.label.clone();
+                    match cron::restart_agent(&label) {
+                        Ok(msg) => self.output = msg,
+                        Err(msg) => self.output = msg,
+                    }
+                    self.load().await?;
                 }
             }
             _ => {}

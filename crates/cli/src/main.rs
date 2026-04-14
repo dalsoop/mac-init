@@ -705,9 +705,9 @@ fn main() {
         },
 
         Commands::Keyboard { cmd } => match cmd {
-            KeyboardCmd::Status => keyboard::status(),
-            KeyboardCmd::Setup => keyboard::setup(),
-            KeyboardCmd::Remove => keyboard::remove(),
+            KeyboardCmd::Status => keyboard::print_status(),
+            KeyboardCmd::Setup => keyboard::print_setup(),
+            KeyboardCmd::Remove => keyboard::print_remove(),
         },
 
         Commands::Github { cmd } => match cmd {

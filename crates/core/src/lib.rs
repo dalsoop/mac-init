@@ -1,6 +1,7 @@
 pub mod common;
 pub mod constants;
 pub mod config;
+pub mod models;
 pub mod cron;
 pub mod dal;
 pub mod files;
