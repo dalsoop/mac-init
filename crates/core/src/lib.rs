@@ -19,3 +19,4 @@ pub mod veil;
 pub mod worktree;
 pub mod workspace;
 pub mod openclaw;
+pub mod projects;

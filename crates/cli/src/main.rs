@@ -1,6 +1,6 @@
 use mac_host_core::{
     common, config, cron, dal, files, github, init, keyboard,
-    mount, network, obsidian, openclaw, proxmox, setup, ssh, synology,
+    mount, network, obsidian, openclaw, projects, proxmox, setup, ssh, synology,
     veil, worktree, workspace,
 };
 use clap::{Parser, Subcommand};
@@ -104,6 +104,11 @@ enum Commands {
     Obsidian {
         #[command(subcommand)]
         cmd: ObsidianCmd,
+    },
+    /// 프로젝트 스캔/동기화
+    Projects {
+        #[command(subcommand)]
+        cmd: ProjectsCmd,
     },
     /// OpenClaw AI 어시스턴트 (설치/삭제/터널)
     Openclaw {
@@ -542,6 +547,14 @@ enum OpenclawCmd {
 
 // === PROXMOX ===
 #[derive(Subcommand)]
+enum ProjectsCmd {
+    /// 프로젝트 목록
+    Status,
+    /// ~/문서/프로젝트/ 스캔 → ncl/projects.ncl 갱신
+    Sync,
+}
+
+#[derive(Subcommand)]
 enum ProxmoxCmd {
     /// Proxmox 상태 확인
     Status,
@@ -743,6 +756,11 @@ fn main() {
             ObsidianCmd::PluginInstall { repo } => obsidian::install_plugin(&repo),
             ObsidianCmd::PluginRemove { name } => obsidian::remove_plugin(&name),
             ObsidianCmd::PluginList => obsidian::list_plugins(),
+        },
+
+        Commands::Projects { cmd } => match cmd {
+            ProjectsCmd::Status => projects::status(),
+            ProjectsCmd::Sync => projects::sync_ncl(),
         },
 
         Commands::Proxmox { cmd } => match cmd {
