@@ -15,7 +15,6 @@ jobs:
         domain:
           - bootstrap
           - keyboard
-          - brew
           - connect
           - cron
           - defaults

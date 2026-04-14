@@ -783,14 +783,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mac-domain-brew"
-version = "0.1.0"
-dependencies = [
- "clap",
- "mac-host-core",
-]
-
-[[package]]
 name = "mac-domain-connect"
 version = "0.1.0"
 dependencies = [

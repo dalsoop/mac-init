@@ -52,7 +52,6 @@ const KNOWN: &[(&str, &str)] = &[
     ("bootstrap", "최초 의존성 설치 (brew, gh, dotenvx, rust, nickel)"),
     ("keyboard", "Caps Lock → F18 한영 전환"),
     ("scheduler", "통합 스케줄러 (cron/interval/watch)"),
-    ("brew", "Homebrew 패키지 관리"),
     ("connect", "외부 서비스 연결 관리 (.env + dotenvx)"),
     ("cron", "LaunchAgents 스케줄 관리"),
     ("defaults", "macOS 시스템 설정"),

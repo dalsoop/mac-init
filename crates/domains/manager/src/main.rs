@@ -95,7 +95,7 @@ fn asset_name(domain: &str) -> String {
 
 fn known_domains() -> Vec<&'static str> {
     vec![
-        "bootstrap", "keyboard", "brew", "connect", "cron", "defaults", "dotfiles",
+        "bootstrap", "keyboard", "connect", "cron", "defaults", "dotfiles",
         "scheduler",
         "files", "projects", "worktree",
         // infra domains (available but not installed by default)

@@ -10,8 +10,6 @@ use ratatui::prelude::*;
 use ratatui::widgets::Paragraph;
 
 use crate::tabs::TabId;
-#[cfg(domain = "brew")]
-use crate::tabs::brew::BrewTab;
 use crate::tabs::configs::ConfigsTab;
 #[cfg(domain = "cron")]
 use crate::tabs::cron::CronTab;
@@ -24,8 +22,6 @@ use crate::ui::tabbar::render_tabbar;
 
 pub struct App {
     active_tab: TabId,
-    #[cfg(domain = "brew")]
-    brew_tab: BrewTab,
     env_tab: EnvTab,
     #[cfg(domain = "cron")]
     cron_tab: CronTab,
@@ -44,8 +40,6 @@ impl App {
         let first_tab = TabId::all().first().copied().unwrap_or(TabId::Env);
         Ok(Self {
             active_tab: first_tab,
-            #[cfg(domain = "brew")]
-            brew_tab: BrewTab::new(),
             env_tab: EnvTab::new(),
             #[cfg(domain = "cron")]
             cron_tab: CronTab::new(),
@@ -92,13 +86,6 @@ impl App {
             self.loading_msg = "Loading defaults...".to_string();
             terminal.draw(|frame| self.render(frame))?;
             self.defaults_tab.load().await?;
-        }
-
-        #[cfg(domain = "brew")]
-        {
-            self.loading_msg = "Loading brew...".to_string();
-            terminal.draw(|frame| self.render(frame))?;
-            self.brew_tab.load().await?;
         }
 
         self.loading_msg = "Loading store...".to_string();
@@ -157,8 +144,6 @@ impl App {
         render_tabbar(frame, chunks[0], &self.active_tab);
 
         match self.active_tab {
-            #[cfg(domain = "brew")]
-            TabId::Brew => self.brew_tab.render(frame, chunks[1]),
             TabId::Env => self.env_tab.render(frame, chunks[1]),
             #[cfg(domain = "cron")]
             TabId::Cron => self.cron_tab.render(frame, chunks[1]),
@@ -170,8 +155,6 @@ impl App {
         }
 
         let tab_hints = match self.active_tab {
-            #[cfg(domain = "brew")]
-            TabId::Brew => "/:search u:update r:remove",
             TabId::Env => "a:add Enter:edit x:del d:decrypt",
             #[cfg(domain = "cron")]
             TabId::Cron => "a:add x:del t:toggle Enter:run",
@@ -232,8 +215,6 @@ impl App {
                 }
 
                 match self.active_tab {
-                    #[cfg(domain = "brew")]
-                    TabId::Brew => self.brew_tab.handle_key(key).await?,
                     TabId::Env => self.env_tab.handle_key(key).await?,
                     #[cfg(domain = "cron")]
                     TabId::Cron => self.cron_tab.handle_key(key).await?,

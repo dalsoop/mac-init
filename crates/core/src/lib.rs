@@ -2,8 +2,6 @@ pub mod common;
 pub mod config;
 pub mod models;
 
-#[cfg(domain = "brew")]
-pub mod brew;
 #[cfg(domain = "cron")]
 pub mod cron;
 #[cfg(domain = "defaults")]
