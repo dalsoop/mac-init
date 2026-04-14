@@ -22,6 +22,7 @@ jobs:
           - dotfiles
           - files
           - projects
+          - scheduler
           - worktree
 
     runs-on: macos-14

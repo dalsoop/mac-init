@@ -857,6 +857,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "mac-domain-scheduler"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "mac-domain-worktree"
 version = "0.1.0"
 dependencies = [
@@ -890,6 +899,7 @@ dependencies = [
  "crossterm",
  "mac-host-core",
  "ratatui",
+ "serde",
  "serde_json",
  "tokio",
 ]
