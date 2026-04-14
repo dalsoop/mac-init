@@ -1,23 +1,19 @@
 #[cfg(domain = "brew")]
 pub mod brew;
 pub mod configs;
-pub mod containers;
 #[cfg(domain = "cron")]
 pub mod cron;
 #[cfg(domain = "defaults")]
 pub mod defaults;
 pub mod env;
 pub mod host;
-pub mod status;
 pub mod store;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TabId {
-    Status,
     #[cfg(domain = "brew")]
     Brew,
     Env,
-    Containers,
     #[cfg(domain = "cron")]
     Cron,
     Configs,
@@ -30,11 +26,9 @@ pub enum TabId {
 impl TabId {
     pub fn all() -> Vec<TabId> {
         vec![
-            TabId::Status,
             #[cfg(domain = "brew")]
             TabId::Brew,
             TabId::Env,
-            TabId::Containers,
             #[cfg(domain = "cron")]
             TabId::Cron,
             TabId::Configs,
@@ -71,11 +65,9 @@ impl TabId {
 
     pub fn label(&self) -> &'static str {
         match self {
-            Self::Status => "Status",
             #[cfg(domain = "brew")]
             Self::Brew => "Brew",
             Self::Env => "Env",
-            Self::Containers => "Containers",
             #[cfg(domain = "cron")]
             Self::Cron => "Cron",
             Self::Configs => "Configs",

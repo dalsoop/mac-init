@@ -13,24 +13,20 @@ use crate::tabs::TabId;
 #[cfg(domain = "brew")]
 use crate::tabs::brew::BrewTab;
 use crate::tabs::configs::ConfigsTab;
+#[cfg(domain = "cron")]
+use crate::tabs::cron::CronTab;
 #[cfg(domain = "defaults")]
 use crate::tabs::defaults::DefaultsTab;
 use crate::tabs::env::EnvTab;
 use crate::tabs::host::HostTab;
-use crate::tabs::containers::ContainersTab;
-#[cfg(domain = "cron")]
-use crate::tabs::cron::CronTab;
-use crate::tabs::status::StatusTab;
 use crate::tabs::store::StoreTab;
 use crate::ui::tabbar::render_tabbar;
 
 pub struct App {
     active_tab: TabId,
-    status_tab: StatusTab,
     #[cfg(domain = "brew")]
     brew_tab: BrewTab,
     env_tab: EnvTab,
-    containers_tab: ContainersTab,
     #[cfg(domain = "cron")]
     cron_tab: CronTab,
     configs_tab: ConfigsTab,
@@ -45,13 +41,12 @@ pub struct App {
 
 impl App {
     pub fn new() -> Result<Self> {
+        let first_tab = TabId::all().first().copied().unwrap_or(TabId::Env);
         Ok(Self {
-            active_tab: TabId::Status,
-            status_tab: StatusTab::new(),
+            active_tab: first_tab,
             #[cfg(domain = "brew")]
             brew_tab: BrewTab::new(),
             env_tab: EnvTab::new(),
-            containers_tab: ContainersTab::new(),
             #[cfg(domain = "cron")]
             cron_tab: CronTab::new(),
             configs_tab: ConfigsTab::new(),
@@ -73,7 +68,6 @@ impl App {
         let mut terminal = ratatui::Terminal::new(backend)?;
         terminal.clear()?;
 
-        // Load tabs
         self.loading_msg = "Loading env...".to_string();
         terminal.draw(|frame| self.render(frame))?;
         self.env_tab.load().await?;
@@ -82,9 +76,9 @@ impl App {
         terminal.draw(|frame| self.render(frame))?;
         self.configs_tab.load().await?;
 
-        self.loading_msg = "Loading containers...".to_string();
+        self.loading_msg = "Loading host...".to_string();
         terminal.draw(|frame| self.render(frame))?;
-        self.containers_tab.load().await?;
+        self.host_tab.load().await?;
 
         #[cfg(domain = "cron")]
         {
@@ -92,10 +86,6 @@ impl App {
             terminal.draw(|frame| self.render(frame))?;
             self.cron_tab.load().await?;
         }
-
-        self.loading_msg = "Loading status...".to_string();
-        terminal.draw(|frame| self.render(frame))?;
-        self.status_tab.load().await?;
 
         #[cfg(domain = "defaults")]
         {
@@ -141,7 +131,7 @@ impl App {
                 ])
                 .split(area);
             frame.render_widget(
-                Paragraph::new("mac-init")
+                Paragraph::new("mac-app-init")
                     .style(Style::default().fg(Color::Cyan).bold())
                     .alignment(Alignment::Center),
                 center[1],
@@ -167,11 +157,9 @@ impl App {
         render_tabbar(frame, chunks[0], &self.active_tab);
 
         match self.active_tab {
-            TabId::Status => self.status_tab.render(frame, chunks[1]),
             #[cfg(domain = "brew")]
             TabId::Brew => self.brew_tab.render(frame, chunks[1]),
             TabId::Env => self.env_tab.render(frame, chunks[1]),
-            TabId::Containers => self.containers_tab.render(frame, chunks[1]),
             #[cfg(domain = "cron")]
             TabId::Cron => self.cron_tab.render(frame, chunks[1]),
             TabId::Configs => self.configs_tab.render(frame, chunks[1]),
@@ -182,15 +170,13 @@ impl App {
         }
 
         let tab_hints = match self.active_tab {
-            TabId::Status => "r:refresh enter:action",
             #[cfg(domain = "brew")]
             TabId::Brew => "/:search u:update r:remove",
-            TabId::Env => "d:decrypt /:search e:encrypt",
-            TabId::Containers => "l:load s:stop r:restart",
+            TabId::Env => "a:add Enter:edit x:del d:decrypt",
             #[cfg(domain = "cron")]
-            TabId::Cron => "a:add x:del Enter:edit l:load s:stop",
+            TabId::Cron => "a:add x:del t:toggle Enter:run",
             TabId::Configs => "e:edit d/u:scroll",
-            TabId::Host => "h/l:switch view r:refresh",
+            TabId::Host => "a:add x:del t:toggle",
             #[cfg(domain = "defaults")]
             TabId::Defaults => "enter:open esc:back",
             TabId::Store => "i:install d:remove u:update",
@@ -246,11 +232,9 @@ impl App {
                 }
 
                 match self.active_tab {
-                    TabId::Status => self.status_tab.handle_key(key).await?,
                     #[cfg(domain = "brew")]
                     TabId::Brew => self.brew_tab.handle_key(key).await?,
                     TabId::Env => self.env_tab.handle_key(key).await?,
-                    TabId::Containers => self.containers_tab.handle_key(key).await?,
                     #[cfg(domain = "cron")]
                     TabId::Cron => self.cron_tab.handle_key(key).await?,
                     TabId::Configs => self.configs_tab.handle_key(key).await?,
