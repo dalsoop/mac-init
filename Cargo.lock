@@ -776,6 +776,70 @@ dependencies = [
 ]
 
 [[package]]
+name = "mac-domain-brew"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "mac-host-core",
+]
+
+[[package]]
+name = "mac-domain-cron"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "mac-host-core",
+]
+
+[[package]]
+name = "mac-domain-defaults"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "mac-host-core",
+]
+
+[[package]]
+name = "mac-domain-dotfiles"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "mac-host-core",
+]
+
+[[package]]
+name = "mac-domain-files"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "mac-host-core",
+]
+
+[[package]]
+name = "mac-domain-keyboard"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "mac-host-core",
+]
+
+[[package]]
+name = "mac-domain-projects"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "mac-host-core",
+]
+
+[[package]]
+name = "mac-domain-worktree"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "mac-host-core",
+]
+
+[[package]]
 name = "mac-host-commands"
 version = "0.1.0"
 dependencies = [
