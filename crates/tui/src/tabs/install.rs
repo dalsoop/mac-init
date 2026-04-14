@@ -80,6 +80,22 @@ pub struct InstallTab {
 
 fn home() -> String { std::env::var("HOME").unwrap_or_default() }
 
+fn mac_bin_path() -> String {
+    // Try common install locations in priority order
+    let candidates = [
+        format!("{}/.cargo/bin/mac", home()),
+        format!("{}/.local/bin/mac", home()),
+        "/usr/local/bin/mac".to_string(),
+        "/opt/homebrew/bin/mac".to_string(),
+    ];
+    for c in &candidates {
+        if std::path::Path::new(c).exists() {
+            return c.clone();
+        }
+    }
+    "mac".to_string()
+}
+
 fn registry_installed() -> Vec<String> {
     let path = PathBuf::from(home()).join(".mac-app-init/domains/registry.json");
     if !path.exists() { return Vec::new(); }
@@ -275,14 +291,24 @@ impl InstallTab {
         match node.kind {
             NodeKind::Category => { self.state.toggle(self.state.selected().to_vec()); }
             NodeKind::Domain { name, installed } => {
-                self.output = format!("{}ing {}...", if installed { "Remov" } else { "Install" }, name);
                 let action = if installed { "remove" } else { "install" };
-                let out = Command::new("mac").args([action, &name]).output();
+                self.output = format!("{} {}...", action, name);
+                let mac_bin = mac_bin_path();
+                let out = Command::new(&mac_bin).args([action, &name]).output();
                 self.output = match out {
-                    Ok(o) => format!("{}{}",
-                        String::from_utf8_lossy(&o.stdout),
-                        String::from_utf8_lossy(&o.stderr)),
-                    Err(e) => format!("Error: {}", e),
+                    Ok(o) if o.status.success() => format!(
+                        "✓ {} {} 완료\n{}",
+                        name,
+                        if action == "install" { "설치" } else { "삭제" },
+                        String::from_utf8_lossy(&o.stdout).trim()
+                    ),
+                    Ok(o) => format!(
+                        "✗ {} 실패\nstdout: {}\nstderr: {}",
+                        name,
+                        String::from_utf8_lossy(&o.stdout).trim(),
+                        String::from_utf8_lossy(&o.stderr).trim()
+                    ),
+                    Err(e) => format!("✗ '{}' 실행 실패: {}", mac_bin, e),
                 };
                 self.load().await?;
             }
