@@ -2,7 +2,7 @@ use std::io;
 
 use color_eyre::Result;
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand,
 };
@@ -20,7 +20,7 @@ use crate::tabs::container::ContainerTab;
 use crate::tabs::env::EnvTab;
 use crate::tabs::git::GitTab;
 use crate::tabs::host::HostTab;
-use crate::tabs::store::StoreTab;
+use crate::tabs::install::InstallTab;
 use crate::ui::tabbar::render_tabbar;
 
 pub struct App {
@@ -35,7 +35,7 @@ pub struct App {
     host_tab: HostTab,
     #[cfg(domain = "defaults")]
     defaults_tab: DefaultsTab,
-    store_tab: StoreTab,
+    install_tab: InstallTab,
     should_quit: bool,
     loading: bool,
     loading_msg: String,
@@ -56,7 +56,7 @@ impl App {
             host_tab: HostTab::new(),
             #[cfg(domain = "defaults")]
             defaults_tab: DefaultsTab::new(),
-            store_tab: StoreTab::new(),
+            install_tab: InstallTab::new(),
             should_quit: false,
             loading: true,
             loading_msg: "Starting...".to_string(),
@@ -65,6 +65,7 @@ impl App {
 
     pub async fn run(&mut self) -> Result<()> {
         io::stdout().execute(EnterAlternateScreen)?;
+        io::stdout().execute(EnableMouseCapture)?;
         enable_raw_mode()?;
 
         let backend = CrosstermBackend::new(io::stdout());
@@ -109,9 +110,9 @@ impl App {
             self.defaults_tab.load().await?;
         }
 
-        self.loading_msg = "Loading store...".to_string();
+        self.loading_msg = "Loading install...".to_string();
         terminal.draw(|frame| self.render(frame))?;
-        self.store_tab.load().await?;
+        self.install_tab.load().await?;
 
         self.loading = false;
 
@@ -120,12 +121,13 @@ impl App {
             self.handle_events().await?;
         }
 
+        io::stdout().execute(DisableMouseCapture)?;
         io::stdout().execute(LeaveAlternateScreen)?;
         disable_raw_mode()?;
         Ok(())
     }
 
-    fn render(&self, frame: &mut Frame) {
+    fn render(&mut self, frame: &mut Frame) {
         if self.loading {
             let area = frame.area();
             let center = Layout::default()
@@ -175,7 +177,7 @@ impl App {
             TabId::Host => self.host_tab.render(frame, chunks[1]),
             #[cfg(domain = "defaults")]
             TabId::Defaults => self.defaults_tab.render(frame, chunks[1]),
-            TabId::Store => self.store_tab.render(frame, chunks[1]),
+            TabId::Install => self.install_tab.render(frame, chunks[1]),
         }
 
         let tab_hints = match self.active_tab {
@@ -189,7 +191,7 @@ impl App {
             TabId::Host => "a:add x:del t:toggle",
             #[cfg(domain = "defaults")]
             TabId::Defaults => "enter:open esc:back",
-            TabId::Store => "i:install d:remove u:update",
+            TabId::Install => "Space:expand Enter:action 마우스클릭 r:refresh",
         };
         let tab_count = TabId::count();
         let status = Line::from(vec![
@@ -209,7 +211,17 @@ impl App {
 
     async fn handle_events(&mut self) -> Result<()> {
         if event::poll(std::time::Duration::from_millis(50))? {
-            if let Event::Key(key) = event::read()? {
+            let evt = event::read()?;
+
+            // Mouse events for Install tab
+            if let Event::Mouse(m) = evt {
+                if matches!(self.active_tab, TabId::Install) {
+                    self.install_tab.handle_mouse(m).await?;
+                }
+                return Ok(());
+            }
+
+            if let Event::Key(key) = evt {
                 if key.kind != KeyEventKind::Press {
                     return Ok(());
                 }
@@ -252,7 +264,7 @@ impl App {
                     TabId::Host => self.host_tab.handle_key(key).await?,
                     #[cfg(domain = "defaults")]
                     TabId::Defaults => self.defaults_tab.handle_key(key).await?,
-                    TabId::Store => self.store_tab.handle_key(key).await?,
+                    TabId::Install => self.install_tab.handle_key(key).await?,
                 }
             }
         }

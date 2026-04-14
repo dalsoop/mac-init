@@ -8,7 +8,7 @@ pub mod defaults;
 pub mod env;
 pub mod git;
 pub mod host;
-pub mod store;
+pub mod install;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TabId {
@@ -22,7 +22,7 @@ pub enum TabId {
     Host,
     #[cfg(domain = "defaults")]
     Defaults,
-    Store,
+    Install,
 }
 
 impl TabId {
@@ -38,7 +38,7 @@ impl TabId {
             TabId::Host,
             #[cfg(domain = "defaults")]
             TabId::Defaults,
-            TabId::Store,
+            TabId::Install,
         ]
     }
 
@@ -78,7 +78,7 @@ impl TabId {
             Self::Host => "Host",
             #[cfg(domain = "defaults")]
             Self::Defaults => "Defaults",
-            Self::Store => "Store",
+            Self::Install => "Install",
         }
     }
 }
