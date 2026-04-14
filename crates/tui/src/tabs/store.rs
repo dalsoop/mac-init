@@ -49,6 +49,7 @@ fn load_installed() -> Vec<(String, String)> {
 }
 
 const KNOWN: &[(&str, &str)] = &[
+    ("bootstrap", "최초 의존성 설치 (brew, gh, dotenvx, rust, nickel)"),
     ("keyboard", "Caps Lock → F18 한영 전환"),
     ("brew", "Homebrew 패키지 관리"),
     ("connect", "외부 서비스 연결 관리 (.env + dotenvx)"),
