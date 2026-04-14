@@ -2,6 +2,7 @@
 name = "mac-domain-cron"
 version = "0.1.0"
 edition = "2024"
+license = "BUSL-1.1"
 
 [dependencies]
 mac-host-core = { path = "../../core" }
