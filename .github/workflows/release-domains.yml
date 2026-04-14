@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  build-domains:
     strategy:
       matrix:
         domain:
@@ -22,99 +22,68 @@ jobs:
           - files
           - projects
           - worktree
-        include:
-          - target: aarch64-apple-darwin
-            os: macos-14
-          - target: x86_64-apple-darwin
-            os: macos-13
 
-    runs-on: ${{ matrix.os }}
+    runs-on: macos-14
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
 
-      - name: Build domain binary
-        run: |
-          cargo build --release -p mac-domain-${{ matrix.domain }} --target ${{ matrix.target }}
+      - name: Build aarch64
+        run: cargo build --release -p mac-domain-${{ matrix.domain }} --target aarch64-apple-darwin
+
+      - name: Build x86_64
+        run: cargo build --release -p mac-domain-${{ matrix.domain }} --target x86_64-apple-darwin
 
       - name: Package
         run: |
-          BINARY=target/${{ matrix.target }}/release/mac-domain-${{ matrix.domain }}
-          ASSET=mac-domain-${{ matrix.domain }}-${{ matrix.target }}.tar.gz
-          tar czf $ASSET -C target/${{ matrix.target }}/release mac-domain-${{ matrix.domain }}
-          echo "ASSET=$ASSET" >> $GITHUB_ENV
+          tar czf mac-domain-${{ matrix.domain }}-aarch64-apple-darwin.tar.gz \
+            -C target/aarch64-apple-darwin/release mac-domain-${{ matrix.domain }}
+          tar czf mac-domain-${{ matrix.domain }}-x86_64-apple-darwin.tar.gz \
+            -C target/x86_64-apple-darwin/release mac-domain-${{ matrix.domain }}
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ env.ASSET }}
+          files: |
+            mac-domain-${{ matrix.domain }}-aarch64-apple-darwin.tar.gz
+            mac-domain-${{ matrix.domain }}-x86_64-apple-darwin.tar.gz
 
-  build-manager:
-    strategy:
-      matrix:
-        include:
-          - target: aarch64-apple-darwin
-            os: macos-14
-          - target: x86_64-apple-darwin
-            os: macos-13
-
-    runs-on: ${{ matrix.os }}
+  build-manager-and-tui:
+    runs-on: macos-14
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
 
       - name: Build manager
         run: |
-          cargo build --release -p mac-domain-manager --target ${{ matrix.target }}
-
-      - name: Package
-        run: |
-          ASSET=mac-${{ matrix.target }}.tar.gz
-          tar czf $ASSET -C target/${{ matrix.target }}/release mac
-          echo "ASSET=$ASSET" >> $GITHUB_ENV
-
-      - name: Upload to release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ${{ env.ASSET }}
-
-  build-tui:
-    strategy:
-      matrix:
-        include:
-          - target: aarch64-apple-darwin
-            os: macos-14
-          - target: x86_64-apple-darwin
-            os: macos-13
-
-    runs-on: ${{ matrix.os }}
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
+          cargo build --release -p mac-domain-manager --target aarch64-apple-darwin
+          cargo build --release -p mac-domain-manager --target x86_64-apple-darwin
 
       - name: Build TUI
         run: |
-          cargo build --release -p mac-host-tui --target ${{ matrix.target }}
+          cargo build --release -p mac-host-tui --target aarch64-apple-darwin
+          cargo build --release -p mac-host-tui --target x86_64-apple-darwin
 
       - name: Package
         run: |
-          ASSET=mac-host-tui-${{ matrix.target }}.tar.gz
-          tar czf $ASSET -C target/${{ matrix.target }}/release mac-host-tui
-          echo "ASSET=$ASSET" >> $GITHUB_ENV
+          tar czf mac-aarch64-apple-darwin.tar.gz -C target/aarch64-apple-darwin/release mac
+          tar czf mac-x86_64-apple-darwin.tar.gz -C target/x86_64-apple-darwin/release mac
+          tar czf mac-host-tui-aarch64-apple-darwin.tar.gz -C target/aarch64-apple-darwin/release mac-host-tui
+          tar czf mac-host-tui-x86_64-apple-darwin.tar.gz -C target/x86_64-apple-darwin/release mac-host-tui
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ env.ASSET }}
+          files: |
+            mac-aarch64-apple-darwin.tar.gz
+            mac-x86_64-apple-darwin.tar.gz
+            mac-host-tui-aarch64-apple-darwin.tar.gz
+            mac-host-tui-x86_64-apple-darwin.tar.gz
