@@ -1,4 +1,5 @@
 pub mod configs;
+pub mod connect;
 #[cfg(domain = "cron")]
 pub mod cron;
 #[cfg(domain = "defaults")]
@@ -10,6 +11,7 @@ pub mod store;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TabId {
     Env,
+    Connect,
     #[cfg(domain = "cron")]
     Cron,
     Configs,
@@ -23,6 +25,7 @@ impl TabId {
     pub fn all() -> Vec<TabId> {
         vec![
             TabId::Env,
+            TabId::Connect,
             #[cfg(domain = "cron")]
             TabId::Cron,
             TabId::Configs,
@@ -60,6 +63,7 @@ impl TabId {
     pub fn label(&self) -> &'static str {
         match self {
             Self::Env => "Env",
+            Self::Connect => "Connect",
             #[cfg(domain = "cron")]
             Self::Cron => "Cron",
             Self::Configs => "Configs",
