@@ -22,6 +22,7 @@ jobs:
           - dotfiles
           - files
           - git
+          - wireguard
           - projects
           - scheduler
           - worktree

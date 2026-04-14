@@ -874,6 +874,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "mac-domain-wireguard"
+version = "0.1.0"
+dependencies = [
+ "clap",
+]
+
+[[package]]
 name = "mac-domain-worktree"
 version = "0.1.0"
 dependencies = [

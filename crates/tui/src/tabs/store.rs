@@ -54,6 +54,7 @@ const KNOWN: &[(&str, &str)] = &[
     ("scheduler", "통합 스케줄러 (cron/interval/watch)"),
     ("connect", "외부 서비스 연결 관리 (.env + dotenvx)"),
     ("container", "Docker/OrbStack 컨테이너 관리"),
+    ("wireguard", "WireGuard VPN 관리"),
     ("cron", "LaunchAgents 스케줄 관리"),
     ("defaults", "macOS 시스템 설정"),
     ("dotfiles", "설정 파일 스캔/읽기"),
