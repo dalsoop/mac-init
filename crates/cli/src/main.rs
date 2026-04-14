@@ -1,8 +1,41 @@
-use mac_host_core::{
-    common, config, cron, dal, files, github, init, keyboard,
-    mount, network, obsidian, openclaw, projects, proxmox, setup, ssh, synology,
-    veil, worktree, workspace,
-};
+use mac_host_core::common;
+use mac_host_core::config;
+#[cfg(domain = "cron")]
+use mac_host_core::cron;
+#[cfg(domain = "dal")]
+use mac_host_core::dal;
+#[cfg(domain = "files")]
+use mac_host_core::files;
+#[cfg(domain = "github")]
+use mac_host_core::github;
+#[cfg(domain = "init")]
+use mac_host_core::init;
+#[cfg(domain = "keyboard")]
+use mac_host_core::keyboard;
+#[cfg(domain = "mount")]
+use mac_host_core::mount;
+#[cfg(domain = "network")]
+use mac_host_core::network;
+#[cfg(domain = "obsidian")]
+use mac_host_core::obsidian;
+#[cfg(domain = "openclaw")]
+use mac_host_core::openclaw;
+#[cfg(domain = "projects")]
+use mac_host_core::projects;
+#[cfg(domain = "proxmox")]
+use mac_host_core::proxmox;
+#[cfg(domain = "setup")]
+use mac_host_core::setup;
+#[cfg(domain = "ssh")]
+use mac_host_core::ssh;
+#[cfg(domain = "synology")]
+use mac_host_core::synology;
+#[cfg(domain = "veil")]
+use mac_host_core::veil;
+#[cfg(domain = "worktree")]
+use mac_host_core::worktree;
+#[cfg(domain = "workspace")]
+use mac_host_core::workspace;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
@@ -16,13 +49,8 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// 새 Mac 초기 셋업 (폴더 + 도구 + 마운트 + 자동화 전부)
+    #[cfg(domain = "init")]
     Init,
-    /// 웹 대시보드 (http://localhost:8900)
-    Dashboard {
-        /// 포트 (기본: 8900)
-        #[arg(default_value = "8900")]
-        port: String,
-    },
     /// 전체 도메인 상태 한 번에 확인
     Status,
     /// 설정 관리 (~/.mac-host-commands/)
@@ -31,86 +59,103 @@ enum Commands {
         cmd: ConfigCmd,
     },
     /// 스케줄 작업 관리 (LaunchAgents)
+    #[cfg(domain = "cron")]
     Cron {
         #[command(subcommand)]
         cmd: CronCmd,
     },
     /// 마운트 관리 (sshfs/smb)
+    #[cfg(domain = "mount")]
     Mount {
         #[command(subcommand)]
         cmd: MountCmd,
     },
     /// 네트워크 상태 확인
+    #[cfg(domain = "network")]
     Network {
         #[command(subcommand)]
         cmd: NetworkCmd,
     },
     /// SSH 키/연결 관리
+    #[cfg(domain = "ssh")]
     Ssh {
         #[command(subcommand)]
         cmd: SshCmd,
     },
     /// Proxmox 원격 관리
+    #[cfg(domain = "proxmox")]
     Proxmox {
         #[command(subcommand)]
         cmd: ProxmoxCmd,
     },
     /// VeilKey (CLI, LocalVault, VaultCenter)
+    #[cfg(domain = "veil")]
     Veil {
         #[command(subcommand)]
         cmd: VeilCmd,
     },
     /// Synology NAS 직접 관리 (SSH)
+    #[cfg(domain = "synology")]
     Synology {
         #[command(subcommand)]
         cmd: SynologyCmd,
     },
     /// Git worktree 관리 (브랜치별 폴더)
+    #[cfg(domain = "worktree")]
     Worktree {
         #[command(subcommand)]
         cmd: WorktreeCmd,
     },
     /// 작업 환경 (tmux, 셸, CLI 도구)
+    #[cfg(domain = "workspace")]
     Workspace {
         #[command(subcommand)]
         cmd: WorkspaceCmd,
     },
     /// 의존성 설치 및 초기 설정
+    #[cfg(domain = "setup")]
     Setup {
         #[command(subcommand)]
         cmd: SetupCmd,
     },
     /// Dalcenter dal 관리
+    #[cfg(domain = "dal")]
     Dal {
         #[command(subcommand)]
         cmd: DalCmd,
     },
     /// 파일 자동 정리/분류
+    #[cfg(domain = "files")]
     Files {
         #[command(subcommand)]
         cmd: FilesCmd,
     },
     /// 키보드 매핑 (Caps Lock → F18 한영 전환)
+    #[cfg(domain = "keyboard")]
     Keyboard {
         #[command(subcommand)]
         cmd: KeyboardCmd,
     },
     /// GitHub CLI 설치 및 연동
+    #[cfg(domain = "github")]
     Github {
         #[command(subcommand)]
         cmd: GithubCmd,
     },
     /// Obsidian vault 관리
+    #[cfg(domain = "obsidian")]
     Obsidian {
         #[command(subcommand)]
         cmd: ObsidianCmd,
     },
     /// 프로젝트 스캔/동기화
+    #[cfg(domain = "projects")]
     Projects {
         #[command(subcommand)]
         cmd: ProjectsCmd,
     },
     /// OpenClaw AI 어시스턴트 (설치/삭제/터널)
+    #[cfg(domain = "openclaw")]
     Openclaw {
         #[command(subcommand)]
         cmd: OpenclawCmd,
@@ -578,27 +623,23 @@ fn main() {
     common::load_env();
 
     match cli.command {
+        #[cfg(domain = "init")]
         Commands::Init => init::run(false),
-
-        Commands::Dashboard { port } => {
-            let script = format!("{}/문서/프로젝트/mac-host-commands/dashboard/server.sh", std::env::var("HOME").unwrap_or_default());
-            let _ = std::process::Command::new("bash").args([&script, &port]).status();
-        }
 
         Commands::Status => {
             config::Config::status();
-            println!("\n{}\n", "─".repeat(50));
-            setup::status();
-            println!("\n{}\n", "─".repeat(50));
-            network::status();
-            println!("\n{}\n", "─".repeat(50));
-            ssh::status();
-            println!("\n{}\n", "─".repeat(50));
-            mount::status();
-            println!("\n{}\n", "─".repeat(50));
-            proxmox::status();
-            println!("\n{}\n", "─".repeat(50));
-            obsidian::status();
+            #[cfg(domain = "setup")]
+            { println!("\n{}\n", "─".repeat(50)); setup::status(); }
+            #[cfg(domain = "network")]
+            { println!("\n{}\n", "─".repeat(50)); network::status(); }
+            #[cfg(domain = "ssh")]
+            { println!("\n{}\n", "─".repeat(50)); ssh::status(); }
+            #[cfg(domain = "mount")]
+            { println!("\n{}\n", "─".repeat(50)); mount::status(); }
+            #[cfg(domain = "proxmox")]
+            { println!("\n{}\n", "─".repeat(50)); proxmox::status(); }
+            #[cfg(domain = "obsidian")]
+            { println!("\n{}\n", "─".repeat(50)); obsidian::status(); }
         }
 
         Commands::Config { cmd } => match cmd {
@@ -606,6 +647,7 @@ fn main() {
             ConfigCmd::Status => config::Config::status(),
         },
 
+        #[cfg(domain = "mount")]
         Commands::Mount { cmd } => match cmd {
             MountCmd::Status => mount::status(),
             MountCmd::Up { name } => mount::mount(&name),
@@ -615,17 +657,20 @@ fn main() {
             MountCmd::Reconnect => mount::reconnect_all(),
         },
 
+        #[cfg(domain = "network")]
         Commands::Network { cmd } => match cmd {
             NetworkCmd::Status => network::status(),
             NetworkCmd::Check => network::check(),
         },
 
+        #[cfg(domain = "ssh")]
         Commands::Ssh { cmd } => match cmd {
             SshCmd::Status => ssh::status(),
             SshCmd::CopyKey { host } => ssh::copy_key(&host),
             SshCmd::Test { host } => ssh::test(&host),
         },
 
+        #[cfg(domain = "veil")]
         Commands::Veil { cmd } => match cmd {
             VeilCmd::Status => veil::status(),
             VeilCmd::Bootstrap => veil::bootstrap(),
@@ -638,6 +683,7 @@ fn main() {
             VeilCmd::Stop => veil::localvault_stop(),
         },
 
+        #[cfg(domain = "synology")]
         Commands::Synology { cmd } => match cmd {
             SynologyCmd::Status => synology::status(),
             SynologyCmd::Ssh => synology::ssh(),
@@ -649,6 +695,7 @@ fn main() {
             SynologyCmd::CleanupMeta => synology::cleanup_meta(),
         },
 
+        #[cfg(domain = "worktree")]
         Commands::Worktree { cmd } => match cmd {
             WorktreeCmd::Status => worktree::status(),
             WorktreeCmd::Add { project, btype, name } => worktree::add(&project, &btype, &name),
@@ -656,6 +703,7 @@ fn main() {
             WorktreeCmd::Clean => worktree::clean(),
         },
 
+        #[cfg(domain = "workspace")]
         Commands::Workspace { cmd } => match cmd {
             WorkspaceCmd::Status => workspace::status(),
             WorkspaceCmd::Bootstrap => workspace::bootstrap(),
@@ -666,14 +714,12 @@ fn main() {
             WorkspaceCmd::AiSetup => workspace::ai_setup(),
             WorkspaceCmd::AiReinstallOpencode => workspace::ai_reinstall_opencode(),
             WorkspaceCmd::AiSetProviderKeys { google_api_key, minimax_api_key } => {
-                workspace::ai_set_provider_keys(
-                    google_api_key.as_deref(),
-                    minimax_api_key.as_deref(),
-                )
+                workspace::ai_set_provider_keys(google_api_key.as_deref(), minimax_api_key.as_deref())
             }
             WorkspaceCmd::AiStartOmx => workspace::ai_start_omx(),
         },
 
+        #[cfg(domain = "setup")]
         Commands::Setup { cmd } => match cmd {
             SetupCmd::Status => setup::status(),
             SetupCmd::Bootstrap => setup::bootstrap(),
@@ -682,6 +728,7 @@ fn main() {
             SetupCmd::LoadMacfuse => setup::load_macfuse(),
         },
 
+        #[cfg(domain = "dal")]
         Commands::Dal { cmd } => match cmd {
             DalCmd::Status => dal::status(),
             DalCmd::Install => dal::install(),
@@ -693,6 +740,7 @@ fn main() {
             DalCmd::Tell { team, message, host } => dal::tell(&team, &message, &host),
         },
 
+        #[cfg(domain = "files")]
         Commands::Files { cmd } => match cmd {
             FilesCmd::Status => files::status(),
             FilesCmd::Organize => files::organize(),
@@ -707,6 +755,7 @@ fn main() {
             FilesCmd::Lint => files::lint(),
         },
 
+        #[cfg(domain = "cron")]
         Commands::Cron { cmd } => match cmd {
             CronCmd::Status => cron::status(),
             CronCmd::List => cron::list(),
@@ -717,12 +766,14 @@ fn main() {
             CronCmd::Logs { label } => cron::logs(&label),
         },
 
+        #[cfg(domain = "keyboard")]
         Commands::Keyboard { cmd } => match cmd {
             KeyboardCmd::Status => keyboard::print_status(),
             KeyboardCmd::Setup => keyboard::print_setup(),
             KeyboardCmd::Remove => keyboard::print_remove(),
         },
 
+        #[cfg(domain = "github")]
         Commands::Github { cmd } => match cmd {
             GithubCmd::Status => github::status(),
             GithubCmd::Install => github::install(),
@@ -732,6 +783,7 @@ fn main() {
             GithubCmd::Repos => github::repos(),
         },
 
+        #[cfg(domain = "openclaw")]
         Commands::Openclaw { cmd } => match cmd {
             OpenclawCmd::Status => openclaw::status(),
             OpenclawCmd::Install { telegram_token } => openclaw::install(telegram_token.as_deref()),
@@ -748,6 +800,7 @@ fn main() {
             OpenclawCmd::ExecStatus => openclaw::exec_status(),
         },
 
+        #[cfg(domain = "obsidian")]
         Commands::Obsidian { cmd } => match cmd {
             ObsidianCmd::Status => obsidian::status(),
             ObsidianCmd::Install => obsidian::install(),
@@ -758,11 +811,13 @@ fn main() {
             ObsidianCmd::PluginList => obsidian::list_plugins(),
         },
 
+        #[cfg(domain = "projects")]
         Commands::Projects { cmd } => match cmd {
             ProjectsCmd::Status => projects::status(),
             ProjectsCmd::Sync => projects::sync_ncl(),
         },
 
+        #[cfg(domain = "proxmox")]
         Commands::Proxmox { cmd } => match cmd {
             ProxmoxCmd::Status => proxmox::status(),
             ProxmoxCmd::Exec { cmd } => proxmox::exec(&cmd),
