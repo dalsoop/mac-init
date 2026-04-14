@@ -12,9 +12,10 @@ fn agents_dir() -> PathBuf {
 }
 
 fn is_mine(label: &str) -> bool {
+    let user = std::env::var("USER").unwrap_or_default();
     label.starts_with("com.mac-host")
-        || label.starts_with("kr.jeonghan")
         || label.starts_with("com.mac-init")
+        || label.contains(&user)
 }
 
 // === Data functions (no println, return structs) ===

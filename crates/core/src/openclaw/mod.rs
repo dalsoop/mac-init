@@ -8,7 +8,7 @@ use crate::constants::{
 };
 
 fn home() -> String {
-    std::env::var("HOME").unwrap_or_else(|_| "/Users/jeonghan".to_string())
+    std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string())
 }
 
 fn cf_api_key() -> String {
@@ -877,10 +877,13 @@ fn restart_gateway() {
 
 // ─── exec approvals ─────────────────────────────────────
 
-const EXEC_APPROVALS_PATH: &str = "/Users/jeonghan/.openclaw/exec-approvals.json";
+fn exec_approvals_path() -> String {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    format!("{}/.openclaw/exec-approvals.json", home)
+}
 
 pub fn exec_approve() {
-    let content = std::fs::read_to_string(EXEC_APPROVALS_PATH).unwrap_or_default();
+    let content = std::fs::read_to_string(&exec_approvals_path()).unwrap_or_default();
     let mut json: serde_json::Value = serde_json::from_str(&content)
         .unwrap_or_else(|_| serde_json::json!({"version": 1, "defaults": {}, "agents": {}}));
 
@@ -888,13 +891,13 @@ pub fn exec_approve() {
     json["defaults"]["ask"] = serde_json::json!("off");
 
     let output = serde_json::to_string_pretty(&json).unwrap();
-    std::fs::write(EXEC_APPROVALS_PATH, &output).expect("exec-approvals.json 쓰기 실패");
+    std::fs::write(&exec_approvals_path(), &output).expect("exec-approvals.json 쓰기 실패");
     println!("[openclaw] exec 자동 승인 활성화 (security=full, ask=off)");
     println!("  모든 명령이 승인 없이 실행됩니다.");
 }
 
 pub fn exec_ask() {
-    let content = std::fs::read_to_string(EXEC_APPROVALS_PATH).unwrap_or_default();
+    let content = std::fs::read_to_string(&exec_approvals_path()).unwrap_or_default();
     let mut json: serde_json::Value = serde_json::from_str(&content)
         .unwrap_or_else(|_| serde_json::json!({"version": 1, "defaults": {}, "agents": {}}));
 
@@ -902,13 +905,13 @@ pub fn exec_ask() {
     json["defaults"]["ask"] = serde_json::json!("on-miss");
 
     let output = serde_json::to_string_pretty(&json).unwrap();
-    std::fs::write(EXEC_APPROVALS_PATH, &output).expect("exec-approvals.json 쓰기 실패");
+    std::fs::write(&exec_approvals_path(), &output).expect("exec-approvals.json 쓰기 실패");
     println!("[openclaw] exec 확인 모드 활성화 (security=allowlist, ask=on-miss)");
     println!("  allowlist에 없는 명령은 실행 전 승인 요청합니다.");
 }
 
 pub fn exec_status() {
-    let content = match std::fs::read_to_string(EXEC_APPROVALS_PATH) {
+    let content = match std::fs::read_to_string(&exec_approvals_path()) {
         Ok(c) => c,
         Err(_) => {
             println!("[openclaw] exec-approvals.json 없음 (기본값 사용)");

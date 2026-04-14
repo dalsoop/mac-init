@@ -1,35 +1,52 @@
 #![allow(dead_code)]
 
-// ─── 네트워크 ─────────────────────────────────────────
+// ─── 순수 상수 (환경 무관) ───────────────────────────────
 
-// Proxmox
+// LaunchAgent labels
+pub const PLIST_FILE_ORGANIZER: &str = "com.mac-host.file-organizer.plist";
+pub const PLIST_SD_BACKUP: &str = "com.mac-host.sd-backup.plist";
+pub const PLIST_PROJECTS_SYNC: &str = "com.mac-host.projects-sync.plist";
+pub const PLIST_OPENCLAW_GATEWAY: &str = "ai.openclaw.gateway.plist";
+pub const PLIST_CLOUDFLARED: &str = "com.cloudflare.cloudflared.plist";
+pub const PLIST_OPENCLAW_SYNC: &str = "com.mac-host.openclaw-sync.plist";
+
+// OpenClaw 도메인 (서비스 이름이라 상수로 유지)
+pub const OPENCLAW_DOMAIN: &str = "openclaw.internal.kr";
+pub const OPENCLAW_SUBDOMAIN: &str = "openclaw";
+pub const OPENCLAW_ZONE_NAME: &str = "internal.kr";
+pub const OPENCLAW_TUNNEL_NAME: &str = "openclaw-mac";
+pub const OPENCLAW_GATEWAY_PORT: u16 = 18789;
+
+// ─── DEPRECATED: profile.ncl로 이동 완료 ─────────────────
+// 아래 값들은 하위 호환을 위해 남겨두지만,
+// 새 코드는 반드시 Profile::load()를 사용할 것.
+//
+// 네트워크: profile.ncl → infra.*
+// 경로: profile.ncl → dirs.*
+// Synology 매핑: profile.ncl → synology_paths
+// ──────────────────────────────────────────────────────────
+
 pub const PROXMOX_HOST: &str = "192.168.2.50";
 pub const PROXMOX_USER: &str = "root";
 pub const PROXMOX_PORT: u16 = 22;
 
-// Proxmox (자택)
 pub const PROXMOX_HOME_HOST: &str = "192.168.0.50";
 pub const DALCENTER_HOME_HOST: &str = "192.168.0.105";
 pub const DALCENTER_HOME_PORT: u16 = 11190;
 
-// Synology
 pub const SYNOLOGY_HOST: &str = "192.168.2.15";
 pub const SYNOLOGY_USER: &str = "botnex";
 pub const SYNOLOGY_DSM_PORT: u16 = 5001;
 
-// TrueNAS
 pub const TRUENAS_HOST: &str = "192.168.2.5";
 
-// VaultCenter
 pub const VAULTCENTER_LXC: &str = "110";
 pub const VAULTCENTER_HOST: &str = "10.50.0.110";
 pub const VAULTCENTER_PORT: u16 = 11181;
 pub const VAULTCENTER_URL: &str = "http://10.50.0.110:11181";
 
-// LocalVault
 pub const LOCALVAULT_URL: &str = "http://127.0.0.1:10180";
 
-// Dalcenter
 pub const DALCENTER_HOST: &str = "10.50.0.105";
 pub const DALCENTER_DEFAULT_PORT: u16 = 11192;
 pub const DALCENTER_PORTS: &[(&str, &str, u16)] = &[
@@ -39,7 +56,7 @@ pub const DALCENTER_PORTS: &[(&str, &str, u16)] = &[
     ("veilkey-v2", "VeilKey v2", 11193),
 ];
 
-// ─── 경로 ──────────────────────────────────────────────
+pub const CF_EMAIL: &str = "urit245@gmail.com";
 
 pub const BASE_DIR: &str = "문서";
 pub const SYSTEM_DIR: &str = "문서/시스템";
@@ -54,27 +71,6 @@ pub const BIZ_DIR: &str = "문서/사업";
 pub const LEARN_DIR: &str = "문서/학습";
 pub const ARCHIVE_DIR: &str = "문서/아카이브";
 pub const TEMP_DIR: &str = "문서/임시";
-// VAULT_DIR은 환경변수 OBSIDIAN_VAULT로 설정
-
-// ─── OpenClaw ─────────────────────────────────────────
-
-pub const OPENCLAW_DOMAIN: &str = "openclaw.internal.kr";
-pub const OPENCLAW_SUBDOMAIN: &str = "openclaw";
-pub const OPENCLAW_ZONE_NAME: &str = "internal.kr";
-pub const OPENCLAW_TUNNEL_NAME: &str = "openclaw-mac";
-pub const OPENCLAW_GATEWAY_PORT: u16 = 18789;
-pub const CF_EMAIL: &str = "urit245@gmail.com";
-
-// ─── LaunchAgent ───────────────────────────────────────
-
-pub const PLIST_FILE_ORGANIZER: &str = "com.mac-host.file-organizer.plist";
-pub const PLIST_SD_BACKUP: &str = "com.mac-host.sd-backup.plist";
-pub const PLIST_PROJECTS_SYNC: &str = "com.mac-host.projects-sync.plist";
-pub const PLIST_OPENCLAW_GATEWAY: &str = "ai.openclaw.gateway.plist";
-pub const PLIST_CLOUDFLARED: &str = "com.cloudflare.cloudflared.plist";
-pub const PLIST_OPENCLAW_SYNC: &str = "com.mac-host.openclaw-sync.plist";
-
-// ─── Synology 경로 매핑 ────────────────────────────────
 
 pub const SYNOLOGY_PATH_MAP: &[(&str, &str)] = &[
     ("문서/미디어/미러리스", "/volume1/사진 미러리스 백업"),
@@ -99,7 +95,5 @@ pub const SYNOLOGY_PATH_MAP: &[(&str, &str)] = &[
     ("trash/Vol1-14TB-Backups", "/volume1/Vol1-14TB-Backups"),
     ("trash/업무", "/volume1/업무"),
 ];
-
-// ─── Synology 인증 ─────────────────────────────────────
 
 pub const SYNOLOGY_CRED_PATH: &str = "/etc/synology-botnex.cred";

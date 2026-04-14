@@ -9,7 +9,7 @@ use std::fs;
 use crate::common;
 
 pub fn home() -> String {
-    std::env::var("HOME").unwrap_or_else(|_| "/Users/jeonghan".to_string())
+    std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string())
 }
 
 pub fn count_files(dir: &str) -> usize {

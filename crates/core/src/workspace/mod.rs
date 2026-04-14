@@ -48,7 +48,7 @@ fn env_value<'a>(pairs: &'a [(String, String)], key: &str) -> Option<&'a str> {
 }
 
 fn home() -> String {
-    std::env::var("HOME").unwrap_or_else(|_| "/Users/jeonghan".to_string())
+    std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string())
 }
 
 pub fn status() {

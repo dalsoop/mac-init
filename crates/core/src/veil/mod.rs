@@ -4,7 +4,7 @@ use std::process::Command;
 use crate::common;
 
 fn home() -> String {
-    std::env::var("HOME").unwrap_or_else(|_| "/Users/jeonghan".to_string())
+    std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string())
 }
 
 use crate::constants::{VAULTCENTER_LXC, VAULTCENTER_URL, LOCALVAULT_URL};

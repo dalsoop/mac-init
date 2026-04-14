@@ -8,7 +8,7 @@ use crate::constants::{DALCENTER_HOST, DALCENTER_DEFAULT_PORT, DALCENTER_PORTS,
                        PROXMOX_HOME_HOST, DALCENTER_HOME_HOST, DALCENTER_HOME_PORT};
 
 fn home() -> String {
-    std::env::var("HOME").unwrap_or_else(|_| "/Users/jeonghan".to_string())
+    std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string())
 }
 
 pub fn status() {
