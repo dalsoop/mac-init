@@ -57,6 +57,7 @@ const KNOWN: &[(&str, &str)] = &[
     ("defaults", "macOS 시스템 설정"),
     ("dotfiles", "설정 파일 스캔/읽기"),
     ("files", "파일 자동 분류, SD 백업"),
+    ("git", "Git 프로필, SSH 키, GitHub CLI"),
     ("projects", "프로젝트 스캔/동기화"),
     ("worktree", "Git worktree 관리"),
     ("mount", "sshfs/SMB 마운트"),

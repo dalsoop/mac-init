@@ -20,6 +20,7 @@ jobs:
           - defaults
           - dotfiles
           - files
+          - git
           - projects
           - scheduler
           - worktree

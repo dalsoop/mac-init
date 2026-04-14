@@ -824,6 +824,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "mac-domain-git"
+version = "0.1.0"
+dependencies = [
+ "clap",
+]
+
+[[package]]
 name = "mac-domain-keyboard"
 version = "0.1.0"
 dependencies = [

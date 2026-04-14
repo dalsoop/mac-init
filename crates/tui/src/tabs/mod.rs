@@ -5,6 +5,7 @@ pub mod cron;
 #[cfg(domain = "defaults")]
 pub mod defaults;
 pub mod env;
+pub mod git;
 pub mod host;
 pub mod store;
 
@@ -15,6 +16,7 @@ pub enum TabId {
     #[cfg(domain = "cron")]
     Cron,
     Configs,
+    Git,
     Host,
     #[cfg(domain = "defaults")]
     Defaults,
@@ -29,6 +31,7 @@ impl TabId {
             #[cfg(domain = "cron")]
             TabId::Cron,
             TabId::Configs,
+            TabId::Git,
             TabId::Host,
             #[cfg(domain = "defaults")]
             TabId::Defaults,
@@ -67,6 +70,7 @@ impl TabId {
             #[cfg(domain = "cron")]
             Self::Cron => "Cron",
             Self::Configs => "Configs",
+            Self::Git => "Git",
             Self::Host => "Host",
             #[cfg(domain = "defaults")]
             Self::Defaults => "Defaults",

@@ -17,6 +17,7 @@ use crate::tabs::cron::CronTab;
 use crate::tabs::defaults::DefaultsTab;
 use crate::tabs::connect::ConnectTab;
 use crate::tabs::env::EnvTab;
+use crate::tabs::git::GitTab;
 use crate::tabs::host::HostTab;
 use crate::tabs::store::StoreTab;
 use crate::ui::tabbar::render_tabbar;
@@ -28,6 +29,7 @@ pub struct App {
     #[cfg(domain = "cron")]
     cron_tab: CronTab,
     configs_tab: ConfigsTab,
+    git_tab: GitTab,
     host_tab: HostTab,
     #[cfg(domain = "defaults")]
     defaults_tab: DefaultsTab,
@@ -47,6 +49,7 @@ impl App {
             #[cfg(domain = "cron")]
             cron_tab: CronTab::new(),
             configs_tab: ConfigsTab::new(),
+            git_tab: GitTab::new(),
             host_tab: HostTab::new(),
             #[cfg(domain = "defaults")]
             defaults_tab: DefaultsTab::new(),
@@ -76,6 +79,10 @@ impl App {
         self.loading_msg = "Loading configs...".to_string();
         terminal.draw(|frame| self.render(frame))?;
         self.configs_tab.load().await?;
+
+        self.loading_msg = "Loading git...".to_string();
+        terminal.draw(|frame| self.render(frame))?;
+        self.git_tab.load().await?;
 
         self.loading_msg = "Loading host...".to_string();
         terminal.draw(|frame| self.render(frame))?;
@@ -156,6 +163,7 @@ impl App {
             #[cfg(domain = "cron")]
             TabId::Cron => self.cron_tab.render(frame, chunks[1]),
             TabId::Configs => self.configs_tab.render(frame, chunks[1]),
+            TabId::Git => self.git_tab.render(frame, chunks[1]),
             TabId::Host => self.host_tab.render(frame, chunks[1]),
             #[cfg(domain = "defaults")]
             TabId::Defaults => self.defaults_tab.render(frame, chunks[1]),
@@ -168,6 +176,7 @@ impl App {
             #[cfg(domain = "cron")]
             TabId::Cron => "a:add x:del t:toggle Enter:run",
             TabId::Configs => "e:edit d/u:scroll",
+            TabId::Git => "Enter:edit/setup r:refresh",
             TabId::Host => "a:add x:del t:toggle",
             #[cfg(domain = "defaults")]
             TabId::Defaults => "enter:open esc:back",
@@ -229,6 +238,7 @@ impl App {
                     #[cfg(domain = "cron")]
                     TabId::Cron => self.cron_tab.handle_key(key).await?,
                     TabId::Configs => self.configs_tab.handle_key(key).await?,
+                    TabId::Git => self.git_tab.handle_key(key).await?,
                     TabId::Host => self.host_tab.handle_key(key).await?,
                     #[cfg(domain = "defaults")]
                     TabId::Defaults => self.defaults_tab.handle_key(key).await?,
