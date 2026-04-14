@@ -7,6 +7,7 @@ pub mod env;
 pub mod infra;
 pub mod services;
 pub mod status;
+pub mod store;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TabId {
@@ -19,6 +20,7 @@ pub enum TabId {
     Infra,
     #[cfg(domain = "defaults")]
     Defaults,
+    Store,
 }
 
 impl TabId {
@@ -33,6 +35,7 @@ impl TabId {
             TabId::Infra,
             #[cfg(domain = "defaults")]
             TabId::Defaults,
+            TabId::Store,
         ]
     }
 
@@ -71,6 +74,7 @@ impl TabId {
             Self::Infra => "Infra",
             #[cfg(domain = "defaults")]
             Self::Defaults => "Defaults",
+            Self::Store => "Store",
         }
     }
 }

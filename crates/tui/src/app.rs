@@ -19,6 +19,7 @@ use crate::tabs::env::EnvTab;
 use crate::tabs::infra::InfraTab;
 use crate::tabs::services::ServicesTab;
 use crate::tabs::status::StatusTab;
+use crate::tabs::store::StoreTab;
 use crate::ui::tabbar::render_tabbar;
 
 pub struct App {
@@ -32,6 +33,7 @@ pub struct App {
     infra_tab: InfraTab,
     #[cfg(domain = "defaults")]
     defaults_tab: DefaultsTab,
+    store_tab: StoreTab,
     should_quit: bool,
     loading: bool,
     loading_msg: String,
@@ -50,6 +52,7 @@ impl App {
             infra_tab: InfraTab::new(),
             #[cfg(domain = "defaults")]
             defaults_tab: DefaultsTab::new(),
+            store_tab: StoreTab::new(),
             should_quit: false,
             loading: true,
             loading_msg: "Starting...".to_string(),
@@ -94,6 +97,10 @@ impl App {
             terminal.draw(|frame| self.render(frame))?;
             self.brew_tab.load().await?;
         }
+
+        self.loading_msg = "Loading store...".to_string();
+        terminal.draw(|frame| self.render(frame))?;
+        self.store_tab.load().await?;
 
         self.loading = false;
 
@@ -156,6 +163,7 @@ impl App {
             TabId::Infra => self.infra_tab.render(frame, chunks[1]),
             #[cfg(domain = "defaults")]
             TabId::Defaults => self.defaults_tab.render(frame, chunks[1]),
+            TabId::Store => self.store_tab.render(frame, chunks[1]),
         }
 
         let tab_hints = match self.active_tab {
@@ -168,6 +176,7 @@ impl App {
             TabId::Infra => "h/l:switch view r:refresh",
             #[cfg(domain = "defaults")]
             TabId::Defaults => "enter:open esc:back",
+            TabId::Store => "i:install d:remove u:update",
         };
         let tab_count = TabId::count();
         let status = Line::from(vec![
@@ -229,6 +238,7 @@ impl App {
                     TabId::Infra => self.infra_tab.handle_key(key).await?,
                     #[cfg(domain = "defaults")]
                     TabId::Defaults => self.defaults_tab.handle_key(key).await?,
+                    TabId::Store => self.store_tab.handle_key(key).await?,
                 }
             }
         }
