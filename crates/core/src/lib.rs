@@ -2,6 +2,7 @@ pub mod common;
 pub mod constants;
 pub mod config;
 pub mod models;
+pub mod profile;
 
 #[cfg(domain = "brew")]
 pub mod brew;

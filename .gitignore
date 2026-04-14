@@ -4,3 +4,7 @@ cli/target/
 *.swo
 .DS_Store
 /target/
+
+# Personal profiles (only example.ncl is public)
+profiles/*.ncl
+!profiles/example.ncl
