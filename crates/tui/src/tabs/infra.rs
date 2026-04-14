@@ -2,7 +2,7 @@ use color_eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{prelude::*, widgets::*};
 
-use crate::services::mac_cmd;
+use mac_host_core::common;
 
 #[derive(Clone, Copy, PartialEq)]
 enum InfraView {
@@ -63,7 +63,7 @@ impl InfraTab {
     }
 
     pub async fn load(&mut self) -> Result<()> {
-        self.content = mac_cmd::run(self.view.command())?;
+        self.content = common::run_self(self.view.command());
         self.scroll = 0;
         Ok(())
     }

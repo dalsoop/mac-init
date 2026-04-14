@@ -2,7 +2,7 @@ use color_eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{prelude::*, widgets::*};
 
-use crate::services::mac_cmd;
+use mac_host_core::common;
 
 struct Section {
     title: String,
@@ -45,10 +45,7 @@ impl StatusTab {
         ];
 
         for (_, args) in &sources {
-            let raw = match mac_cmd::run(args) {
-                Ok(r) => r,
-                Err(e) => format!("Error: {}", e),
-            };
+            let raw = common::run_self(args);
             self.parse_output(&raw);
         }
 
@@ -195,14 +192,10 @@ impl StatusTab {
             KeyCode::Enter => {
                 let (name, args) = ACTIONS[self.selected_action];
                 self.output = format!("Running {}...\n", name);
-                match mac_cmd::run(args) {
-                    Ok(result) => {
-                        self.output.push_str(&result);
-                        if name == "Refresh all" {
-                            self.load().await?;
-                        }
-                    }
-                    Err(e) => self.output = format!("Error: {}", e),
+                let result = common::run_self(args);
+                self.output.push_str(&result);
+                if name == "Refresh all" {
+                    self.load().await?;
                 }
             }
             KeyCode::Char('d') => {
