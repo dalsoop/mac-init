@@ -16,6 +16,7 @@ jobs:
           - bootstrap
           - keyboard
           - connect
+          - container
           - cron
           - defaults
           - dotfiles

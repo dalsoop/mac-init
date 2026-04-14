@@ -1,5 +1,6 @@
 pub mod configs;
 pub mod connect;
+pub mod container;
 #[cfg(domain = "cron")]
 pub mod cron;
 #[cfg(domain = "defaults")]
@@ -13,6 +14,7 @@ pub mod store;
 pub enum TabId {
     Env,
     Connect,
+    Container,
     #[cfg(domain = "cron")]
     Cron,
     Configs,
@@ -28,6 +30,7 @@ impl TabId {
         vec![
             TabId::Env,
             TabId::Connect,
+            TabId::Container,
             #[cfg(domain = "cron")]
             TabId::Cron,
             TabId::Configs,
@@ -67,6 +70,7 @@ impl TabId {
         match self {
             Self::Env => "Env",
             Self::Connect => "Connect",
+            Self::Container => "Container",
             #[cfg(domain = "cron")]
             Self::Cron => "Cron",
             Self::Configs => "Configs",

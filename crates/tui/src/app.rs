@@ -16,6 +16,7 @@ use crate::tabs::cron::CronTab;
 #[cfg(domain = "defaults")]
 use crate::tabs::defaults::DefaultsTab;
 use crate::tabs::connect::ConnectTab;
+use crate::tabs::container::ContainerTab;
 use crate::tabs::env::EnvTab;
 use crate::tabs::git::GitTab;
 use crate::tabs::host::HostTab;
@@ -26,6 +27,7 @@ pub struct App {
     active_tab: TabId,
     env_tab: EnvTab,
     connect_tab: ConnectTab,
+    container_tab: ContainerTab,
     #[cfg(domain = "cron")]
     cron_tab: CronTab,
     configs_tab: ConfigsTab,
@@ -46,6 +48,7 @@ impl App {
             active_tab: first_tab,
             env_tab: EnvTab::new(),
             connect_tab: ConnectTab::new(),
+            container_tab: ContainerTab::new(),
             #[cfg(domain = "cron")]
             cron_tab: CronTab::new(),
             configs_tab: ConfigsTab::new(),
@@ -75,6 +78,10 @@ impl App {
         self.loading_msg = "Loading connect...".to_string();
         terminal.draw(|frame| self.render(frame))?;
         self.connect_tab.load().await?;
+
+        self.loading_msg = "Loading containers...".to_string();
+        terminal.draw(|frame| self.render(frame))?;
+        self.container_tab.load().await?;
 
         self.loading_msg = "Loading configs...".to_string();
         terminal.draw(|frame| self.render(frame))?;
@@ -160,6 +167,7 @@ impl App {
         match self.active_tab {
             TabId::Env => self.env_tab.render(frame, chunks[1]),
             TabId::Connect => self.connect_tab.render(frame, chunks[1]),
+            TabId::Container => self.container_tab.render(frame, chunks[1]),
             #[cfg(domain = "cron")]
             TabId::Cron => self.cron_tab.render(frame, chunks[1]),
             TabId::Configs => self.configs_tab.render(frame, chunks[1]),
@@ -173,6 +181,7 @@ impl App {
         let tab_hints = match self.active_tab {
             TabId::Env => "a:add Enter:edit x:del d:decrypt",
             TabId::Connect => "a:add x:del t:test T:test-all",
+            TabId::Container => "s:start S:stop R:restart u:up d:down",
             #[cfg(domain = "cron")]
             TabId::Cron => "a:add x:del t:toggle Enter:run",
             TabId::Configs => "e:edit d/u:scroll",
@@ -235,6 +244,7 @@ impl App {
                 match self.active_tab {
                     TabId::Env => self.env_tab.handle_key(key).await?,
                     TabId::Connect => self.connect_tab.handle_key(key).await?,
+                    TabId::Container => self.container_tab.handle_key(key).await?,
                     #[cfg(domain = "cron")]
                     TabId::Cron => self.cron_tab.handle_key(key).await?,
                     TabId::Configs => self.configs_tab.handle_key(key).await?,
