@@ -33,6 +33,10 @@ enum Commands {
     SelfUpdate,
     /// 전체 업그레이드 (매니저 + 모든 도메인)
     Upgrade,
+    /// 초기 설정 (자동 업데이트 LaunchAgent 등록)
+    Setup,
+    /// 설정 상태 확인
+    Doctor,
     /// 도메인 실행 (mac run keyboard status)
     Run { name: String, args: Vec<String> },
 }
@@ -100,8 +104,31 @@ fn known_domains() -> Vec<&'static str> {
     ]
 }
 
+const LAUNCHAGENT_LABEL: &str = "com.mac-app-init.update-check";
+
+fn launchagent_path() -> PathBuf {
+    PathBuf::from(home()).join(format!("Library/LaunchAgents/{}.plist", LAUNCHAGENT_LABEL))
+}
+
+fn is_setup_done() -> bool {
+    launchagent_path().exists()
+}
+
 fn main() {
     let cli = Cli::parse();
+
+    // First-run check (except for setup/doctor themselves)
+    match &cli.command {
+        Commands::Setup | Commands::Doctor => {}
+        _ => {
+            if !is_setup_done() {
+                eprintln!("⚠ mac-app-init 초기 설정이 필요합니다.");
+                eprintln!("  mac setup  — 자동 업데이트 등록");
+                eprintln!();
+            }
+        }
+    }
+
     match cli.command {
         Commands::List => cmd_list(),
         Commands::Available => cmd_available(),
@@ -111,6 +138,8 @@ fn main() {
         Commands::UpdateAll => cmd_update_all(),
         Commands::SelfUpdate => cmd_self_update(),
         Commands::Upgrade => cmd_upgrade(),
+        Commands::Setup => cmd_setup(),
+        Commands::Doctor => cmd_doctor(),
         Commands::Run { name, args } => cmd_run(&name, &args),
     }
 }
@@ -378,4 +407,121 @@ fn download_domain(name: &str) -> Result<String, String> {
     Command::new("chmod").args(["+x", &bin.to_string_lossy()]).output().ok();
 
     Ok(tag)
+}
+
+fn cmd_setup() {
+    println!("=== mac-app-init 초기 설정 ===\n");
+
+    let plist_path = launchagent_path();
+    if plist_path.exists() {
+        println!("  ✓ 자동 업데이트 이미 등록됨");
+        println!("  재설정: mac setup (덮어쓰기)");
+    }
+
+    // Find mac binary
+    let mac_bin = std::env::current_exe()
+        .unwrap_or_else(|_| PathBuf::from(format!("{}/.cargo/bin/mac", home())));
+
+    let h = home();
+    let log_dir = format!("{}/문서/시스템/로그", h);
+    fs::create_dir_all(&log_dir).ok();
+    fs::create_dir_all(domains_dir()).ok();
+
+    // Create LaunchAgent: daily update check at 10:00
+    let plist = format!(r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{label}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{bin}</string>
+        <string>upgrade</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>10</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>{log_dir}/mac-update.log</string>
+    <key>StandardErrorPath</key>
+    <string>{log_dir}/mac-update.log</string>
+</dict>
+</plist>"#, label = LAUNCHAGENT_LABEL, bin = mac_bin.display(), log_dir = log_dir);
+
+    if let Err(e) = fs::write(&plist_path, plist) {
+        println!("  ✗ LaunchAgent 생성 실패: {}", e);
+        return;
+    }
+
+    let _ = Command::new("launchctl").args(["unload", &plist_path.to_string_lossy()]).output();
+    let load = Command::new("launchctl").args(["load", &plist_path.to_string_lossy()]).output();
+    match load {
+        Ok(o) if o.status.success() => println!("  ✓ 자동 업데이트 등록 완료 (매일 10:00)"),
+        _ => println!("  ⚠ plist 생성됨, 로드 실패"),
+    }
+
+    // Create dirs
+    println!("  ✓ ~/.mac-app-init/domains/ 생성됨");
+
+    println!("\n=== 완료 ===");
+    println!("  mac available     — 사용 가능한 도메인");
+    println!("  mac install cron  — 도메인 설치");
+    println!("  mac doctor        — 설정 상태 확인");
+}
+
+fn cmd_doctor() {
+    println!("=== mac-app-init 상태 ===\n");
+
+    // 1. mac binary
+    let mac_bin = std::env::current_exe().unwrap_or_default();
+    println!("[mac 바이너리] ✓ {}", mac_bin.display());
+
+    // 2. domains dir
+    let dd = domains_dir();
+    println!("[domains 디렉토리] {}", if dd.exists() { "✓" } else { "✗" });
+
+    // 3. registry
+    let reg = load_registry();
+    println!("[설치된 도메인] {} 개", reg.installed.len());
+    for d in &reg.installed {
+        let bin = domain_bin_path(&d.name);
+        let ok = bin.exists();
+        println!("  {} {} ({})", if ok { "✓" } else { "✗" }, d.name, d.version);
+    }
+
+    // 4. LaunchAgent
+    let la = launchagent_path();
+    if la.exists() {
+        println!("[자동 업데이트] ✓ 등록됨 (매일 10:00)");
+    } else {
+        println!("[자동 업데이트] ✗ 미등록");
+        println!("  → mac setup");
+    }
+
+    // 5. Dependencies
+    println!("\n[의존성]");
+    for (name, cmd, args) in &[
+        ("gh", "gh", &["--version"] as &[&str]),
+        ("dotenvx", "dotenvx", &["--version"]),
+        ("nickel", "nickel", &["--version"]),
+    ] {
+        let ok = Command::new(cmd).args(*args).output().map(|o| o.status.success()).unwrap_or(false);
+        println!("  {} {}", if ok { "✓" } else { "✗" }, name);
+    }
+
+    // 6. .env
+    let env_path = PathBuf::from(home()).join(".env");
+    if env_path.exists() {
+        let content = fs::read_to_string(&env_path).unwrap_or_default();
+        let encrypted = content.contains("encrypted:");
+        println!("\n[.env] ✓ 존재 ({})", if encrypted { "암호화됨" } else { "평문" });
+    } else {
+        println!("\n[.env] ✗ 없음");
+        println!("  → mac run bootstrap install");
+    }
 }
