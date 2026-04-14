@@ -26,7 +26,6 @@ jobs:
           - vscode
           - wireguard
           - projects
-          - scheduler
           - worktree
 
     runs-on: macos-14

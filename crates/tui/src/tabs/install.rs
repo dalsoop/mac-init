@@ -26,7 +26,6 @@ pub struct Node {
 const KNOWN_DOMAINS: &[(&str, &str)] = &[
     ("bootstrap", "최초 의존성 설치 (brew, gh, dotenvx, rust, nickel)"),
     ("keyboard", "Caps Lock → F18 한영 전환"),
-    ("scheduler", "통합 스케줄러"),
     ("connect", "외부 서비스 연결 관리 (.env + dotenvx)"),
     ("container", "Docker/OrbStack 컨테이너 관리"),
     ("wireguard", "WireGuard VPN 관리"),

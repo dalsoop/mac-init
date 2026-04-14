@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
@@ -39,6 +40,23 @@ enum Commands {
     Doctor,
     /// 도메인 실행 (mac run keyboard status)
     Run { name: String, args: Vec<String> },
+    /// 스케줄 tick (LaunchAgent에서 매분 호출 — 내부용)
+    Tick,
+    /// 스케줄 작업 목록
+    ScheduleList,
+    /// 스케줄 작업 추가
+    ScheduleAdd {
+        name: String,
+        command: String,
+        #[arg(long)]
+        cron: Option<String>,
+        #[arg(long)]
+        interval: Option<u64>,
+    },
+    /// 스케줄 작업 삭제
+    ScheduleRemove { name: String },
+    /// 스케줄 작업 토글
+    ScheduleToggle { name: String },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -96,7 +114,6 @@ fn asset_name(domain: &str) -> String {
 fn known_domains() -> Vec<&'static str> {
     vec![
         "bootstrap", "keyboard", "connect", "container", "cron", "defaults", "dotfiles", "git", "quickaction", "vscode", "wireguard",
-        "scheduler",
         "files", "projects", "worktree",
         // infra domains (available but not installed by default)
         "mount", "network", "ssh", "proxmox", "synology",
@@ -105,7 +122,7 @@ fn known_domains() -> Vec<&'static str> {
     ]
 }
 
-const LAUNCHAGENT_LABEL: &str = "com.mac-app-init.update-check";
+const LAUNCHAGENT_LABEL: &str = "com.mac-app-init.scheduler";
 
 fn launchagent_path() -> PathBuf {
     PathBuf::from(home()).join(format!("Library/LaunchAgents/{}.plist", LAUNCHAGENT_LABEL))
@@ -142,6 +159,11 @@ fn main() {
         Commands::Setup => cmd_setup(),
         Commands::Doctor => cmd_doctor(),
         Commands::Run { name, args } => cmd_run(&name, &args),
+        Commands::Tick => cmd_tick(),
+        Commands::ScheduleList => cmd_schedule_list(),
+        Commands::ScheduleAdd { name, command, cron, interval } => cmd_schedule_add(&name, &command, cron, interval),
+        Commands::ScheduleRemove { name } => cmd_schedule_remove(&name),
+        Commands::ScheduleToggle { name } => cmd_schedule_toggle(&name),
     }
 }
 
@@ -414,12 +436,7 @@ fn cmd_setup() {
     println!("=== mac-app-init 초기 설정 ===\n");
 
     let plist_path = launchagent_path();
-    if plist_path.exists() {
-        println!("  ✓ 자동 업데이트 이미 등록됨");
-        println!("  재설정: mac setup (덮어쓰기)");
-    }
 
-    // Find mac binary
     let mac_bin = std::env::current_exe()
         .unwrap_or_else(|_| PathBuf::from(format!("{}/.cargo/bin/mac", home())));
 
@@ -428,7 +445,7 @@ fn cmd_setup() {
     fs::create_dir_all(&log_dir).ok();
     fs::create_dir_all(domains_dir()).ok();
 
-    // Create LaunchAgent: daily update check at 10:00
+    // LaunchAgent: scheduler tick (매분)
     let plist = format!(r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -438,19 +455,14 @@ fn cmd_setup() {
     <key>ProgramArguments</key>
     <array>
         <string>{bin}</string>
-        <string>upgrade</string>
+        <string>tick</string>
     </array>
-    <key>StartCalendarInterval</key>
-    <dict>
-        <key>Hour</key>
-        <integer>10</integer>
-        <key>Minute</key>
-        <integer>0</integer>
-    </dict>
+    <key>StartInterval</key>
+    <integer>60</integer>
     <key>StandardOutPath</key>
-    <string>{log_dir}/mac-update.log</string>
+    <string>{log_dir}/scheduler.log</string>
     <key>StandardErrorPath</key>
-    <string>{log_dir}/mac-update.log</string>
+    <string>{log_dir}/scheduler.log</string>
 </dict>
 </plist>"#, label = LAUNCHAGENT_LABEL, bin = mac_bin.display(), log_dir = log_dir);
 
@@ -462,8 +474,22 @@ fn cmd_setup() {
     let _ = Command::new("launchctl").args(["unload", &plist_path.to_string_lossy()]).output();
     let load = Command::new("launchctl").args(["load", &plist_path.to_string_lossy()]).output();
     match load {
-        Ok(o) if o.status.success() => println!("  ✓ 자동 업데이트 등록 완료 (매일 10:00)"),
+        Ok(o) if o.status.success() => println!("  ✓ scheduler 등록 완료 (매분 tick)"),
         _ => println!("  ⚠ plist 생성됨, 로드 실패"),
+    }
+
+    // Default schedule: daily mac upgrade at 10:00
+    let mut sched = load_schedule();
+    if !sched.jobs.iter().any(|j| j.name == "mac-upgrade") {
+        sched.jobs.push(Job {
+            name: "mac-upgrade".into(),
+            command: format!("{} upgrade", mac_bin.display()),
+            schedule: ScheduleSpec { stype: "cron".into(), cron: Some("0 10 * * *".into()), interval_seconds: None, watch_path: None },
+            enabled: true,
+            description: "매일 10시 mac + 도메인 자동 업데이트".into(),
+        });
+        save_schedule(&sched);
+        println!("  ✓ mac-upgrade 작업 추가 (매일 10:00)");
     }
 
     // Create dirs
@@ -524,5 +550,184 @@ fn cmd_doctor() {
     } else {
         println!("\n[.env] ✗ 없음");
         println!("  → mac run bootstrap install");
+    }
+}
+
+// === Scheduler ===
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Job {
+    name: String,
+    command: String,
+    schedule: ScheduleSpec,
+    #[serde(default = "true_default")]
+    enabled: bool,
+    #[serde(default)]
+    description: String,
+}
+fn true_default() -> bool { true }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ScheduleSpec {
+    #[serde(rename = "type")]
+    stype: String,
+    #[serde(default)]
+    cron: Option<String>,
+    #[serde(default)]
+    interval_seconds: Option<u64>,
+    #[serde(default)]
+    watch_path: Option<String>,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct ScheduleFile {
+    jobs: Vec<Job>,
+}
+
+fn schedule_path() -> PathBuf {
+    PathBuf::from(home()).join(".mac-app-init/schedule.json")
+}
+
+fn last_run_path() -> PathBuf {
+    PathBuf::from(home()).join(".mac-app-init/scheduler-last-run.json")
+}
+
+fn schedule_log_path() -> PathBuf {
+    PathBuf::from(home()).join("문서/시스템/로그/scheduler.log")
+}
+
+fn load_schedule() -> ScheduleFile {
+    let path = schedule_path();
+    if !path.exists() { return ScheduleFile::default(); }
+    let content = fs::read_to_string(&path).unwrap_or_default();
+    serde_json::from_str(&content).unwrap_or_default()
+}
+
+fn save_schedule(s: &ScheduleFile) {
+    let path = schedule_path();
+    fs::create_dir_all(path.parent().unwrap()).ok();
+    fs::write(&path, serde_json::to_string_pretty(s).unwrap()).ok();
+}
+
+fn now_parts() -> (u32, u32, u32, u32, u32) {
+    let s = Command::new("date").args(["+%M %H %d %m %u"]).output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
+    let p: Vec<u32> = s.split_whitespace().filter_map(|x| x.parse().ok()).collect();
+    if p.len() >= 5 { (p[0], p[1], p[2], p[3], p[4] % 7) } else { (0, 0, 0, 0, 0) }
+}
+
+fn cron_matches(expr: &str, min: u32, hour: u32, day: u32, month: u32, weekday: u32) -> bool {
+    let parts: Vec<&str> = expr.split_whitespace().collect();
+    if parts.len() != 5 { return false; }
+    fn fm(field: &str, value: u32) -> bool {
+        if field == "*" { return true; }
+        if let Ok(n) = field.parse::<u32>() { return n == value; }
+        if let Some(step) = field.strip_prefix("*/") {
+            if let Ok(n) = step.parse::<u32>() { return n > 0 && value % n == 0; }
+        }
+        if field.contains(',') {
+            return field.split(',').any(|f| f.parse::<u32>().ok() == Some(value));
+        }
+        false
+    }
+    fm(parts[0], min) && fm(parts[1], hour) && fm(parts[2], day) && fm(parts[3], month) && fm(parts[4], weekday)
+}
+
+fn cmd_tick() {
+    let sched = load_schedule();
+    let (min, hour, day, month, weekday) = now_parts();
+    let last_run_path = last_run_path();
+    let mut last_run: HashMap<String, u64> = if last_run_path.exists() {
+        serde_json::from_str(&fs::read_to_string(&last_run_path).unwrap_or_default()).unwrap_or_default()
+    } else { HashMap::new() };
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+
+    let log = schedule_log_path();
+    fs::create_dir_all(log.parent().unwrap()).ok();
+
+    for job in &sched.jobs {
+        if !job.enabled { continue; }
+        let should_run = match job.schedule.stype.as_str() {
+            "cron" => job.schedule.cron.as_ref().map(|e| cron_matches(e, min, hour, day, month, weekday)).unwrap_or(false),
+            "interval" => job.schedule.interval_seconds.map(|s| now - last_run.get(&job.name).copied().unwrap_or(0) >= s).unwrap_or(false),
+            _ => false,
+        };
+        if should_run {
+            let _ = Command::new("bash").args(["-c", &job.command]).output();
+            last_run.insert(job.name.clone(), now);
+            if let Ok(mut f) = fs::OpenOptions::new().create(true).append(true).open(&log) {
+                use std::io::Write;
+                let ts = Command::new("date").args(["+%Y-%m-%d %H:%M:%S"]).output()
+                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
+                let _ = writeln!(f, "[{}] RUN {}: {}", ts, job.name, job.command);
+            }
+        }
+    }
+    fs::write(&last_run_path, serde_json::to_string(&last_run).unwrap()).ok();
+}
+
+fn cmd_schedule_list() {
+    let s = load_schedule();
+    if s.jobs.is_empty() {
+        println!("등록된 작업이 없습니다.");
+        println!("  mac schedule-add <name> <command> --cron \"0 9 * * *\"");
+        return;
+    }
+    println!("{:<20} {:<8} {:<25} {}", "NAME", "STATUS", "SCHEDULE", "COMMAND");
+    println!("{}", "─".repeat(80));
+    for j in &s.jobs {
+        let st = if j.enabled { "✓" } else { "✗" };
+        let sc = match j.schedule.stype.as_str() {
+            "cron" => j.schedule.cron.clone().unwrap_or_default(),
+            "interval" => format!("every {}s", j.schedule.interval_seconds.unwrap_or(0)),
+            _ => "?".into(),
+        };
+        println!("{:<20} {:<8} {:<25} {}", j.name, st, sc, j.command);
+    }
+}
+
+fn cmd_schedule_add(name: &str, command: &str, cron: Option<String>, interval: Option<u64>) {
+    let mut s = load_schedule();
+    if s.jobs.iter().any(|j| j.name == name) {
+        println!("'{}' 이미 존재합니다.", name);
+        return;
+    }
+    let schedule = if let Some(c) = cron {
+        ScheduleSpec { stype: "cron".into(), cron: Some(c), interval_seconds: None, watch_path: None }
+    } else if let Some(i) = interval {
+        ScheduleSpec { stype: "interval".into(), cron: None, interval_seconds: Some(i), watch_path: None }
+    } else {
+        eprintln!("--cron 또는 --interval 필요");
+        return;
+    };
+    s.jobs.push(Job {
+        name: name.into(), command: command.into(), schedule,
+        enabled: true, description: String::new(),
+    });
+    save_schedule(&s);
+    println!("✓ {} 추가", name);
+}
+
+fn cmd_schedule_remove(name: &str) {
+    let mut s = load_schedule();
+    let before = s.jobs.len();
+    s.jobs.retain(|j| j.name != name);
+    if s.jobs.len() == before {
+        println!("'{}' 없음", name);
+        return;
+    }
+    save_schedule(&s);
+    println!("✓ {} 삭제", name);
+}
+
+fn cmd_schedule_toggle(name: &str) {
+    let mut s = load_schedule();
+    if let Some(j) = s.jobs.iter_mut().find(|j| j.name == name) {
+        j.enabled = !j.enabled;
+        let enabled = j.enabled;
+        save_schedule(&s);
+        println!("{} {}", name, if enabled { "✓ 활성화" } else { "✗ 비활성화" });
+    } else {
+        println!("'{}' 없음", name);
     }
 }
