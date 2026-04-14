@@ -23,6 +23,7 @@ jobs:
           - files
           - git
           - quickaction
+          - vscode
           - wireguard
           - projects
           - scheduler

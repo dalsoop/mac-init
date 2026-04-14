@@ -56,6 +56,7 @@ const KNOWN: &[(&str, &str)] = &[
     ("container", "Docker/OrbStack 컨테이너 관리"),
     ("wireguard", "WireGuard VPN 관리"),
     ("quickaction", "Finder 우클릭 Quick Actions"),
+    ("vscode", "VS Code 설치, 확장, 설정 관리"),
     ("cron", "LaunchAgents 스케줄 관리"),
     ("defaults", "macOS 시스템 설정"),
     ("dotfiles", "설정 파일 스캔/읽기"),
