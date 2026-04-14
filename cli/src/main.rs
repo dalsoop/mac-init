@@ -1,6 +1,7 @@
 mod common;
 mod constants;
 mod config;
+mod cron;
 mod dal;
 mod files;
 mod init;
@@ -43,6 +44,11 @@ enum Commands {
     Config {
         #[command(subcommand)]
         cmd: ConfigCmd,
+    },
+    /// 스케줄 작업 관리 (LaunchAgents)
+    Cron {
+        #[command(subcommand)]
+        cmd: CronCmd,
     },
     /// 마운트 관리 (sshfs/smb)
     Mount {
@@ -389,6 +395,40 @@ enum FilesCmd {
     Lint,
 }
 
+// === CRON (LaunchAgents) ===
+#[derive(Subcommand)]
+enum CronCmd {
+    /// 전체 LaunchAgent 상태 요약
+    Status,
+    /// LaunchAgent 전체 목록 (테이블)
+    List,
+    /// LaunchAgent 상세 정보
+    Info {
+        /// label (부분 매칭 가능)
+        label: String,
+    },
+    /// LaunchAgent 로드 (시작)
+    Load {
+        /// label
+        label: String,
+    },
+    /// LaunchAgent 언로드 (정지)
+    Unload {
+        /// label
+        label: String,
+    },
+    /// LaunchAgent 재시작
+    Restart {
+        /// label
+        label: String,
+    },
+    /// LaunchAgent 로그 확인
+    Logs {
+        /// label
+        label: String,
+    },
+}
+
 // === KEYBOARD ===
 #[derive(Subcommand)]
 enum KeyboardCmd {
@@ -590,6 +630,16 @@ fn main() {
             FilesCmd::SdDisable => files::sd_disable(),
             FilesCmd::SdRun => files::sd_run(),
             FilesCmd::Lint => files::lint(),
+        },
+
+        Commands::Cron { cmd } => match cmd {
+            CronCmd::Status => cron::status(),
+            CronCmd::List => cron::list(),
+            CronCmd::Info { label } => cron::info(&label),
+            CronCmd::Load { label } => cron::load(&label),
+            CronCmd::Unload { label } => cron::unload(&label),
+            CronCmd::Restart { label } => cron::restart(&label),
+            CronCmd::Logs { label } => cron::logs(&label),
         },
 
         Commands::Keyboard { cmd } => match cmd {
