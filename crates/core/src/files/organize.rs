@@ -99,17 +99,8 @@ pub fn setup_auto() {
         return;
     }
 
-    let script_path = format!("{h}/시스템/bin/file-organizer.sh");
-    common::ensure_dir(Path::new(&format!("{h}/시스템/bin")));
-
-    let bin_path = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("mac-host-commands"));
-    let script = format!(r#"#!/bin/bash
-{bin} files organize 2>/dev/null
-{bin} files cleanup-temp 2>/dev/null
-"#, bin = bin_path.display());
-
-    fs::write(&script_path, script).expect("스크립트 생성 실패");
-    let _ = Command::new("chmod").args(["+x", &script_path]).output();
+    // CLI 바이너리를 직접 호출 (shell 스크립트 불필요)
+    let bin = which_bin();
 
     let plist = format!(r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -119,7 +110,9 @@ pub fn setup_auto() {
     <string>com.mac-host.file-organizer</string>
     <key>ProgramArguments</key>
     <array>
-        <string>{script}</string>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <string>{bin} files organize; {bin} files cleanup-temp</string>
     </array>
     <key>StartCalendarInterval</key>
     <dict>
@@ -129,18 +122,27 @@ pub fn setup_auto() {
         <integer>0</integer>
     </dict>
     <key>StandardOutPath</key>
-    <string>{home}/시스템/로그/file-organizer.log</string>
+    <string>{home}/문서/시스템/로그/file-organizer.log</string>
     <key>StandardErrorPath</key>
-    <string>{home}/시스템/로그/file-organizer.log</string>
+    <string>{home}/문서/시스템/로그/file-organizer.log</string>
 </dict>
-</plist>"#, script = script_path, home = h);
+</plist>"#, bin = bin, home = h);
 
-    common::ensure_dir(Path::new(&format!("{h}/시스템/로그")));
+    common::ensure_dir(Path::new(&format!("{h}/문서/시스템/로그")));
     fs::write(&plist_path, plist).expect("LaunchAgent 생성 실패");
     let _ = Command::new("launchctl").args(["load", &plist_path]).status();
 
     println!("[files] 자동 정리 설정 완료");
-    println!("  매일 09:00 실행");
+    println!("  매일 09:00 실행 (mac-host-commands files organize + cleanup-temp)");
+}
+
+fn which_bin() -> String {
+    let (ok, stdout) = common::run_cmd_quiet("which", &["mac-host-commands"]);
+    if ok {
+        stdout.trim().to_string()
+    } else {
+        format!("{}/.cargo/bin/mac-host-commands", home())
+    }
 }
 
 pub fn disable_auto() {
