@@ -133,14 +133,6 @@ in
       provides = ["worktree status", "worktree add", "worktree remove", "worktree clean"],
     } | Domain,
 
-    veil = {
-      name = "veil",
-      description = "VeilKey — LocalVault, VaultCenter 시크릿 관리",
-      enabled = true,
-      tags = { product = 'vault, layer = 'tool },
-      provides = ["veil status", "veil bootstrap", "veil check", "veil start", "veil stop"],
-    } | Domain,
-
     openclaw = {
       name = "openclaw",
       description = "OpenClaw AI 어시스턴트 인증/터널",
@@ -157,14 +149,6 @@ in
       provides = ["obsidian status", "obsidian install", "obsidian sync", "obsidian plugin-install", "obsidian plugin-list"],
     } | Domain,
 
-    dal = {
-      name = "dal",
-      description = "Dalcenter AI 에이전트 태스크 관리",
-      enabled = true,
-      tags = { product = 'knowledge, layer = 'remote },
-      provides = ["dal status", "dal install", "dal watch", "dal task", "dal task-list", "dal tell"],
-    } | Domain,
-
     projects = {
       name = "projects",
       description = "프로젝트 스캔/동기화 (NCL 생성)",
@@ -179,11 +163,11 @@ in
     init = ["keyboard", "setup", "workspace", "github", "config"],
     infra = ["mount", "network", "ssh", "proxmox", "synology"],
     auto = ["cron", "files", "worktree", "projects"],
-    vault = ["veil", "openclaw"],
-    knowledge = ["obsidian", "dal"],
+    vault = ["openclaw"],
+    knowledge = ["obsidian"],
     full = ["keyboard", "setup", "workspace", "github", "config",
             "mount", "network", "ssh", "proxmox", "synology",
-            "cron", "files", "worktree", "projects", "veil", "openclaw",
-            "obsidian", "dal"],
+            "cron", "files", "worktree", "projects", "openclaw",
+            "obsidian"],
   },
 }

@@ -68,9 +68,7 @@ const KNOWN: &[(&str, &str)] = &[
     ("workspace", "tmux, CLI 도구, 셸"),
     ("github", "gh CLI, SSH 키"),
     ("obsidian", "Obsidian 볼트 관리"),
-    ("veil", "VeilKey 시크릿 관리"),
     ("openclaw", "OpenClaw AI 어시스턴트"),
-    ("dal", "Dalcenter AI 에이전트"),
 ];
 
 impl StoreTab {

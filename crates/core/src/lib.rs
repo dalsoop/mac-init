@@ -6,8 +6,6 @@ pub mod models;
 pub mod brew;
 #[cfg(domain = "cron")]
 pub mod cron;
-#[cfg(domain = "dal")]
-pub mod dal;
 #[cfg(domain = "defaults")]
 pub mod defaults;
 #[cfg(domain = "dotfiles")]
@@ -38,8 +36,6 @@ pub mod setup;
 pub mod ssh;
 #[cfg(domain = "synology")]
 pub mod synology;
-#[cfg(domain = "veil")]
-pub mod veil;
 #[cfg(domain = "worktree")]
 pub mod worktree;
 #[cfg(domain = "workspace")]
