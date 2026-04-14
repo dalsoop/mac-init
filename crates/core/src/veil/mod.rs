@@ -7,7 +7,11 @@ fn home() -> String {
     std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string())
 }
 
-use crate::constants::{VAULTCENTER_LXC, VAULTCENTER_URL, LOCALVAULT_URL};
+use crate::common;
+
+fn VAULTCENTER_URL() -> String { common::env_required("VAULTCENTER_URL") }
+fn LOCALVAULT_URL() -> String { common::env_required("LOCALVAULT_URL") }
+fn VAULTCENTER_LXC() -> String { common::env_or("VAULTCENTER_LXC", "110") }
 
 pub fn status() {
     println!("=== VeilKey 상태 ===\n");

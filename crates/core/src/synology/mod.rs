@@ -3,11 +3,18 @@ use std::process::Command;
 use crate::common;
 use crate::config::Config;
 
-use crate::constants;
+fn synology_ip() -> String {
+    common::env_required("SYNOLOGY_HOST")
+}
 
-const SYNOLOGY_IP: &str = constants::SYNOLOGY_HOST;
-const SYNOLOGY_USER: &str = constants::SYNOLOGY_USER;
-const PATH_MAP: &[(&str, &str)] = constants::SYNOLOGY_PATH_MAP;
+fn synology_user() -> String {
+    common::env_or("SYNOLOGY_USER", "proxmox")
+}
+
+fn path_map() -> Vec<(String, String)> {
+    // TODO: load from config or env
+    Vec::new()
+}
 
 /// Mac 경로 → Synology 실제 경로 변환
 /// 예: "미디어/편집본/2207_애들모임" → "/volume1/사진 편집본/2207_애들모임"
@@ -21,7 +28,7 @@ fn resolve_path(mac_path: &str) -> String {
 
     // 가장 긴 매치부터 시도
     let mut best_match: Option<(&str, &str)> = None;
-    for (mac, syn) in PATH_MAP {
+    for (mac, syn) in &path_map() {
         if normalized.starts_with(mac) {
             if best_match.is_none() || mac.len() > best_match.unwrap().0.len() {
                 best_match = Some((mac, syn));
@@ -40,7 +47,7 @@ fn resolve_path(mac_path: &str) -> String {
     } else {
         // 매핑 없으면 경고
         eprintln!("[synology] 경로 매핑 없음: {mac_path}");
-        eprintln!("  사용 가능: {}", PATH_MAP.iter().map(|(m, _)| *m).collect::<Vec<_>>().join(", "));
+        eprintln!("  사용 가능: {}", path_map().iter().map(|(m, _)| m.as_str()).collect::<Vec<_>>().join(", "));
         mac_path.to_string()
     }
 }
@@ -49,12 +56,12 @@ pub fn status() {
     println!("=== Synology 상태 ===\n");
 
     let (ssh_ok, _) = ssh_cmd("echo ok");
-    println!("[SSH] {}@{} {}", SYNOLOGY_USER, SYNOLOGY_IP, if ssh_ok { "✓ 연결 가능" } else { "✗ 연결 불가" });
+    println!("[SSH] {}@{} {}", &synology_user(), &synology_ip(), if ssh_ok { "✓ 연결 가능" } else { "✗ 연결 불가" });
 
     let (_, dsm) = common::run_cmd_quiet("curl", &["-sk", "--connect-timeout", "3",
-        &format!("https://{}:5001/webapi/query.cgi?api=SYNO.API.Info&version=1&method=query", SYNOLOGY_IP)]);
+        &format!("https://{}:5001/webapi/query.cgi?api=SYNO.API.Info&version=1&method=query", &synology_ip())]);
     let dsm_ok = dsm.contains("success");
-    println!("[DSM] https://{}:5001 {}", SYNOLOGY_IP, if dsm_ok { "✓" } else { "✗" });
+    println!("[DSM] https://{}:5001 {}", &synology_ip(), if dsm_ok { "✓" } else { "✗" });
 
     if ssh_ok {
         let (_, shares) = ssh_cmd("ls -d /volume*/*/ 2>/dev/null | grep -cv '@'");
@@ -71,11 +78,11 @@ pub fn status() {
 }
 
 pub fn ssh() {
-    println!("[synology] SSH 접속: {}@{}", SYNOLOGY_USER, SYNOLOGY_IP);
+    println!("[synology] SSH 접속: {}@{}", &synology_user(), &synology_ip());
     let cfg = Config::load();
     let _ = Command::new("ssh")
         .args(["-t", &format!("{}@{}", cfg.proxmox.user, cfg.proxmox.host),
-            &format!("sshpass -p 'g#%fN3SfF#kI6#' ssh -o StrictHostKeyChecking=accept-new {}@{}", SYNOLOGY_USER, SYNOLOGY_IP)])
+            &format!("sshpass -p 'g#%fN3SfF#kI6#' ssh -o StrictHostKeyChecking=accept-new {}@{}", &synology_user(), &synology_ip())])
         .status();
 }
 
@@ -122,7 +129,7 @@ pub fn ls(path: &str) {
     let target = if path.is_empty() {
         // 매핑 목록 표시
         println!("=== Synology 경로 매핑 ===\n");
-        for (mac, syn) in PATH_MAP {
+        for (mac, syn) in &path_map() {
             println!("  {mac:25} → {syn}");
         }
         return;
@@ -163,7 +170,7 @@ pub fn cleanup_meta() {
 
 /// Synology 실제 경로 → Mac 폴더명으로 역변환
 fn reverse_map(syn_path: &str) -> String {
-    for (mac, syn) in PATH_MAP {
+    for (mac, syn) in &path_map() {
         if syn_path.starts_with(syn) {
             let rest = syn_path.strip_prefix(syn).unwrap_or("");
             return format!("{mac}{rest}");
@@ -176,7 +183,7 @@ fn ssh_cmd(cmd: &str) -> (bool, String) {
     let cfg = Config::load();
     let full_cmd = format!(
         "sshpass -p 'g#%fN3SfF#kI6#' ssh -o StrictHostKeyChecking=accept-new {}@{} '{}'",
-        SYNOLOGY_USER, SYNOLOGY_IP, cmd.replace('\'', "'\\''")
+        &synology_user(), &synology_ip(), cmd.replace('\'', "'\\''")
     );
     common::ssh_cmd(&cfg.proxmox.host, &cfg.proxmox.user, &full_cmd)
 }
