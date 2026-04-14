@@ -9,7 +9,6 @@ enum InfraView {
     Overview,
     Proxmox,
     Synology,
-    Veil,
     Workspace,
 }
 
@@ -18,7 +17,6 @@ impl InfraView {
         InfraView::Overview,
         InfraView::Proxmox,
         InfraView::Synology,
-        InfraView::Veil,
         InfraView::Workspace,
     ];
 
@@ -27,7 +25,6 @@ impl InfraView {
             Self::Overview => "Overview",
             Self::Proxmox => "Proxmox",
             Self::Synology => "Synology",
-            Self::Veil => "Veil",
             Self::Workspace => "Workspace",
         }
     }
@@ -37,7 +34,6 @@ impl InfraView {
             Self::Overview => &["status"],
             Self::Proxmox => &["proxmox", "status"],
             Self::Synology => &["synology", "status"],
-            Self::Veil => &["veil", "status"],
             Self::Workspace => &["workspace", "status"],
         }
     }
