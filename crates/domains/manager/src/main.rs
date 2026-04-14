@@ -29,6 +29,10 @@ enum Commands {
     Update { name: String },
     /// 전체 도메인 업데이트
     UpdateAll,
+    /// mac 매니저 자체 업데이트
+    SelfUpdate,
+    /// 전체 업그레이드 (매니저 + 모든 도메인)
+    Upgrade,
     /// 도메인 실행 (mac run keyboard status)
     Run { name: String, args: Vec<String> },
 }
@@ -105,6 +109,8 @@ fn main() {
         Commands::Remove { name } => cmd_remove(&name),
         Commands::Update { name } => cmd_update(&name),
         Commands::UpdateAll => cmd_update_all(),
+        Commands::SelfUpdate => cmd_self_update(),
+        Commands::Upgrade => cmd_upgrade(),
         Commands::Run { name, args } => cmd_run(&name, &args),
     }
 }
@@ -207,6 +213,91 @@ fn cmd_update_all() {
     for name in &names {
         cmd_update(name);
     }
+}
+
+fn cmd_self_update() {
+    println!("Updating mac manager...");
+
+    let asset = format!("mac-{}-apple-darwin.tar.gz", arch());
+    let dest_dir = std::env::temp_dir();
+
+    // Get latest release tag
+    let output = Command::new("gh")
+        .args(["release", "list", "--repo", GITHUB_REPO, "--limit", "1", "--json", "tagName"])
+        .output();
+
+    let tag = match output {
+        Ok(o) if o.status.success() => {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            let releases: Vec<serde_json::Value> = serde_json::from_str(&stdout).unwrap_or_default();
+            releases.first()
+                .and_then(|r| r.get("tagName"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("latest")
+                .to_string()
+        }
+        _ => {
+            eprintln!("✗ 릴리스 확인 실패");
+            return;
+        }
+    };
+
+    // Download
+    let result = Command::new("gh")
+        .args([
+            "release", "download", &tag,
+            "--repo", GITHUB_REPO,
+            "--pattern", &asset,
+            "--dir", &dest_dir.to_string_lossy(),
+            "--clobber",
+        ])
+        .output();
+
+    if result.is_err() || !result.unwrap().status.success() {
+        eprintln!("✗ 다운로드 실패");
+        return;
+    }
+
+    // Extract to temp
+    let tar_path = dest_dir.join(&asset);
+    let extract = Command::new("tar")
+        .args(["xzf", &tar_path.to_string_lossy(), "-C", &dest_dir.to_string_lossy()])
+        .output();
+
+    if extract.is_err() || !extract.unwrap().status.success() {
+        eprintln!("✗ 압축 해제 실패");
+        return;
+    }
+
+    // Replace current binary
+    let new_bin = dest_dir.join("mac");
+    let current_bin = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("/usr/local/bin/mac"));
+
+    if let Err(e) = fs::copy(&new_bin, &current_bin) {
+        eprintln!("✗ 바이너리 교체 실패: {}", e);
+        eprintln!("  수동: cp {} {}", new_bin.display(), current_bin.display());
+        return;
+    }
+
+    // Cleanup
+    fs::remove_file(&tar_path).ok();
+    fs::remove_file(&new_bin).ok();
+
+    println!("✓ mac 매니저 업데이트 완료 ({})", tag);
+}
+
+fn cmd_upgrade() {
+    println!("=== 전체 업그레이드 ===\n");
+
+    // 1. Self update
+    println!("[1] mac 매니저 업데이트");
+    cmd_self_update();
+
+    // 2. Update all domains
+    println!("\n[2] 설치된 도메인 업데이트");
+    cmd_update_all();
+
+    println!("\n=== 업그레이드 완료 ===");
 }
 
 fn cmd_run(name: &str, args: &[String]) {
