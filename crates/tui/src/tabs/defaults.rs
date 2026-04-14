@@ -2,8 +2,8 @@ use color_eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{prelude::*, widgets::*};
 
-use crate::models::DefaultEntry;
-use crate::services;
+use mac_host_core::models::defaults::DefaultEntry;
+use mac_host_core::defaults;
 
 enum View {
     Domains,
@@ -38,7 +38,7 @@ impl DefaultsTab {
     }
 
     pub async fn load(&mut self) -> Result<()> {
-        self.domains = services::defaults::list_domains()?;
+        self.domains = defaults::list_domains();
         self.apply_filter();
         Ok(())
     }
@@ -257,18 +257,11 @@ impl DefaultsTab {
                 View::Domains => {
                     if let Some(&idx) = self.filtered_domains.get(self.selected) {
                         let domain = self.domains[idx].clone();
-                        match services::defaults::read_domain(&domain) {
-                            Ok(entries) => {
-                                self.entries = entries;
-                                self.current_domain = domain;
-                                self.view = View::Entries;
-                                self.selected = 0;
-                                self.search.clear();
-                            }
-                            Err(e) => {
-                                self.output = format!("Error: {}", e);
-                            }
-                        }
+                        self.entries = defaults::read_domain(&domain);
+                        self.current_domain = domain;
+                        self.view = View::Entries;
+                        self.selected = 0;
+                        self.search.clear();
                     }
                 }
                 View::Entries => {}

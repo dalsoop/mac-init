@@ -2,8 +2,8 @@ use color_eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{prelude::*, widgets::*};
 
-use crate::models::config::ConfigEntry;
-use crate::services;
+use mac_host_core::models::config_entry::{ConfigEntry, ConfigCategory};
+use mac_host_core::dotfiles;
 
 pub struct ConfigsTab {
     configs: Vec<ConfigEntry>,
@@ -23,7 +23,7 @@ impl ConfigsTab {
     }
 
     pub async fn load(&mut self) -> Result<()> {
-        self.configs = services::configs::scan_configs()?;
+        self.configs = dotfiles::scan_configs();
         self.update_preview();
         Ok(())
     }
@@ -32,8 +32,8 @@ impl ConfigsTab {
         self.preview_scroll = 0;
         if let Some(entry) = self.configs.get(self.selected) {
             if entry.path.is_file() {
-                self.preview = services::configs::read_config(&entry.path)
-                    .unwrap_or_else(|e| format!("Error reading file: {}", e));
+                self.preview = dotfiles::read_config(&entry.path)
+                    .unwrap_or_else(|| "Error reading file".to_string());
             } else if entry.path.is_dir() {
                 // List directory contents
                 let mut contents = String::new();
@@ -73,13 +73,13 @@ impl ConfigsTab {
                     Style::default()
                 };
                 let cat_color = match entry.category {
-                    crate::models::config::ConfigCategory::Shell => Color::Green,
-                    crate::models::config::ConfigCategory::Git => Color::Red,
-                    crate::models::config::ConfigCategory::Ssh => Color::Yellow,
-                    crate::models::config::ConfigCategory::Editor => Color::Blue,
-                    crate::models::config::ConfigCategory::Terminal => Color::Magenta,
-                    crate::models::config::ConfigCategory::Keyboard => Color::Cyan,
-                    crate::models::config::ConfigCategory::Other => Color::Gray,
+                    ConfigCategory::Shell => Color::Green,
+                    ConfigCategory::Git => Color::Red,
+                    ConfigCategory::Ssh => Color::Yellow,
+                    ConfigCategory::Editor => Color::Blue,
+                    ConfigCategory::Terminal => Color::Magenta,
+                    ConfigCategory::Keyboard => Color::Cyan,
+                    ConfigCategory::Other => Color::Gray,
                 };
                 Row::new(vec![
                     Cell::from(entry.category.to_string()).style(Style::default().fg(cat_color)),

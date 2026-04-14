@@ -2,8 +2,8 @@ use color_eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{prelude::*, widgets::*};
 
-use crate::models::BrewPackage;
-use crate::services;
+use mac_host_core::models::brew::BrewPackage;
+use mac_host_core::brew;
 
 pub struct BrewTab {
     packages: Vec<BrewPackage>,
@@ -29,7 +29,7 @@ impl BrewTab {
     }
 
     pub async fn load(&mut self) -> Result<()> {
-        self.packages = services::brew::list_installed()?;
+        self.packages = brew::list_installed();
         self.apply_filter();
         Ok(())
     }
@@ -224,14 +224,14 @@ impl BrewTab {
             KeyCode::Char('u') => {
                 if let Some(pkg) = self.selected_package().cloned() {
                     if pkg.outdated {
-                        self.output = services::brew::upgrade(&pkg.name, pkg.is_cask)?;
+                        self.output = brew::upgrade(&pkg.name, pkg.is_cask).unwrap_or_else(|e| e);
                         self.load().await?;
                     }
                 }
             }
             KeyCode::Char('r') => {
                 if let Some(pkg) = self.selected_package().cloned() {
-                    self.output = services::brew::uninstall(&pkg.name, pkg.is_cask)?;
+                    self.output = brew::uninstall(&pkg.name, pkg.is_cask).unwrap_or_else(|e| e);
                     self.load().await?;
                 }
             }

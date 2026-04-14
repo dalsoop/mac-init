@@ -1,8 +1,7 @@
-use color_eyre::Result;
 use std::fs;
 use std::path::PathBuf;
 
-use crate::models::config::{ConfigCategory, ConfigEntry};
+use crate::models::config_entry::{ConfigCategory, ConfigEntry};
 
 struct ConfigSource {
     name: &'static str,
@@ -34,7 +33,7 @@ fn expand_tilde(path: &str) -> PathBuf {
     PathBuf::from(path)
 }
 
-pub fn scan_configs() -> Result<Vec<ConfigEntry>> {
+pub fn scan_configs() -> Vec<ConfigEntry> {
     let mut entries = Vec::new();
 
     for src in KNOWN_CONFIGS {
@@ -60,7 +59,7 @@ pub fn scan_configs() -> Result<Vec<ConfigEntry>> {
                 size_bytes: if metadata.is_file() {
                     metadata.len()
                 } else {
-                    dir_size(&path).unwrap_or(0)
+                    dir_size(&path)
                 },
                 modified,
             });
@@ -88,7 +87,7 @@ pub fn scan_configs() -> Result<Vec<ConfigEntry>> {
                     size_bytes: if metadata.is_file() {
                         metadata.len()
                     } else {
-                        dir_size(&path).unwrap_or(0)
+                        dir_size(&path)
                     },
                     modified: metadata
                         .modified()
@@ -109,25 +108,27 @@ pub fn scan_configs() -> Result<Vec<ConfigEntry>> {
             .cmp(&b.category.to_string())
             .then(a.name.cmp(&b.name))
     });
-    Ok(entries)
+    entries
 }
 
-fn dir_size(path: &PathBuf) -> Result<u64> {
+fn dir_size(path: &PathBuf) -> u64 {
     let mut total = 0u64;
     if path.is_dir() {
-        for entry in fs::read_dir(path)?.flatten() {
-            let m = match entry.metadata() {
-                Ok(m) => m,
-                Err(_) => continue,
-            };
-            if m.is_file() {
-                total += m.len();
-            } else if m.is_dir() {
-                total += dir_size(&entry.path()).unwrap_or(0);
+        if let Ok(entries) = fs::read_dir(path) {
+            for entry in entries.flatten() {
+                let m = match entry.metadata() {
+                    Ok(m) => m,
+                    Err(_) => continue,
+                };
+                if m.is_file() {
+                    total += m.len();
+                } else if m.is_dir() {
+                    total += dir_size(&entry.path());
+                }
             }
         }
     }
-    Ok(total)
+    total
 }
 
 fn format_date(epoch_secs: u64) -> String {
@@ -166,6 +167,6 @@ fn is_leap(y: i64) -> bool {
     (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
 }
 
-pub fn read_config(path: &PathBuf) -> Result<String> {
-    Ok(fs::read_to_string(path)?)
+pub fn read_config(path: &PathBuf) -> Option<String> {
+    fs::read_to_string(path).ok()
 }

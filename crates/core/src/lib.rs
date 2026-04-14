@@ -3,10 +3,16 @@ pub mod constants;
 pub mod config;
 pub mod models;
 
+#[cfg(domain = "brew")]
+pub mod brew;
 #[cfg(domain = "cron")]
 pub mod cron;
 #[cfg(domain = "dal")]
 pub mod dal;
+#[cfg(domain = "defaults")]
+pub mod defaults;
+#[cfg(domain = "dotfiles")]
+pub mod dotfiles;
 #[cfg(domain = "files")]
 pub mod files;
 #[cfg(domain = "github")]
