@@ -41,14 +41,35 @@ const KNOWN_DOMAINS: &[(&str, &str)] = &[
     ("worktree", "Git worktree 관리"),
 ];
 
+// (display name, brew cask, app bundle name)
 const KNOWN_APPS: &[(&str, &str, &str)] = &[
-    ("Visual Studio Code", "visual-studio-code", "/Applications/Visual Studio Code.app"),
-    ("OrbStack", "orbstack", "/Applications/OrbStack.app"),
-    ("WireGuard", "wireguard", "/Applications/WireGuard.app"),
-    ("iTerm2", "iterm2", "/Applications/iTerm.app"),
-    ("Obsidian", "obsidian", "/Applications/Obsidian.app"),
-    ("Karabiner-Elements", "karabiner-elements", "/Applications/Karabiner-Elements.app"),
+    ("Visual Studio Code", "visual-studio-code", "Visual Studio Code"),
+    ("OrbStack", "orbstack", "OrbStack"),
+    ("WireGuard", "wireguard", "WireGuard"),
+    ("iTerm2", "iterm2", "iTerm"),
+    ("Obsidian", "obsidian", "Obsidian"),
+    ("Karabiner-Elements", "karabiner-elements", "Karabiner-Elements"),
 ];
+
+fn app_installed(bundle_name: &str) -> bool {
+    // 1. Direct path check
+    if std::path::Path::new(&format!("/Applications/{}.app", bundle_name)).exists() {
+        return true;
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        if std::path::Path::new(&format!("{}/Applications/{}.app", home, bundle_name)).exists() {
+            return true;
+        }
+    }
+    false
+}
+
+fn brew_installed_casks() -> std::collections::HashSet<String> {
+    let output = Command::new("brew").args(["list", "--cask"]).output();
+    output.ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).lines().map(|l| l.trim().to_string()).collect())
+        .unwrap_or_default()
+}
 
 pub struct InstallTab {
     state: TreeState<String>,
@@ -104,9 +125,10 @@ impl InstallTab {
             children: domain_children,
         };
 
-        // Apps
-        let app_children: Vec<Node> = KNOWN_APPS.iter().map(|(name, cask, path)| {
-            let installed = std::path::Path::new(path).exists();
+        // Apps — check via brew cask + .app file
+        let brew_casks = brew_installed_casks();
+        let app_children: Vec<Node> = KNOWN_APPS.iter().map(|(name, cask, bundle)| {
+            let installed = brew_casks.contains(*cask) || app_installed(bundle);
             Node {
                 id: format!("app:{}", cask),
                 label: format!("{} {}", if installed { "✓" } else { " " }, name),
@@ -115,10 +137,10 @@ impl InstallTab {
             }
         }).collect();
 
-        let app_installed = app_children.iter().filter(|n| matches!(&n.kind, NodeKind::App { installed: true, .. })).count();
+        let app_installed_cnt = app_children.iter().filter(|n| matches!(&n.kind, NodeKind::App { installed: true, .. })).count();
         let apps = Node {
             id: "apps".into(),
-            label: format!("Apps ({}/{})", app_installed, KNOWN_APPS.len()),
+            label: format!("Apps ({}/{})", app_installed_cnt, KNOWN_APPS.len()),
             kind: NodeKind::Category,
             children: app_children,
         };
