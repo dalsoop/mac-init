@@ -10,7 +10,7 @@ pub fn home_path(relative: &str) -> PathBuf {
     PathBuf::from(home()).join(relative)
 }
 
-/// Get required env var — panics with helpful message if missing
+/// Get required env var — exits with message if missing
 pub fn env_required(key: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| {
         eprintln!("[error] 환경변수 {key} 가 설정되지 않았습니다.");
@@ -42,31 +42,60 @@ pub fn env_dir_or(key: &str, default: &str) -> PathBuf {
 }
 
 pub fn config_dir() -> PathBuf {
-    home_path(".mac-host-commands")
-}
-
-pub fn env_file() -> PathBuf {
-    config_dir().join(".env")
+    home_path(".mac-app-init")
 }
 
 pub fn config_file() -> PathBuf {
     config_dir().join("config.toml")
 }
 
-pub fn load_env() {
-    // Load ~/.env (dotenvx encrypted or plain)
-    let env_path = home_path(".env");
-    load_env_file(&env_path);
-
-    // Also load legacy ~/.mac-host-commands/.env if exists
-    let legacy = home_path(".mac-host-commands/.env");
-    load_env_file(&legacy);
+pub fn env_file() -> PathBuf {
+    home_path(".env")
 }
 
-fn load_env_file(path: &Path) {
-    if !path.exists() {
+/// Load ~/.env via dotenvx (handles encrypted values)
+/// Falls back to plain text parsing if dotenvx not available
+pub fn load_env() {
+    let env_path = home_path(".env");
+    if !env_path.exists() {
         return;
     }
+
+    // Try dotenvx first (handles encrypted values)
+    if load_env_dotenvx(&env_path) {
+        return;
+    }
+
+    // Fallback: plain text (skips encrypted values)
+    load_env_plain(&env_path);
+}
+
+fn load_env_dotenvx(path: &Path) -> bool {
+    let output = Command::new("dotenvx")
+        .args(["get", "-f", &path.to_string_lossy(), "--format", "json"])
+        .output();
+
+    match output {
+        Ok(o) if o.status.success() => {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            if let Ok(map) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&stdout) {
+                for (key, value) in &map {
+                    if std::env::var(key).is_err() {
+                        if let Some(val) = value.as_str() {
+                            unsafe { std::env::set_var(key, val); }
+                        }
+                    }
+                }
+                return true;
+            }
+            // dotenvx get --format json not supported, try line-by-line
+            false
+        }
+        _ => false,
+    }
+}
+
+fn load_env_plain(path: &Path) {
     let content = fs::read_to_string(path).unwrap_or_default();
     for line in content.lines() {
         let trimmed = line.trim();
@@ -76,7 +105,6 @@ fn load_env_file(path: &Path) {
         if let Some((key, value)) = trimmed.split_once('=') {
             let key = key.trim();
             let value = value.trim().trim_matches('"');
-            // Don't overwrite existing env vars, skip encrypted values
             if std::env::var(key).is_err() && !value.is_empty() && !value.starts_with("encrypted:") {
                 unsafe { std::env::set_var(key, value); }
             }
