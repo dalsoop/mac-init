@@ -1,0 +1,51 @@
+{
+  // ── Live Preview (HTML 자동 미리보기) ──
+  "livePreview.openPreviewTarget": "internalBrowser",
+  "livePreview.autoRefreshPreview": "On All Changes in Editor",
+
+  // ── Editor ──
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.tabSize": 2,
+  "editor.wordWrap": "on",
+  "editor.minimap.enabled": false,
+  "editor.bracketPairColorization.enabled": true,
+  "editor.guides.bracketPairs": "active",
+  "editor.linkedEditing": true,
+  "editor.suggestSelection": "first",
+  "editor.inlineSuggest.enabled": true,
+
+  // ── Files ──
+  "files.autoSave": "afterDelay",
+  "files.autoSaveDelay": 1000,
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+  "files.trimFinalNewlines": true,
+  "files.exclude": {
+    "**/.DS_Store": true,
+    "**/Thumbs.db": true
+  },
+
+  // ── HTML ──
+  "html.format.wrapLineLength": 120,
+  "html.autoClosingTags": true,
+
+  // ── Emmet ──
+  "emmet.triggerExpansionOnTab": true,
+  "emmet.includeLanguages": {
+    "javascript": "javascriptreact"
+  },
+
+  // ── Terminal ──
+  "terminal.integrated.defaultProfile.osx": "zsh",
+  "terminal.integrated.fontSize": 13,
+
+  // ── Explorer ──
+  "explorer.confirmDelete": false,
+  "explorer.confirmDragAndDrop": false,
+  "explorer.compactFolders": false,
+
+  // ── Workbench ──
+  "workbench.startupEditor": "none",
+  "workbench.editor.enablePreview": true
+}
