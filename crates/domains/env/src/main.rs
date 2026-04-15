@@ -57,6 +57,8 @@ enum Commands {
     Test { name: String },
     /// 상태 요약
     Status,
+    /// 모든 카드 파일 권한을 0600 (디렉터리 0700) 으로 보정
+    FixPerms,
     /// TUI v2 스펙 (JSON)
     TuiSpec,
 }
@@ -76,6 +78,7 @@ fn main() {
         Commands::Import => cmd_import(),
         Commands::Test { name } => cmd_test(&name),
         Commands::Status => cmd_status(),
+        Commands::FixPerms => cmd_fix_perms(),
         Commands::TuiSpec => print_tui_spec(),
     }
 }
@@ -161,9 +164,25 @@ fn load_card(name: &str) -> Option<Card> {
 fn save_card(card: &Card) -> Result<(), String> {
     let dir = cards_dir();
     fs::create_dir_all(&dir).map_err(|e| format!("cards 디렉터리 생성 실패: {}", e))?;
+    // 디렉터리는 0700 (다른 유저가 cards 목록 자체를 못 보게)
+    let _ = set_mode(&dir, 0o700);
     let json = serde_json::to_string_pretty(card).map_err(|e| format!("{}", e))?;
-    fs::write(card_path(&card.name), json).map_err(|e| format!("{}", e))
+    let path = card_path(&card.name);
+    fs::write(&path, json).map_err(|e| format!("{}", e))?;
+    // 파일은 0600 (host/user 노출 방지)
+    let _ = set_mode(&path, 0o600);
+    Ok(())
 }
+
+#[cfg(unix)]
+fn set_mode(p: &std::path::Path, mode: u32) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let mut perm = fs::metadata(p)?.permissions();
+    perm.set_mode(mode);
+    fs::set_permissions(p, perm)
+}
+#[cfg(not(unix))]
+fn set_mode(_p: &std::path::Path, _mode: u32) -> std::io::Result<()> { Ok(()) }
 
 fn list_cards() -> Vec<Card> {
     let dir = cards_dir();
@@ -525,10 +544,59 @@ fn cmd_status() {
     println!("  • keychain 비번: {}", kc);
     println!("  • dotenvx 비번: {}", dx);
     println!("  • 비번 없음:     {}", none);
+
+    // 권한 점검
+    let perms = audit_permissions();
+    if !perms.is_empty() {
+        println!("\n⚠ 권한 부적합 ({}개 — `env fix-perms` 로 0600 적용):", perms.len());
+        for p in perms.iter().take(5) { println!("  • {}", p); }
+    } else if !cards.is_empty() {
+        println!("  • 파일 권한:    ✓ 0600");
+    }
+
     let conn_path = PathBuf::from(home()).join(".mac-app-init/connections.json");
     if conn_path.exists() {
         println!("\n⚠ legacy {} 존재 — `env import` 권장", conn_path.display());
     }
+}
+
+fn audit_permissions() -> Vec<String> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = cards_dir();
+        if !dir.exists() { return Vec::new(); }
+        let mut bad = Vec::new();
+        if let Ok(it) = fs::read_dir(&dir) {
+            for e in it.filter_map(|x| x.ok()) {
+                let path = e.path();
+                if path.extension().and_then(|s| s.to_str()) != Some("json") { continue; }
+                if let Ok(meta) = fs::metadata(&path) {
+                    let mode = meta.permissions().mode() & 0o777;
+                    if mode != 0o600 {
+                        bad.push(format!("{} (현재 {:o})", path.display(), mode));
+                    }
+                }
+            }
+        }
+        bad
+    }
+    #[cfg(not(unix))]
+    { Vec::new() }
+}
+
+fn cmd_fix_perms() {
+    let dir = cards_dir();
+    let _ = set_mode(&dir, 0o700);
+    let mut fixed = 0;
+    if let Ok(it) = fs::read_dir(&dir) {
+        for e in it.filter_map(|x| x.ok()) {
+            let path = e.path();
+            if path.extension().and_then(|s| s.to_str()) != Some("json") { continue; }
+            if set_mode(&path, 0o600).is_ok() { fixed += 1; }
+        }
+    }
+    println!("✓ {} 개 카드 파일 권한 0600 적용 (디렉터리 0700)", fixed);
 }
 
 fn print_tui_spec() {

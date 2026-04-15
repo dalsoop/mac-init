@@ -21,12 +21,15 @@ impl Default for MountOpts {
 
 impl MountOpts {
     /// mount_smbfs -o 인자 문자열 (`soft,nobrowse,...`).
+    /// 주의: macOS mount_smbfs 는 `noappledouble` 옵션 미지원.
+    /// .DS_Store/._ 억제는 카드 옵션과 별개로 `defaults write` 시스템 전역 설정이
+    /// 필요. 여기선 mount_smbfs 가 인식하는 옵션만 조립.
     pub fn smbfs_opts_string(&self) -> String {
         let mut v: Vec<&'static str> = Vec::new();
         if self.readonly { v.push("rdonly"); }
         if self.soft { v.push("soft"); }
         if self.nobrowse { v.push("nobrowse"); }
-        if self.noappledouble { v.push("noappledouble"); }
+        // noappledouble 은 mount_smbfs 옵션이 아님 → 의도적으로 제외.
         v.join(",")
     }
 }

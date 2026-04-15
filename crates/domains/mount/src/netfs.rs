@@ -119,7 +119,45 @@ pub fn mount_url_sync(
     if status == 0 {
         Ok(MountOutcome { status, mountpoints })
     } else {
-        Err(format!("NetFSMountURLSync 실패: status={}", status))
+        Err(format!("NetFSMountURLSync 실패: {} (status={})", explain_status(status), status))
+    }
+}
+
+/// NetFS / errno / SMB NTSTATUS 에러 코드를 사람 친화 문구로.
+/// NetFS 양수 코드는 BSD errno, 음수는 NetFS/NetAuth 전용.
+/// `status` 가 음수 32비트 값일 때 unsigned 로 변환한 NTSTATUS 도 일부 포함.
+fn explain_status(status: i32) -> &'static str {
+    match status {
+        // NetFS errno (양수)
+        1   => "EPERM (권한 없음)",
+        2   => "ENOENT (마운트 포인트 또는 share 경로 없음)",
+        13  => "EACCES (접근 거부 — 자격증명 또는 share 권한 확인)",
+        17  => "EEXIST (이미 마운트됨)",
+        20  => "ENOTDIR (마운트 포인트가 디렉터리 아님)",
+        22  => "EINVAL (잘못된 인자 또는 URL)",
+        60  => "ETIMEDOUT (서버 응답 없음)",
+        61  => "ECONNREFUSED (서버 연결 거부)",
+        64  => "EHOSTDOWN (호스트 다운)",
+        65  => "EHOSTUNREACH (호스트 도달 불가 — 네트워크/방화벽)",
+
+        // NetFS / NetAuth (음수)
+        -5999 => "ENETFSACCOUNTRESTRICTED (계정이 제한됨)",
+        -5998 => "ENETFSPWDNEEDSCHANGE (비번 변경 필요)",
+        -5997 => "ENETFSNOAUTHMECHSUPP (서버가 인증 메커니즘 지원 안 함)",
+        -5996 => "ENETFSNOPROTOVERSSUPP (SMB 버전 미지원 — 서버 SMB2+ 활성 확인)",
+        -6600 => "kNetAuthErrorInternal (NetAuth 내부 오류)",
+        -6602 => "kNetAuthErrorMountFailed (마운트 실패 — 다른 자격증명 시도)",
+        -6003 => "kNetAuthErrorNoSharesAvailable (사용 가능한 share 없음)",
+        -6004 => "kNetAuthErrorGuestNotSupported (게스트 접속 불가)",
+
+        // 자주 나오는 NTSTATUS (signed 32-bit 로 들어옴)
+        -1073741275 => "STATUS_NOT_FOUND (서버에 share 없음 또는 계정에 권한 없음)",
+        -1073741790 => "STATUS_ACCESS_DENIED (서버측 권한 거부)",
+        -1073741715 => "STATUS_LOGON_FAILURE (자격증명 틀림)",
+        -1073741428 => "STATUS_PASSWORD_EXPIRED (비번 만료)",
+        -1073741260 => "STATUS_BAD_NETWORK_NAME (share 이름 오타)",
+
+        _ => "(알 수 없는 코드)",
     }
 }
 
