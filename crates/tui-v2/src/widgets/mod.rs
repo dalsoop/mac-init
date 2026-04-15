@@ -100,19 +100,3 @@ pub fn section_height(section: &Section) -> u16 {
     }
 }
 
-/// 섹션에 focusable 항목이 있는지 (버튼만 focusable)
-pub fn section_focusable(section: &Section) -> Option<usize> {
-    match section {
-        Section::Buttons { items, .. } if !items.is_empty() => Some(items.len()),
-        _ => None,
-    }
-}
-
-/// 버튼 가져오기
-pub fn get_button<'a>(section: &'a Section, idx: usize) -> Option<&'a Button> {
-    if let Section::Buttons { items, .. } = section {
-        items.get(idx)
-    } else {
-        None
-    }
-}

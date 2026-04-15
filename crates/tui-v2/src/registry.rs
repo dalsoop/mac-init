@@ -21,6 +21,36 @@ pub fn installed_domains() -> Vec<String> {
         .unwrap_or_default()
 }
 
+fn mac_bin() -> &'static str { "mac" }
+
+/// `mac available` 파싱 — 전체 도메인 이름 리스트
+pub fn available_domains() -> Vec<String> {
+    let output = Command::new(mac_bin()).arg("available").output();
+    let Ok(o) = output else { return Vec::new(); };
+    let stdout = String::from_utf8_lossy(&o.stdout);
+    stdout.lines()
+        .skip(2)
+        .filter_map(|line| line.split_whitespace().next().map(String::from))
+        .filter(|s| !s.is_empty() && !s.starts_with('─'))
+        .collect()
+}
+
+pub fn install_domain(name: &str) -> String {
+    let output = Command::new(mac_bin()).args(["install", name]).output();
+    match output {
+        Ok(o) => format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)),
+        Err(e) => format!("Error: {}", e),
+    }
+}
+
+pub fn remove_domain(name: &str) -> String {
+    let output = Command::new(mac_bin()).args(["remove", name]).output();
+    match output {
+        Ok(o) => format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)),
+        Err(e) => format!("Error: {}", e),
+    }
+}
+
 pub fn domain_bin(name: &str) -> PathBuf {
     domains_dir().join(format!("mac-domain-{}", name))
 }
