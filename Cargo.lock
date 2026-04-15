@@ -859,7 +859,16 @@ name = "mac-domain-manager"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "mac-host-core",
  "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "mac-domain-mount"
+version = "0.1.0"
+dependencies = [
+ "clap",
  "serde_json",
 ]
 

@@ -4,7 +4,221 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use crate::common;
-use crate::models::cron::LaunchAgent;
+use crate::models::cron::{Job, LaunchAgent, ScheduleFile, ScheduleSpec};
+
+// === Schedule (schedule.json) ===
+
+pub fn schedule_path() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_default();
+    PathBuf::from(home).join(".mac-app-init/schedule.json")
+}
+
+pub fn load_schedule() -> ScheduleFile {
+    let path = schedule_path();
+    if !path.exists() { return ScheduleFile::default(); }
+    let content = fs::read_to_string(&path).unwrap_or_default();
+    serde_json::from_str(&content).unwrap_or_default()
+}
+
+pub fn save_schedule(s: &ScheduleFile) -> Result<(), String> {
+    let path = schedule_path();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    fs::write(&path, serde_json::to_string_pretty(s).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())
+}
+
+pub fn add_job(name: &str, command: &str, cron: Option<String>, interval: Option<u64>) -> Result<String, String> {
+    let mut s = load_schedule();
+    if s.jobs.iter().any(|j| j.name == name) {
+        return Err(format!("'{}' 이미 존재합니다", name));
+    }
+    let schedule = if let Some(c) = cron {
+        ScheduleSpec { stype: "cron".into(), cron: Some(c), interval_seconds: None, watch_path: None }
+    } else if let Some(i) = interval {
+        ScheduleSpec { stype: "interval".into(), cron: None, interval_seconds: Some(i), watch_path: None }
+    } else {
+        return Err("--cron 또는 --interval 필요".into());
+    };
+    s.jobs.push(Job {
+        name: name.into(), command: command.into(), schedule,
+        enabled: true, description: String::new(),
+    });
+    save_schedule(&s)?;
+    Ok(format!("'{}' 추가됨", name))
+}
+
+pub fn remove_job(name: &str) -> Result<String, String> {
+    let mut s = load_schedule();
+    let before = s.jobs.len();
+    s.jobs.retain(|j| j.name != name);
+    if s.jobs.len() == before {
+        return Err(format!("'{}' 이(가) 없습니다", name));
+    }
+    save_schedule(&s)?;
+    Ok(format!("'{}' 삭제됨", name))
+}
+
+pub fn toggle_job(name: &str) -> Result<(String, bool), String> {
+    let mut s = load_schedule();
+    let job = s.jobs.iter_mut().find(|j| j.name == name)
+        .ok_or_else(|| format!("'{}' 이(가) 없습니다", name))?;
+    job.enabled = !job.enabled;
+    let enabled = job.enabled;
+    save_schedule(&s)?;
+    Ok((name.into(), enabled))
+}
+
+// === Tick engine ===
+
+fn last_run_path() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_default();
+    PathBuf::from(home).join(".mac-app-init/scheduler-last-run.json")
+}
+
+fn schedule_log_path() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_default();
+    PathBuf::from(home).join("문서/시스템/로그/scheduler.log")
+}
+
+fn now_parts() -> (u32, u32, u32, u32, u32) {
+    let s = Command::new("date").args(["+%M %H %d %m %u"]).output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
+    let p: Vec<u32> = s.split_whitespace().filter_map(|x| x.parse().ok()).collect();
+    if p.len() >= 5 { (p[0], p[1], p[2], p[3], p[4] % 7) } else { (0, 0, 0, 0, 0) }
+}
+
+pub fn cron_matches(expr: &str, min: u32, hour: u32, day: u32, month: u32, weekday: u32) -> bool {
+    let parts: Vec<&str> = expr.split_whitespace().collect();
+    if parts.len() != 5 { return false; }
+    fn fm(field: &str, value: u32) -> bool {
+        if field == "*" { return true; }
+        if let Ok(n) = field.parse::<u32>() { return n == value; }
+        if let Some(step) = field.strip_prefix("*/") {
+            if let Ok(n) = step.parse::<u32>() { return n > 0 && value % n == 0; }
+        }
+        if field.contains(',') {
+            return field.split(',').any(|f| f.parse::<u32>().ok() == Some(value));
+        }
+        false
+    }
+    fm(parts[0], min) && fm(parts[1], hour) && fm(parts[2], day) && fm(parts[3], month) && fm(parts[4], weekday)
+}
+
+/// LaunchAgent 에서 매 분 호출: schedule.json 의 job 들 확인 후 실행.
+pub fn tick() {
+    let sched = load_schedule();
+    let (min, hour, day, month, weekday) = now_parts();
+    let last_run_path = last_run_path();
+    let mut last_run: HashMap<String, u64> = if last_run_path.exists() {
+        serde_json::from_str(&fs::read_to_string(&last_run_path).unwrap_or_default()).unwrap_or_default()
+    } else { HashMap::new() };
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+
+    let log = schedule_log_path();
+    if let Some(parent) = log.parent() { fs::create_dir_all(parent).ok(); }
+
+    for job in &sched.jobs {
+        if !job.enabled { continue; }
+        let should_run = match job.schedule.stype.as_str() {
+            "cron" => job.schedule.cron.as_ref()
+                .map(|e| cron_matches(e, min, hour, day, month, weekday))
+                .unwrap_or(false),
+            "interval" => job.schedule.interval_seconds
+                .map(|s| now - last_run.get(&job.name).copied().unwrap_or(0) >= s)
+                .unwrap_or(false),
+            _ => false,
+        };
+        if should_run {
+            let _ = Command::new("bash").args(["-c", &job.command]).output();
+            last_run.insert(job.name.clone(), now);
+            if let Ok(mut f) = fs::OpenOptions::new().create(true).append(true).open(&log) {
+                use std::io::Write;
+                let ts = Command::new("date").args(["+%Y-%m-%d %H:%M:%S"]).output()
+                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
+                let _ = writeln!(f, "[{}] RUN {}: {}", ts, job.name, job.command);
+            }
+        }
+    }
+    fs::write(&last_run_path, serde_json::to_string(&last_run).unwrap_or_default()).ok();
+}
+
+// === LaunchAgent scheduler install/remove ===
+
+pub const SCHEDULER_LABEL: &str = "com.mac-app-init.scheduler";
+
+pub fn scheduler_plist_path() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_default();
+    PathBuf::from(home).join(format!("Library/LaunchAgents/{}.plist", SCHEDULER_LABEL))
+}
+
+pub fn scheduler_installed() -> bool {
+    scheduler_plist_path().exists()
+}
+
+/// mac 바이너리 경로 (`which mac` 결과)
+fn mac_bin() -> String {
+    Command::new("which").arg("mac").output()
+        .ok()
+        .and_then(|o| if o.status.success() {
+            Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+        } else { None })
+        .unwrap_or_else(|| "mac".into())
+}
+
+pub fn install_scheduler() -> Result<String, String> {
+    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
+    let plist_path = scheduler_plist_path();
+    let log_dir = format!("{}/문서/시스템/로그", home);
+    fs::create_dir_all(&log_dir).ok();
+    let mac_bin = mac_bin();
+
+    let plist = format!(r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{label}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{mac_bin}</string>
+        <string>tick</string>
+    </array>
+    <key>StartInterval</key>
+    <integer>60</integer>
+    <key>StandardOutPath</key>
+    <string>{log_dir}/scheduler.log</string>
+    <key>StandardErrorPath</key>
+    <string>{log_dir}/scheduler.log</string>
+</dict>
+</plist>
+"#, label=SCHEDULER_LABEL, mac_bin=mac_bin, log_dir=log_dir);
+
+    if let Some(parent) = plist_path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    fs::write(&plist_path, plist).map_err(|e| e.to_string())?;
+
+    let (ok, _, stderr) = common::run_cmd("launchctl", &["load", &plist_path.to_string_lossy()]);
+    if ok {
+        Ok(format!("✓ scheduler 등록 완료 (매분 tick) — {}", plist_path.display()))
+    } else {
+        Err(format!("launchctl load 실패: {}", stderr.trim()))
+    }
+}
+
+pub fn remove_scheduler() -> Result<String, String> {
+    let plist_path = scheduler_plist_path();
+    if !plist_path.exists() {
+        return Err("scheduler 가 설치되어 있지 않습니다".into());
+    }
+    let _ = Command::new("launchctl")
+        .args(["unload", &plist_path.to_string_lossy()])
+        .output();
+    fs::remove_file(&plist_path).map_err(|e| e.to_string())?;
+    Ok(format!("✓ scheduler 제거 완료 — {}", plist_path.display()))
+}
 
 fn agents_dir() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_default();
