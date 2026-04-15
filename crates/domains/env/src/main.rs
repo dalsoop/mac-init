@@ -59,6 +59,8 @@ enum Commands {
     Status,
     /// 모든 카드 파일 권한을 0600 (디렉터리 0700) 으로 보정
     FixPerms,
+    /// 기존 keychain 비번을 dotenvx 로 일괄 이관 + Keychain 항목 삭제
+    MigrateFromKeychain,
     /// TUI v2 스펙 (JSON)
     TuiSpec,
 }
@@ -79,6 +81,7 @@ fn main() {
         Commands::Test { name } => cmd_test(&name),
         Commands::Status => cmd_status(),
         Commands::FixPerms => cmd_fix_perms(),
+        Commands::MigrateFromKeychain => cmd_migrate_from_keychain(),
         Commands::TuiSpec => print_tui_spec(),
     }
 }
@@ -97,14 +100,28 @@ struct Card {
     description: String,
     #[serde(default)]
     tags: Vec<String>,
-    /// "keychain" | "dotenvx:<KEY>" | "none". 기본 "keychain".
+    /// "dotenvx:<KEY>" | "none". 기본은 "dotenvx:{NAME}_PASSWORD".
+    /// (codesign 없는 빌드에서 Keychain ACL 이 매번 깨지는 문제로 dotenvx 단일화)
     #[serde(default = "default_pw_ref")]
     password_ref: String,
     /// 마운트/접속 옵션. SMB/NFS 마운트 시 mount 도메인이 참조.
     #[serde(default)]
     mount_options: MountOptions,
 }
-fn default_pw_ref() -> String { "keychain".into() }
+fn default_pw_ref() -> String { "dotenvx:auto".into() }
+
+/// 카드 이름 → dotenvx 키. password_ref 가 "dotenvx:auto" 면 자동 매핑,
+/// "dotenvx:<EXPLICIT_KEY>" 면 그 키 그대로.
+fn dotenvx_key_for(card: &Card) -> Option<String> {
+    let r = &card.password_ref;
+    if r == "dotenvx:auto" {
+        Some(format!("{}_PASSWORD", card.name.to_uppercase().replace('-', "_")))
+    } else if let Some(k) = r.strip_prefix("dotenvx:") {
+        Some(k.to_string())
+    } else {
+        None
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct MountOptions {
@@ -199,6 +216,7 @@ fn list_cards() -> Vec<Card> {
 
 // === Keychain helpers ===
 
+#[allow(dead_code)]
 fn keychain_set(name: &str, password: &str) -> Result<(), String> {
     // -U 플래그로 있으면 업데이트. 기존 삭제 시도는 하지 않음(stderr 소음 방지).
     let status = Command::new("security")
@@ -254,13 +272,11 @@ fn cmd_list() {
     }
     println!("{:<14} {:<7} {:<20} {:<22} {}", "NAME", "SCHEME", "USER", "HOST:PORT", "PASSWORD");
     println!("{}", "─".repeat(80));
-    for c in cards {
+    for c in &cards {
         let hp = format!("{}:{}", c.host, c.port);
-        let pw = match c.password_ref.as_str() {
-            "keychain" => if keychain_get(&c.name).is_some() { "✓ keychain" } else { "✗ 없음" },
-            "none" => "—",
-            r if r.starts_with("dotenvx:") => "dotenvx",
-            _ => "?",
+        let pw = match dotenvx_key_for(c) {
+            Some(k) => if dotenvx_get(&k).is_some() { "✓ dotenvx" } else { "✗ 없음" },
+            None => "—",
         };
         println!("{:<14} {:<7} {:<20} {:<22} {}", c.name, c.scheme, c.user, hp, pw);
     }
@@ -271,9 +287,9 @@ fn cmd_show(name: &str) {
         Some(c) => {
             // stdout 은 순수 JSON (파서 친화). 부가 정보는 stderr.
             println!("{}", serde_json::to_string_pretty(&c).unwrap());
-            if c.password_ref == "keychain" {
-                let has = keychain_get(&c.name).is_some();
-                eprintln!("비번: {}", if has { "✓ keychain 에 저장됨" } else { "✗ 없음 (env set-password 필요)" });
+            if let Some(k) = dotenvx_key_for(&c) {
+                let has = dotenvx_get(&k).is_some();
+                eprintln!("비번: {} (key={})", if has { "✓ dotenvx" } else { "✗ 없음 (env set-password 필요)" }, k);
             }
         }
         None => {
@@ -299,13 +315,15 @@ fn cmd_add(
         scheme: scheme.into(),
         description: description.unwrap_or("").into(),
         tags: Vec::new(),
-        password_ref: "keychain".into(),
+        password_ref: "dotenvx:auto".into(),
         mount_options: MountOptions::default_for_scheme(scheme),
     };
     if let Err(e) = save_card(&card) { eprintln!("✗ {}", e); std::process::exit(1); }
     if let Some(pw) = password {
-        if let Err(e) = keychain_set(name, pw) {
-            eprintln!("⚠ 카드는 생성됐으나 keychain 저장 실패: {}", e);
+        if let Some(k) = dotenvx_key_for(&card) {
+            if let Err(e) = dotenvx_set(&k, pw) {
+                eprintln!("⚠ 카드는 생성됐으나 dotenvx 저장 실패: {}", e);
+            }
         }
     }
     println!("✓ 카드 추가: {}", name);
@@ -317,16 +335,23 @@ fn cmd_rm(name: &str) {
         eprintln!("✗ 카드 '{}' 없음", name);
         std::process::exit(1);
     }
+    let card = load_card(name);
     if let Err(e) = fs::remove_file(&p) { eprintln!("✗ {}", e); std::process::exit(1); }
+    if let Some(c) = card.as_ref() {
+        if let Some(k) = dotenvx_key_for(c) {
+            let _ = dotenvx_unset(&k);
+        }
+    }
+    // legacy keychain 도 함께 정리
     let _ = keychain_delete(name);
     println!("✓ 카드 삭제: {}", name);
 }
 
 fn cmd_set_password(name: &str, pw_arg: Option<&str>) {
-    if load_card(name).is_none() {
+    let Some(card) = load_card(name) else {
         eprintln!("✗ 카드 '{}' 없음. 먼저 env add", name);
         std::process::exit(1);
-    }
+    };
     let pw = match pw_arg {
         Some(p) => p.to_string(),
         None => {
@@ -336,8 +361,12 @@ fn cmd_set_password(name: &str, pw_arg: Option<&str>) {
         }
     };
     if pw.is_empty() { eprintln!("✗ 빈 비번"); std::process::exit(1); }
-    match keychain_set(name, &pw) {
-        Ok(()) => println!("✓ keychain 저장: {}", name),
+    let Some(key) = dotenvx_key_for(&card) else {
+        eprintln!("✗ 카드의 password_ref 가 dotenvx 가 아님");
+        std::process::exit(1);
+    };
+    match dotenvx_set(&key, &pw) {
+        Ok(()) => println!("✓ dotenvx 저장: {}={}", key, "***"),
         Err(e) => { eprintln!("✗ {}", e); std::process::exit(1); }
     }
 }
@@ -347,14 +376,7 @@ fn cmd_get_password(name: &str) {
         eprintln!("✗ 카드 '{}' 없음", name);
         std::process::exit(1);
     };
-    let pw = match card.password_ref.as_str() {
-        "keychain" => keychain_get(name),
-        r if r.starts_with("dotenvx:") => {
-            let key = r.trim_start_matches("dotenvx:");
-            dotenvx_get(key)
-        }
-        _ => None,
-    };
+    let pw = dotenvx_key_for(&card).and_then(|k| dotenvx_get(&k));
     match pw {
         Some(p) => print!("{}", p),
         None => { eprintln!("✗ 비번 없음"); std::process::exit(2); }
@@ -485,7 +507,7 @@ fn cmd_import() {
             scheme: scheme.into(),
             description: format!("imported from connections.json"),
             tags: vec!["imported".into()],
-            password_ref: "keychain".into(),
+            password_ref: "dotenvx:auto".into(),
             mount_options: MountOptions::default_for_scheme(scheme),
         };
         if let Err(e) = save_card(&card) {
@@ -494,19 +516,15 @@ fn cmd_import() {
         }
         created += 1;
 
-        // .env 에서 {NAME}_PASSWORD 읽어 keychain 으로 이관
+        // .env 에 {NAME}_PASSWORD 가 이미 있는지 확인 (있으면 그대로 사용 — 추가 작업 없음)
         let key = format!("{}_PASSWORD", name.to_uppercase().replace('-', "_"));
-        if let Some(pw) = dotenvx_get(&key) {
-            if let Err(e) = keychain_set(name, &pw) {
-                eprintln!("  ⚠ {} keychain 저장 실패: {}", name, e);
-            } else {
-                with_pw += 1;
-            }
+        if dotenvx_get(&key).is_some() {
+            with_pw += 1;
         }
 
         println!("  ✓ {} ({}@{}:{} / {})", name, user, host, effective_port, scheme);
     }
-    println!("\nimport: 생성 {}, 이미 있음 {}, 비번 이관 {}", created, skipped, with_pw);
+    println!("\nimport: 생성 {}, 이미 있음 {}, dotenvx 비번 매칭 {}", created, skipped, with_pw);
 }
 
 /// 포트 기반 1차 추정. 비표준 포트면 host 에 SMB(445)/SSH(22) TCP 프로브.
@@ -538,15 +556,50 @@ fn probe_tcp(host: &str, port: u16) -> bool {
     false
 }
 
+fn env_file() -> PathBuf {
+    PathBuf::from(home()).join(".env")
+}
+
 fn dotenvx_get(key: &str) -> Option<String> {
-    let env_path = PathBuf::from(home()).join(".env");
-    if !env_path.exists() { return None; }
+    let p = env_file();
+    if !p.exists() { return None; }
     let out = Command::new("dotenvx")
-        .args(["get", key, "-f", &env_path.to_string_lossy()])
+        .args(["get", key, "-f", &p.to_string_lossy()])
         .output().ok()?;
     if !out.status.success() { return None; }
     let v = String::from_utf8_lossy(&out.stdout).trim().to_string();
     if v.is_empty() { None } else { Some(v) }
+}
+
+fn dotenvx_set(key: &str, value: &str) -> Result<(), String> {
+    let p = env_file();
+    // ~/.env 가 없으면 빈 파일 생성
+    if !p.exists() {
+        fs::write(&p, "").map_err(|e| format!("~/.env 생성 실패: {}", e))?;
+        let _ = set_mode(&p, 0o600);
+    }
+    let out = Command::new("dotenvx")
+        .args(["set", key, value, "-f", &p.to_string_lossy(), "--encrypt"])
+        .output()
+        .map_err(|e| format!("dotenvx 실행 실패: {} (brew install dotenvx/brew/dotenvx)", e))?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+    }
+    let _ = set_mode(&p, 0o600);
+    Ok(())
+}
+
+fn dotenvx_unset(key: &str) -> Result<(), String> {
+    let p = env_file();
+    if !p.exists() { return Ok(()); }
+    let out = Command::new("dotenvx")
+        .args(["set", key, "", "-f", &p.to_string_lossy()])
+        .output()
+        .map_err(|e| format!("dotenvx 실행 실패: {}", e))?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+    }
+    Ok(())
 }
 
 // === test: 카드로 가볍게 살아있는지 확인 ===
@@ -584,12 +637,15 @@ fn cmd_status() {
     let cards = list_cards();
     println!("=== Env Status ===\n");
     println!("카드 {}개", cards.len());
-    let kc = cards.iter().filter(|c| c.password_ref == "keychain" && keychain_get(&c.name).is_some()).count();
-    let dx = cards.iter().filter(|c| c.password_ref.starts_with("dotenvx:")).count();
-    let none = cards.iter().filter(|c| c.password_ref == "none" || (c.password_ref == "keychain" && keychain_get(&c.name).is_none())).count();
-    println!("  • keychain 비번: {}", kc);
-    println!("  • dotenvx 비번: {}", dx);
-    println!("  • 비번 없음:     {}", none);
+    let mut with = 0usize; let mut without = 0usize;
+    for c in &cards {
+        match dotenvx_key_for(c) {
+            Some(k) if dotenvx_get(&k).is_some() => with += 1,
+            _ => without += 1,
+        }
+    }
+    println!("  • dotenvx 비번 있음: {}", with);
+    println!("  • 비번 없음:         {}", without);
 
     // 권한 점검
     let perms = audit_permissions();
@@ -631,6 +687,55 @@ fn audit_permissions() -> Vec<String> {
     { Vec::new() }
 }
 
+fn cmd_migrate_from_keychain() {
+    let cards = list_cards();
+    let mut moved = 0; let mut skipped = 0; let mut failed = 0;
+    for mut c in cards {
+        // legacy: password_ref == "keychain" 이거나, dotenvx 키에 비번이 없는데
+        // keychain 에는 있는 경우.
+        let kc_pw = keychain_get(&c.name);
+        let dx_key = format!("{}_PASSWORD", c.name.to_uppercase().replace('-', "_"));
+        let dx_has = dotenvx_get(&dx_key).is_some();
+
+        let need_move = c.password_ref == "keychain" || (kc_pw.is_some() && !dx_has);
+        if !need_move {
+            // password_ref 만 신식으로 정리
+            if c.password_ref == "keychain" || c.password_ref.is_empty() {
+                c.password_ref = "dotenvx:auto".into();
+                let _ = save_card(&c);
+            }
+            skipped += 1;
+            continue;
+        }
+
+        // 1) keychain → dotenvx 복사 (없으면 skip)
+        if let Some(pw) = kc_pw {
+            if let Err(e) = dotenvx_set(&dx_key, &pw) {
+                eprintln!("✗ {} dotenvx 저장 실패: {}", c.name, e);
+                failed += 1;
+                continue;
+            }
+        } else {
+            eprintln!("⚠ {} keychain 비번 없음 (카드만 갱신)", c.name);
+        }
+
+        // 2) 카드 password_ref 갱신
+        c.password_ref = "dotenvx:auto".into();
+        if let Err(e) = save_card(&c) {
+            eprintln!("✗ {} 카드 저장 실패: {}", c.name, e);
+            failed += 1;
+            continue;
+        }
+
+        // 3) keychain 항목 삭제
+        let _ = keychain_delete(&c.name);
+
+        println!("  ✓ {} → dotenvx ({})", c.name, dx_key);
+        moved += 1;
+    }
+    println!("\nmigrate: 이관 {}, skip {}, 실패 {}", moved, skipped, failed);
+}
+
 fn cmd_fix_perms() {
     let dir = cards_dir();
     let _ = set_mode(&dir, 0o700);
@@ -648,7 +753,7 @@ fn cmd_fix_perms() {
 fn print_tui_spec() {
     let cards = list_cards();
     let items: Vec<serde_json::Value> = cards.iter().map(|c| {
-        let has_pw = c.password_ref == "keychain" && keychain_get(&c.name).is_some();
+        let has_pw = dotenvx_key_for(c).is_some_and(|k| dotenvx_get(&k).is_some());
         serde_json::json!({
             "key": c.name,
             "value": format!("{}://{}@{}:{}", c.scheme, c.user, c.host, c.port),
