@@ -275,7 +275,7 @@ fn cmd_self_update() {
 
     // Get latest release tag
     let output = Command::new("gh")
-        .args(["release", "list", "--repo", GITHUB_REPO, "--limit", "1", "--json", "tagName"])
+        .args(["release", "list", "--repo", GITHUB_REPO, "--limit", "1", "--exclude-pre-releases", "--json", "tagName"])
         .output();
 
     let tag = match output {
@@ -374,7 +374,7 @@ fn download_domain(name: &str) -> Result<String, String> {
 
     // Get latest release
     let output = Command::new("gh")
-        .args(["release", "list", "--repo", GITHUB_REPO, "--limit", "1", "--json", "tagName"])
+        .args(["release", "list", "--repo", GITHUB_REPO, "--limit", "1", "--exclude-pre-releases", "--json", "tagName"])
         .output()
         .map_err(|e| format!("gh CLI 필요: {}", e))?;
 
