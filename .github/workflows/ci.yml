@@ -7,15 +7,14 @@ on:
     branches: [main]
 
 jobs:
+  # 워크스페이스 컴파일 체크. macOS 전용 코드(NetFS 등)가 있어 macOS 필요하지만,
+  # 단일 잡으로 묶고 캐시 적극 사용해 분 소비 최소화.
   build:
-    runs-on: macos-latest
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: true
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo
         uses: actions/cache@v4
@@ -23,50 +22,25 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            cli/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('cli/Cargo.lock') }}
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
 
-      - name: Build
-        working-directory: cli
-        run: cargo build --release
+      - name: cargo check (workspace)
+        run: cargo check --workspace
 
-      - name: Check
-        working-directory: cli
-        run: cargo check
-
-  cue-validate:
+  # Nickel 스키마 검증은 ubuntu (분당 단가 1/10).
+  ncl-validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install CUE
+      - name: Install Nickel
         run: |
-          curl -LO https://github.com/cue-lang/cue/releases/latest/download/cue_v0.16.0_linux_amd64.tar.gz
-          tar xzf cue_v0.16.0_linux_amd64.tar.gz
-          sudo mv cue /usr/local/bin/
+          curl -L https://github.com/tweag/nickel/releases/latest/download/nickel-x86_64-linux \
+            -o /usr/local/bin/nickel
+          chmod +x /usr/local/bin/nickel
 
-      - name: Validate CUE schemas
-        run: |
-          cd cue && cue eval projects.cue -e _summary
-          cd ../vault && cue eval obsidian.spec.cue -e center.name
-
-  release:
-    needs: build
-    runs-on: macos-latest
-    if: github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, 'release:')
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: true
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - name: Build release
-        working-directory: cli
-        run: cargo build --release
-
-      - name: Create release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: cli/target/release/mac-host-commands
-          generate_release_notes: true
+      - name: Eval ncl/domains.ncl
+        run: nickel eval ncl/domains.ncl > /dev/null

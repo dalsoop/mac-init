@@ -1,9 +1,13 @@
 name: Release Domain Binaries
 
+# 비활성화: macOS runner 비용 회피.
+# 로컬에서 scripts/release-local.sh <tag> 로 빌드 + 업로드함.
+# 다시 켜려면 아래 push trigger 주석 해제.
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
+  # push:
+  #   tags:
+  #     - 'v*'
 
 permissions:
   contents: write
