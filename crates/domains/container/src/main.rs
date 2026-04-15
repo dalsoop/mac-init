@@ -31,6 +31,8 @@ enum Commands {
     Down,
     /// Docker 로그
     Logs { name: String },
+    /// TUI v2 스펙 (JSON)
+    TuiSpec,
 }
 
 fn cmd_ok(cmd: &str, args: &[&str]) -> bool {
@@ -62,7 +64,54 @@ fn main() {
         Commands::Up => cmd_up(),
         Commands::Down => cmd_down(),
         Commands::Logs { name } => cmd_logs(&name),
+        Commands::TuiSpec => print_tui_spec(),
     }
+}
+
+fn print_tui_spec() {
+    let docker_installed = cmd_ok("which", &["docker"]);
+    let orb_installed = cmd_ok("which", &["orbctl"]);
+    let orb_running = orb_installed && cmd_stdout("orbctl", &["status"]).contains("Running");
+
+    let spec = serde_json::json!({
+        "tab": { "label": "Container", "icon": "📦" },
+        "sections": [
+            {
+                "kind": "key-value",
+                "title": "Status",
+                "items": [
+                    {
+                        "key": "Docker CLI",
+                        "value": if docker_installed { "✓ 설치됨" } else { "✗ 미설치" },
+                        "status": if docker_installed { "ok" } else { "error" }
+                    },
+                    {
+                        "key": "OrbStack",
+                        "value": if orb_installed { "✓ 설치됨" } else { "✗ 미설치" },
+                        "status": if orb_installed { "ok" } else { "error" }
+                    },
+                    {
+                        "key": "OrbStack 실행",
+                        "value": if orb_running { "✓ Running" } else { "✗ 정지" },
+                        "status": if orb_running { "ok" } else { "warn" }
+                    }
+                ]
+            },
+            {
+                "kind": "buttons",
+                "title": "Actions",
+                "items": [
+                    { "label": "Status (상태)", "command": "status", "key": "s" },
+                    { "label": "List (컨테이너 목록)", "command": "list", "key": "l" },
+                    { "label": "Vms (VM 목록)", "command": "vms", "key": "v" },
+                    { "label": "Up (OrbStack 시작)", "command": "up", "key": "u" },
+                    { "label": "Down (OrbStack 정지)", "command": "down", "key": "d" },
+                    { "label": "Install OrbStack", "command": "install-orbstack", "key": "i" }
+                ]
+            }
+        ]
+    });
+    println!("{}", serde_json::to_string_pretty(&spec).unwrap());
 }
 
 fn cmd_status() {

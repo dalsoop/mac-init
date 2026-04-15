@@ -31,6 +31,8 @@ enum Commands {
         /// .conf 파일 경로
         conf: String,
     },
+    /// TUI v2 스펙 (JSON)
+    TuiSpec,
 }
 
 fn home() -> String { std::env::var("HOME").unwrap_or_default() }
@@ -69,7 +71,76 @@ fn main() {
         Commands::Down { name } => cmd_down(&name),
         Commands::Open => cmd_open(),
         Commands::Add { name, conf } => cmd_add(&name, &conf),
+        Commands::TuiSpec => print_tui_spec(),
     }
+}
+
+fn print_tui_spec() {
+    let wg_cli = cmd_ok("which", &["wg"]);
+    let gui = std::path::Path::new("/Applications/WireGuard.app").exists();
+    let cfg_dir = config_dir();
+
+    let mut rows: Vec<serde_json::Value> = Vec::new();
+    let active = if wg_cli { cmd_stdout("wg", &["show", "interfaces"]) } else { String::new() };
+    let active_list: Vec<&str> = active.split_whitespace().collect();
+
+    if let Ok(entries) = fs::read_dir(&cfg_dir) {
+        for e in entries.flatten() {
+            if e.path().extension().map(|x| x == "conf").unwrap_or(false) {
+                let name = e.path().file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+                let running = active_list.contains(&name.as_str());
+                rows.push(serde_json::json!([
+                    if running { "●" } else { " " }.to_string(),
+                    name,
+                    e.path().display().to_string(),
+                ]));
+            }
+        }
+    }
+
+    let spec = serde_json::json!({
+        "tab": { "label": "WireGuard", "icon": "🔒" },
+        "sections": [
+            {
+                "kind": "key-value",
+                "title": "Status",
+                "items": [
+                    {
+                        "key": "wg CLI",
+                        "value": if wg_cli { "✓ 설치됨" } else { "✗ 미설치" },
+                        "status": if wg_cli { "ok" } else { "error" }
+                    },
+                    {
+                        "key": "WireGuard.app",
+                        "value": if gui { "✓ 설치됨" } else { "✗ 미설치" },
+                        "status": if gui { "ok" } else { "warn" }
+                    },
+                    {
+                        "key": "설정 디렉토리",
+                        "value": cfg_dir.display().to_string(),
+                        "status": "ok"
+                    }
+                ]
+            },
+            {
+                "kind": "table",
+                "title": "Configs",
+                "headers": ["", "NAME", "PATH"],
+                "rows": rows
+            },
+            {
+                "kind": "buttons",
+                "title": "Actions",
+                "items": [
+                    { "label": "Status (상태)", "command": "status", "key": "s" },
+                    { "label": "Install (wg + GUI 설치)", "command": "install", "key": "i" },
+                    { "label": "List (설정 목록)", "command": "list", "key": "l" },
+                    { "label": "Open (GUI 열기)", "command": "open", "key": "o" }
+                ]
+            }
+        ]
+    });
+    println!("{}", serde_json::to_string_pretty(&spec).unwrap());
 }
 
 fn cmd_status() {

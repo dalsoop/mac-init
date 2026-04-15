@@ -19,6 +19,8 @@ enum Commands {
     Remove { project: String, #[arg(name = "type")] btype: String, name: String },
     /// 머지 완료 + stale 자동 정리
     Clean,
+    /// TUI v2 스펙 (JSON)
+    TuiSpec,
 }
 
 fn main() {
@@ -28,5 +30,28 @@ fn main() {
         Commands::Add { project, btype, name } => worktree::add(&project, &btype, &name),
         Commands::Remove { project, btype, name } => worktree::remove(&project, &btype, &name),
         Commands::Clean => worktree::clean(),
+        Commands::TuiSpec => print_tui_spec(),
     }
+}
+
+fn print_tui_spec() {
+    let spec = serde_json::json!({
+        "tab": { "label": "Worktree", "icon": "🌿" },
+        "sections": [
+            {
+                "kind": "text",
+                "title": "설명",
+                "content": "Git worktree 기반 브랜치별 폴더 관리.\nStatus로 현재 worktree 목록, Clean으로 머지/stale 정리."
+            },
+            {
+                "kind": "buttons",
+                "title": "Actions",
+                "items": [
+                    { "label": "Status (worktree 상태)", "command": "status", "key": "s" },
+                    { "label": "Clean (정리)", "command": "clean", "key": "c" }
+                ]
+            }
+        ]
+    });
+    println!("{}", serde_json::to_string_pretty(&spec).unwrap());
 }

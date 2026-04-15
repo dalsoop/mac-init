@@ -15,6 +15,8 @@ enum Commands {
     List,
     /// 파일 내용 보기
     Read { path: String },
+    /// TUI v2 스펙 (JSON)
+    TuiSpec,
 }
 
 fn main() {
@@ -32,5 +34,44 @@ fn main() {
                 None => eprintln!("파일을 읽을 수 없습니다: {}", path),
             }
         }
+        Commands::TuiSpec => print_tui_spec(),
     }
+}
+
+fn print_tui_spec() {
+    let configs = dotfiles::scan_configs();
+    let rows: Vec<serde_json::Value> = configs.iter().map(|c| {
+        serde_json::json!([
+            c.category.to_string(),
+            c.name.clone(),
+            c.path.display().to_string(),
+        ])
+    }).collect();
+
+    let spec = serde_json::json!({
+        "tab": { "label": "Dotfiles", "icon": "📄" },
+        "sections": [
+            {
+                "kind": "key-value",
+                "title": "Status",
+                "items": [
+                    { "key": "발견된 설정 파일", "value": format!("{} 개", configs.len()), "status": "ok" }
+                ]
+            },
+            {
+                "kind": "table",
+                "title": "설정 파일",
+                "headers": ["CATEGORY", "NAME", "PATH"],
+                "rows": rows
+            },
+            {
+                "kind": "buttons",
+                "title": "Actions",
+                "items": [
+                    { "label": "List (목록 갱신)", "command": "list", "key": "l" }
+                ]
+            }
+        ]
+    });
+    println!("{}", serde_json::to_string_pretty(&spec).unwrap());
 }

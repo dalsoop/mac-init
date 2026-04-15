@@ -31,6 +31,8 @@ enum Commands {
     InstallDefaults,
     /// Services 메뉴 새로고침
     Reload,
+    /// TUI v2 스펙 (JSON)
+    TuiSpec,
 }
 
 fn home() -> String { std::env::var("HOME").unwrap_or_default() }
@@ -51,7 +53,54 @@ fn main() {
         Commands::Remove { name } => cmd_remove(&name),
         Commands::InstallDefaults => cmd_install_defaults(),
         Commands::Reload => cmd_reload(),
+        Commands::TuiSpec => print_tui_spec(),
     }
+}
+
+fn print_tui_spec() {
+    let dir = services_dir();
+    let mut rows: Vec<serde_json::Value> = Vec::new();
+    if let Ok(entries) = fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if let Some(display) = name.strip_suffix(".workflow") {
+                rows.push(serde_json::json!([
+                    display.to_string(),
+                    entry.path().display().to_string(),
+                ]));
+            }
+        }
+    }
+
+    let spec = serde_json::json!({
+        "tab": { "label": "Quick Actions", "icon": "⚡" },
+        "sections": [
+            {
+                "kind": "key-value",
+                "title": "Status",
+                "items": [
+                    { "key": "설치된 Workflow", "value": format!("{} 개", rows.len()), "status": "ok" },
+                    { "key": "Services 경로", "value": dir.display().to_string(), "status": "ok" }
+                ]
+            },
+            {
+                "kind": "table",
+                "title": "Workflows",
+                "headers": ["NAME", "PATH"],
+                "rows": rows
+            },
+            {
+                "kind": "buttons",
+                "title": "Actions",
+                "items": [
+                    { "label": "List (목록)", "command": "list", "key": "l" },
+                    { "label": "Install Defaults (기본 세트)", "command": "install-defaults", "key": "d" },
+                    { "label": "Reload (Finder 재시작)", "command": "reload", "key": "r" }
+                ]
+            }
+        ]
+    });
+    println!("{}", serde_json::to_string_pretty(&spec).unwrap());
 }
 
 fn cmd_list() {

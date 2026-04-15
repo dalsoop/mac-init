@@ -17,6 +17,8 @@ enum Commands {
     Read { domain: String },
     /// 값 쓰기
     Write { domain: String, key: String, #[arg(long)] r#type: String, value: String },
+    /// TUI v2 스펙 (JSON)
+    TuiSpec,
 }
 
 fn main() {
@@ -38,5 +40,35 @@ fn main() {
                 Err(e) => eprintln!("{}", e),
             }
         }
+        Commands::TuiSpec => print_tui_spec(),
     }
+}
+
+fn print_tui_spec() {
+    let domains = defaults::list_domains();
+    let spec = serde_json::json!({
+        "tab": { "label": "Defaults", "icon": "⚙" },
+        "sections": [
+            {
+                "kind": "key-value",
+                "title": "Status",
+                "items": [
+                    { "key": "등록된 도메인", "value": format!("{} 개", domains.len()), "status": "ok" }
+                ]
+            },
+            {
+                "kind": "text",
+                "title": "안내",
+                "content": "defaults 도메인 값을 보려면 `mac run defaults list` 또는 `mac run defaults read <domain>` 사용."
+            },
+            {
+                "kind": "buttons",
+                "title": "Actions",
+                "items": [
+                    { "label": "List (도메인 목록)", "command": "list", "key": "l" }
+                ]
+            }
+        ]
+    });
+    println!("{}", serde_json::to_string_pretty(&spec).unwrap());
 }

@@ -31,6 +31,8 @@ enum Commands {
     SettingsPath,
     /// 파일을 VS Code로 열기
     Open { path: String },
+    /// TUI v2 스펙 (JSON)
+    TuiSpec,
 }
 
 fn home() -> String { std::env::var("HOME").unwrap_or_default() }
@@ -69,7 +71,54 @@ fn main() {
         Commands::ExtImport => cmd_ext_import(),
         Commands::SettingsPath => cmd_settings_path(),
         Commands::Open { path } => cmd_open(&path),
+        Commands::TuiSpec => print_tui_spec(),
     }
+}
+
+fn print_tui_spec() {
+    let app_installed = vscode_app().exists();
+    let code_cli = cmd_ok("which", &["code"]);
+    let settings_exists = settings_path().exists();
+
+    let spec = serde_json::json!({
+        "tab": { "label": "VS Code", "icon": "💻" },
+        "sections": [
+            {
+                "kind": "key-value",
+                "title": "Status",
+                "items": [
+                    {
+                        "key": "Visual Studio Code.app",
+                        "value": if app_installed { "✓ 설치됨" } else { "✗ 미설치" },
+                        "status": if app_installed { "ok" } else { "error" }
+                    },
+                    {
+                        "key": "code CLI (PATH)",
+                        "value": if code_cli { "✓ 사용 가능" } else { "✗ 미설치" },
+                        "status": if code_cli { "ok" } else { "warn" }
+                    },
+                    {
+                        "key": "settings.json",
+                        "value": if settings_exists { "✓ 존재" } else { "✗ 없음" },
+                        "status": if settings_exists { "ok" } else { "warn" }
+                    }
+                ]
+            },
+            {
+                "kind": "buttons",
+                "title": "Actions",
+                "items": [
+                    { "label": "Status (상태)", "command": "status", "key": "s" },
+                    { "label": "Install (VS Code 설치)", "command": "install", "key": "i" },
+                    { "label": "Ext List (확장 목록)", "command": "ext-list", "key": "l" },
+                    { "label": "Ext Export (확장 내보내기)", "command": "ext-export", "key": "e" },
+                    { "label": "Ext Import (일괄 설치)", "command": "ext-import", "key": "m" },
+                    { "label": "Settings Path (설정 경로)", "command": "settings-path", "key": "p" }
+                ]
+            }
+        ]
+    });
+    println!("{}", serde_json::to_string_pretty(&spec).unwrap());
 }
 
 fn cmd_status() {

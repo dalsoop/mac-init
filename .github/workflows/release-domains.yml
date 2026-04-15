@@ -72,10 +72,12 @@ jobs:
           cargo build --release -p mac-domain-manager --target aarch64-apple-darwin
           cargo build --release -p mac-domain-manager --target x86_64-apple-darwin
 
-      - name: Build TUI
+      - name: Build TUI v1 + v2
         run: |
           cargo build --release -p mac-host-tui --target aarch64-apple-darwin
           cargo build --release -p mac-host-tui --target x86_64-apple-darwin
+          cargo build --release -p mac-host-tui-v2 --target aarch64-apple-darwin
+          cargo build --release -p mac-host-tui-v2 --target x86_64-apple-darwin
 
       - name: Package
         run: |
@@ -83,6 +85,8 @@ jobs:
           tar czf mac-x86_64-apple-darwin.tar.gz -C target/x86_64-apple-darwin/release mac
           tar czf mac-host-tui-aarch64-apple-darwin.tar.gz -C target/aarch64-apple-darwin/release mac-host-tui
           tar czf mac-host-tui-x86_64-apple-darwin.tar.gz -C target/x86_64-apple-darwin/release mac-host-tui
+          tar czf mac-tui-aarch64-apple-darwin.tar.gz -C target/aarch64-apple-darwin/release mac-tui
+          tar czf mac-tui-x86_64-apple-darwin.tar.gz -C target/x86_64-apple-darwin/release mac-tui
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
@@ -92,3 +96,5 @@ jobs:
             mac-x86_64-apple-darwin.tar.gz
             mac-host-tui-aarch64-apple-darwin.tar.gz
             mac-host-tui-x86_64-apple-darwin.tar.gz
+            mac-tui-aarch64-apple-darwin.tar.gz
+            mac-tui-x86_64-apple-darwin.tar.gz
