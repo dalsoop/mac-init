@@ -258,15 +258,15 @@ fn keychain_get(name: &str) -> Option<String> {
 }
 
 fn keychain_delete(name: &str) -> Result<(), String> {
-    let status = Command::new("security")
+    let out = Command::new("security")
         .args([
             "delete-generic-password",
             "-s", &keychain_service(name),
             "-a", name,
         ])
-        .status()
+        .output()
         .map_err(|e| format!("security 실행 실패: {}", e))?;
-    if status.success() { Ok(()) } else { Err("keychain 항목 없음".into()) }
+    if out.status.success() { Ok(()) } else { Err("keychain 항목 없음".into()) }
 }
 
 // === 커맨드 ===

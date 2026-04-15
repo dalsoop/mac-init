@@ -41,6 +41,9 @@ pub struct MountRequest<'a> {
     pub password: &'a str,
     pub mountpoint: &'a Path,
     pub opts: MountOpts,
+    /// "smb" | "afp" | "nfs" | "webdav" | "ftp"
+    pub scheme: &'a str,
+    pub port: u16,
 }
 
 /// Ok 면 선택된 백엔드 이름 반환 ("netfs" | "mount_smbfs").
@@ -52,7 +55,7 @@ pub fn mount(req: &MountRequest<'_>, smbfs_fallback: impl Fn(&MountRequest<'_>) 
         if let Err(e) = std::fs::create_dir_all(req.mountpoint) {
             eprintln!("마운트 포인트 생성 실패: {} — mount_smbfs 폴백", e);
         } else {
-            let url = build_smb_url(req.user, req.host, req.share);
+            let url = build_url(req.scheme, req.user, req.host, req.port, req.share);
             match super::netfs::mount_url_sync(
                 &url,
                 req.mountpoint,
@@ -69,12 +72,29 @@ pub fn mount(req: &MountRequest<'_>, smbfs_fallback: impl Fn(&MountRequest<'_>) 
         }
     }
 
+    if req.scheme != "smb" {
+        return Err(format!(
+            "{} 마운트 실패 (NetFS 만 지원, mount_smbfs 폴백 없음)",
+            req.scheme
+        ));
+    }
     smbfs_fallback(req).map(|_| "mount_smbfs")
 }
 
 #[cfg(all(target_os = "macos", feature = "netfs"))]
-fn build_smb_url(user: &str, host: &str, share: &str) -> String {
-    // share 는 NetFS 가 내부에서 퍼센트 인코딩. user 만 최소 이스케이프.
+fn build_url(scheme: &str, user: &str, host: &str, port: u16, share: &str) -> String {
+    // scheme 별 기본 포트. 다르면 명시.
+    let default_port = matches!(
+        (scheme, port),
+        ("smb", 445) | ("nfs", 2049) | ("afp", 548) | ("webdav", 80) | ("https", 443) | ("ftp", 21)
+    );
     let u = user.replace('@', "%40");
-    format!("smb://{}@{}/{}", u, host, share)
+    let host_part = if default_port { host.to_string() } else { format!("{}:{}", host, port) };
+    // NetFS 의 webdav scheme 은 "http"/"https" 로 직접 표기.
+    let scheme_url = match scheme {
+        "webdav" => "http",
+        "webdavs" => "https",
+        s => s,
+    };
+    format!("{}://{}@{}/{}", scheme_url, u, host_part, share)
 }

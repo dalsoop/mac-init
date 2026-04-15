@@ -178,13 +178,14 @@ fn has_connect_domain() -> bool {
     PathBuf::from(home()).join(".mac-app-init/domains/mac-domain-connect").exists()
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Connection {
     name: String,
     host: String,
     user: String,
-    #[allow(dead_code)]
     port: u16,
+    #[allow(dead_code)]
+    scheme: String,
 }
 
 fn load_connections() -> Vec<Connection> {
@@ -199,6 +200,7 @@ fn load_connections() -> Vec<Connection> {
                 host: s.get("host")?.as_str()?.to_string(),
                 user: s.get("user")?.as_str()?.to_string(),
                 port: s.get("port")?.as_u64()? as u16,
+                scheme: s.get("scheme").and_then(|v| v.as_str()).unwrap_or("smb").to_string(),
             })
         }).collect())
         .unwrap_or_default();
@@ -238,8 +240,9 @@ fn load_all_connections() -> Vec<Connection> {
                                 v.get("user").and_then(|x| x.as_str()),
                                 v.get("port").and_then(|x| x.as_u64()),
                             ) {
+                                let scheme = v.get("scheme").and_then(|x| x.as_str()).unwrap_or("smb").to_string();
                                 cards.push(Connection {
-                                    name: name.into(), host: host.into(), user: user.into(), port: port as u16,
+                                    name: name.into(), host: host.into(), user: user.into(), port: port as u16, scheme,
                                 });
                             }
                         }
@@ -286,6 +289,7 @@ fn env_card_show(name: &str) -> Option<Connection> {
         host: json.get("host")?.as_str()?.to_string(),
         user: json.get("user")?.as_str()?.to_string(),
         port: json.get("port")?.as_u64()? as u16,
+        scheme: json.get("scheme").and_then(|v| v.as_str()).unwrap_or("smb").to_string(),
     })
 }
 
@@ -504,6 +508,8 @@ fn cmd_mount(name: &str, share: &str) {
         password: &pw,
         mountpoint: &mp,
         opts,
+        scheme: &conn.scheme,
+        port: conn.port,
     };
     let result = backend::mount(&req, |r| {
         mount_smbfs(r.user, r.password, r.host, r.share, &r.mountpoint.to_path_buf(), &opts_str)
@@ -700,6 +706,8 @@ fn cmd_auto() {
             password: &pw,
             mountpoint: &mp,
             opts,
+            scheme: &conn.scheme,
+            port: conn.port,
         };
         let result = backend::mount(&req, |r| {
             mount_smbfs(r.user, r.password, r.host, r.share, &r.mountpoint.to_path_buf(), &opts_str)
