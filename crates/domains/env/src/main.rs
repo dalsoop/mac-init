@@ -387,6 +387,52 @@ fn cmd_set_option(name: &str, key: &str, value: &str) {
     card.mount_options = opts;
     if let Err(e) = save_card(&card) { eprintln!("✗ {}", e); std::process::exit(1); }
     println!("✓ {} {}={}", name, key, v);
+
+    // 현재 마운트된 share 가 있으면 자동 재마운트 (옵션 즉시 적용).
+    let remounted = remount_active_shares(name);
+    if remounted > 0 {
+        println!("  ↻ 활성 마운트 {}개 재마운트됨 (옵션 적용)", remounted);
+    }
+}
+
+/// `mount` 출력에서 "//user@host/<share> on <mp>" 패턴 중 우리가 만든
+/// ~/NAS/<card>/<share> 위치인 것을 찾아 unmount → mac-domain-mount mount 재호출.
+fn remount_active_shares(card_name: &str) -> usize {
+    let mount_bin = mount_binary();
+    let nas_prefix = format!("{}/NAS/{}/", home(), card_name);
+    let out = match Command::new("mount").output() {
+        Ok(o) => o,
+        Err(_) => return 0,
+    };
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let mut count = 0;
+    for line in stdout.lines() {
+        // 예: //ai@192.168.2.15/works on /Users/jeonghan/NAS/synology/works (smbfs, ...)
+        let Some(on_idx) = line.find(" on ") else { continue; };
+        let mp = &line[on_idx + 4..];
+        let Some(paren) = mp.find(" (") else { continue; };
+        let mp_path = &mp[..paren];
+        if !mp_path.starts_with(&nas_prefix) { continue; }
+        let Some(share) = mp_path.strip_prefix(&nas_prefix) else { continue; };
+
+        // unmount 후 재마운트
+        let _ = Command::new(&mount_bin).args(["unmount", mp_path]).status();
+        let _ = Command::new(&mount_bin).args(["mount", card_name, share]).status();
+        count += 1;
+    }
+    count
+}
+
+fn mount_binary() -> PathBuf {
+    let candidates = [
+        PathBuf::from(home()).join(".mac-app-init/domains/mac-domain-mount"),
+        PathBuf::from("./target/debug/mac-domain-mount"),
+        PathBuf::from("./target/release/mac-domain-mount"),
+    ];
+    for c in &candidates {
+        if c.exists() { return c.clone(); }
+    }
+    PathBuf::from("mac-domain-mount")
 }
 
 fn cmd_import() {
