@@ -189,7 +189,7 @@ impl App {
         }
 
         let tab_hints = match self.active_tab {
-            TabId::Card => "j/k:이동 i:import t:test p:비번 R/N/S/B:옵션 r:새로고침",
+            TabId::Card => "j/k:이동 a:add d:삭제 i:import t:test p:비번 R/N/S/B:옵션 r:새로고침",
             TabId::Env => "a:add Enter:edit x:del d:decrypt",
             TabId::Connect => "a:add x:del t:test T:test-all",
             TabId::Container => "s:start S:stop R:restart u:up d:down",

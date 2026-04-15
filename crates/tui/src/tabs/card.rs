@@ -40,12 +40,32 @@ impl Default for MountOptionsView {
     }
 }
 
+#[derive(Default)]
+struct AddForm {
+    name: String,
+    host: String,
+    user: String,
+    port: String,
+    scheme: String,
+    password: String,
+    field: usize, // 0..=5
+}
+
+const FIELD_NAMES: &[&str] = &["name", "host", "user", "port", "scheme", "password"];
+
+enum Mode {
+    Normal,
+    AddForm(AddForm),
+    ConfirmDelete,
+}
+
 pub struct CardTab {
     cards: Vec<Card>,
     selected: usize,
     output: String,
     show_password: bool,
-    password_cache: Option<(String, String)>, // (name, password)
+    password_cache: Option<(String, String)>,
+    mode: Mode,
 }
 
 impl CardTab {
@@ -56,6 +76,7 @@ impl CardTab {
             output: String::new(),
             show_password: false,
             password_cache: None,
+            mode: Mode::Normal,
         }
     }
 
@@ -86,6 +107,12 @@ impl CardTab {
     }
 
     pub async fn handle_key(&mut self, key: KeyEvent) -> Result<()> {
+        // 모드별 라우팅 (모달 우선)
+        match &mut self.mode {
+            Mode::AddForm(_) => return self.handle_form_key(key).await,
+            Mode::ConfirmDelete => return self.handle_confirm_key(key).await,
+            Mode::Normal => {}
+        }
         match key.code {
             KeyCode::Char('j') | KeyCode::Down => {
                 if !self.cards.is_empty() && self.selected + 1 < self.cards.len() {
@@ -102,11 +129,98 @@ impl CardTab {
                 self.show_password = !self.show_password;
                 if self.show_password { self.fetch_password().await; }
             }
+            KeyCode::Char('a') => {
+                let mut f = AddForm::default();
+                f.port = "22".into();
+                f.scheme = "ssh".into();
+                self.mode = Mode::AddForm(f);
+            }
+            KeyCode::Char('d') => {
+                if !self.cards.is_empty() {
+                    self.mode = Mode::ConfirmDelete;
+                }
+            }
             // 마운트 옵션 토글
             KeyCode::Char('R') => self.toggle_option("readonly").await,
             KeyCode::Char('N') => self.toggle_option("noappledouble").await,
             KeyCode::Char('S') => self.toggle_option("soft").await,
             KeyCode::Char('B') => self.toggle_option("nobrowse").await,
+            _ => {}
+        }
+        Ok(())
+    }
+
+    async fn handle_form_key(&mut self, key: KeyEvent) -> Result<()> {
+        let Mode::AddForm(form) = &mut self.mode else { return Ok(()); };
+        match key.code {
+            KeyCode::Esc => { self.mode = Mode::Normal; }
+            KeyCode::Tab | KeyCode::Down => { form.field = (form.field + 1) % FIELD_NAMES.len(); }
+            KeyCode::BackTab | KeyCode::Up => {
+                form.field = (form.field + FIELD_NAMES.len() - 1) % FIELD_NAMES.len();
+            }
+            KeyCode::Backspace => {
+                let buf = field_buf_mut(form);
+                buf.pop();
+            }
+            KeyCode::Char(c) => {
+                let buf = field_buf_mut(form);
+                buf.push(c);
+            }
+            KeyCode::Enter => {
+                if form.name.is_empty() || form.host.is_empty() || form.user.is_empty() {
+                    self.output = "✗ name/host/user 필수".into();
+                    return Ok(());
+                }
+                let port: u16 = form.port.parse().unwrap_or(22);
+                let scheme = if form.scheme.is_empty() { "ssh".into() } else { form.scheme.clone() };
+                let mut args: Vec<String> = vec![
+                    "add".into(), form.name.clone(),
+                    "--host".into(), form.host.clone(),
+                    "--user".into(), form.user.clone(),
+                    "--port".into(), port.to_string(),
+                    "--scheme".into(), scheme,
+                ];
+                if !form.password.is_empty() {
+                    args.push("--password".into());
+                    args.push(form.password.clone());
+                }
+                let out = Command::new(env_binary()).args(&args).output();
+                match out {
+                    Ok(o) if o.status.success() => {
+                        self.output = format!("✓ 추가됨: {}", form.name);
+                        self.mode = Mode::Normal;
+                        let _ = self.load().await;
+                    }
+                    Ok(o) => {
+                        self.output = String::from_utf8_lossy(&o.stderr).trim().to_string();
+                    }
+                    Err(e) => self.output = format!("✗ {}", e),
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    async fn handle_confirm_key(&mut self, key: KeyEvent) -> Result<()> {
+        match key.code {
+            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                if let Some(c) = self.cards.get(self.selected) {
+                    let name = c.name.clone();
+                    let out = Command::new(env_binary()).args(["rm", &name]).output();
+                    match out {
+                        Ok(o) if o.status.success() => {
+                            self.output = format!("✓ 삭제됨: {}", name);
+                            if self.selected > 0 { self.selected -= 1; }
+                            let _ = self.load().await;
+                        }
+                        Ok(o) => self.output = String::from_utf8_lossy(&o.stderr).trim().to_string(),
+                        Err(e) => self.output = format!("✗ {}", e),
+                    }
+                }
+                self.mode = Mode::Normal;
+            }
+            KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => { self.mode = Mode::Normal; }
             _ => {}
         }
         Ok(())
@@ -243,11 +357,67 @@ impl CardTab {
         frame.render_widget(detail, layout[1]);
 
         // 하단 상태
-        let bindings = "j/k:이동 i:import t:test p:비번  R/N/S/B:옵션 토글  r:새로고침";
+        let bindings = "j/k:이동 a:add d:삭제 i:import t:test p:비번 R/N/S/B:옵션 r:새로고침";
         let footer = Paragraph::new(format!("{}  |  {}", bindings, self.output))
             .block(Block::bordered());
         frame.render_widget(footer, layout[2]);
+
+        // 모달 (가장 위)
+        match &self.mode {
+            Mode::AddForm(form) => {
+                let mut lines: Vec<Line> = Vec::new();
+                for (i, name) in FIELD_NAMES.iter().enumerate() {
+                    let buf = match i {
+                        0 => &form.name, 1 => &form.host, 2 => &form.user,
+                        3 => &form.port, 4 => &form.scheme, _ => &form.password,
+                    };
+                    let display = if i == 5 { "•".repeat(buf.chars().count()) } else { buf.clone() };
+                    let marker = if i == form.field { "▶" } else { " " };
+                    lines.push(Line::from(format!("{} {:<10} : {}", marker, name, display)));
+                }
+                lines.push(Line::from(""));
+                lines.push(Line::from("Tab/↑↓: 필드 이동  Enter: 저장  Esc: 취소"));
+                render_modal(frame, area, " 카드 추가 ", lines);
+            }
+            Mode::ConfirmDelete => {
+                let name = self.cards.get(self.selected).map(|c| c.name.as_str()).unwrap_or("?");
+                let lines = vec![
+                    Line::from(""),
+                    Line::from(format!("  '{}' 카드를 삭제하시겠습니까?", name)),
+                    Line::from(""),
+                    Line::from("  카드 파일 + dotenvx 비번 + Keychain 항목 모두 제거됩니다."),
+                    Line::from(""),
+                    Line::from("  Y: 삭제   N/Esc: 취소"),
+                ];
+                render_modal(frame, area, " 삭제 확인 ", lines);
+            }
+            Mode::Normal => {}
+        }
     }
+}
+
+fn field_buf_mut(f: &mut AddForm) -> &mut String {
+    match f.field {
+        0 => &mut f.name,
+        1 => &mut f.host,
+        2 => &mut f.user,
+        3 => &mut f.port,
+        4 => &mut f.scheme,
+        _ => &mut f.password,
+    }
+}
+
+fn render_modal(frame: &mut Frame, area: Rect, title: &str, lines: Vec<Line>) {
+    use ratatui::widgets::Clear;
+    let w = (area.width.saturating_sub(20)).min(70).max(40);
+    let h = (lines.len() as u16 + 4).min(area.height.saturating_sub(4));
+    let x = area.x + (area.width.saturating_sub(w)) / 2;
+    let y = area.y + (area.height.saturating_sub(h)) / 2;
+    let modal = Rect { x, y, width: w, height: h };
+    frame.render_widget(Clear, modal);
+    let p = Paragraph::new(lines)
+        .block(Block::bordered().title(title).style(Style::new().fg(Color::Yellow)));
+    frame.render_widget(p, modal);
 }
 
 fn env_binary() -> PathBuf {
