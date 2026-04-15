@@ -48,6 +48,7 @@ pub fn mount_url_sync(
     user: Option<&str>,
     passwd: Option<&str>,
     no_ui: bool,
+    readonly: bool,
 ) -> Result<MountOutcome, String> {
     let url_cf = CFURL::from_path(Path::new("/"), false)
         .and(cfurl_from_string(url))
@@ -72,6 +73,13 @@ pub fn mount_url_sync(
     {
         let key = CFString::from_static_string("MountAtMountDir");
         let val = CFBoolean::true_value();
+        mount_opts.add(&key.as_CFType(), &val.as_CFType());
+    }
+    if readonly {
+        // sys/mount.h: MNT_RDONLY = 0x00000001
+        use core_foundation::number::CFNumber;
+        let key = CFString::from_static_string("MountFlags");
+        let val = CFNumber::from(1i32);
         mount_opts.add(&key.as_CFType(), &val.as_CFType());
     }
 

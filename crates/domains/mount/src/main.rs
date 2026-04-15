@@ -81,7 +81,7 @@ fn mount_point(connection: &str, share: &str) -> PathBuf {
 }
 
 /// mount_smbfs 호출. ASCII share 는 직접, 비-ASCII (한글 등) 는 open smb:// fallback.
-fn mount_smbfs(user: &str, password: &str, host: &str, share: &str, mp: &PathBuf) -> Result<(), String> {
+fn mount_smbfs(user: &str, password: &str, host: &str, share: &str, mp: &PathBuf, opts_str: &str) -> Result<(), String> {
     fs::create_dir_all(mp).map_err(|e| format!("디렉터리 생성 실패: {}", e))?;
 
     if share.is_ascii() {
@@ -93,7 +93,7 @@ fn mount_smbfs(user: &str, password: &str, host: &str, share: &str, mp: &PathBuf
             url_encode(share),
         );
         let out = Command::new("mount_smbfs")
-            .args(["-o", "soft,nobrowse"])
+            .args(["-o", opts_str])
             .arg(&url)
             .arg(mp)
             .output()
@@ -282,6 +282,27 @@ fn env_card_show(name: &str) -> Option<Connection> {
     })
 }
 
+/// 카드의 mount_options. 카드 없거나 필드 없으면 backend 기본값.
+fn card_mount_opts(name: &str) -> backend::MountOpts {
+    let out = match Command::new(env_binary()).args(["show", name]).output() {
+        Ok(o) if o.status.success() => o,
+        _ => return backend::MountOpts::default(),
+    };
+    let Ok(json) = serde_json::from_slice::<serde_json::Value>(&out.stdout) else {
+        return backend::MountOpts::default();
+    };
+    let mo = json.get("mount_options");
+    let get = |k: &str, d: bool| {
+        mo.and_then(|m| m.get(k)).and_then(|v| v.as_bool()).unwrap_or(d)
+    };
+    backend::MountOpts {
+        readonly: get("readonly", false),
+        noappledouble: get("noappledouble", true),
+        soft: get("soft", true),
+        nobrowse: get("nobrowse", true),
+    }
+}
+
 fn dotenvx_get(key: &str) -> Option<String> {
     let out = Command::new("dotenvx")
         .args(["get", key, "-f", &env_path().to_string_lossy()])
@@ -452,18 +473,21 @@ fn cmd_mount(name: &str, share: &str) {
     };
     let mp = mount_point(name, share);
     println!("마운트 중: {} → {}", conn.host, mp.display());
+    let opts = card_mount_opts(name);
+    let opts_str = opts.smbfs_opts_string();
     let req = backend::MountRequest {
         host: &conn.host,
         share,
         user: &conn.user,
         password: &pw,
         mountpoint: &mp,
+        opts,
     };
     let result = backend::mount(&req, |r| {
-        mount_smbfs(r.user, r.password, r.host, r.share, &r.mountpoint.to_path_buf())
+        mount_smbfs(r.user, r.password, r.host, r.share, &r.mountpoint.to_path_buf(), &opts_str)
     });
     match result {
-        Ok(backend_name) => println!("✓ {} ({})", mp.display(), backend_name),
+        Ok(backend_name) => println!("✓ {} ({}) [-o {}]", mp.display(), backend_name, opts_str),
         Err(e) => eprintln!("✗ {}", e),
     }
 }
@@ -627,15 +651,18 @@ fn cmd_auto() {
             continue;
         };
 
+        let opts = card_mount_opts(&a.connection);
+        let opts_str = opts.smbfs_opts_string();
         let req = backend::MountRequest {
             host: &conn.host,
             share: &a.share,
             user: &conn.user,
             password: &pw,
             mountpoint: &mp,
+            opts,
         };
         let result = backend::mount(&req, |r| {
-            mount_smbfs(r.user, r.password, r.host, r.share, &r.mountpoint.to_path_buf())
+            mount_smbfs(r.user, r.password, r.host, r.share, &r.mountpoint.to_path_buf(), &opts_str)
         });
         match result {
             Ok(backend_name) => {

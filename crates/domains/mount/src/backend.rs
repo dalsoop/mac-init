@@ -5,12 +5,39 @@
 
 use std::path::Path;
 
+#[derive(Debug, Clone)]
+pub struct MountOpts {
+    pub readonly: bool,
+    pub noappledouble: bool,
+    pub soft: bool,
+    pub nobrowse: bool,
+}
+
+impl Default for MountOpts {
+    fn default() -> Self {
+        Self { readonly: false, noappledouble: true, soft: true, nobrowse: true }
+    }
+}
+
+impl MountOpts {
+    /// mount_smbfs -o 인자 문자열 (`soft,nobrowse,...`).
+    pub fn smbfs_opts_string(&self) -> String {
+        let mut v: Vec<&'static str> = Vec::new();
+        if self.readonly { v.push("rdonly"); }
+        if self.soft { v.push("soft"); }
+        if self.nobrowse { v.push("nobrowse"); }
+        if self.noappledouble { v.push("noappledouble"); }
+        v.join(",")
+    }
+}
+
 pub struct MountRequest<'a> {
     pub host: &'a str,
     pub share: &'a str,
     pub user: &'a str,
     pub password: &'a str,
     pub mountpoint: &'a Path,
+    pub opts: MountOpts,
 }
 
 /// Ok 면 선택된 백엔드 이름 반환 ("netfs" | "mount_smbfs").
@@ -19,7 +46,6 @@ pub fn mount(req: &MountRequest<'_>, smbfs_fallback: impl Fn(&MountRequest<'_>) 
 {
     #[cfg(all(target_os = "macos", feature = "netfs"))]
     {
-        // NetFS 는 마운트 포인트가 존재해야 함 (mount_smbfs 와 달리 자동생성 X).
         if let Err(e) = std::fs::create_dir_all(req.mountpoint) {
             eprintln!("마운트 포인트 생성 실패: {} — mount_smbfs 폴백", e);
         } else {
@@ -30,6 +56,7 @@ pub fn mount(req: &MountRequest<'_>, smbfs_fallback: impl Fn(&MountRequest<'_>) 
                 Some(req.user),
                 Some(req.password),
                 true,
+                req.opts.readonly,
             ) {
                 Ok(_) => return Ok("netfs"),
                 Err(e) => {

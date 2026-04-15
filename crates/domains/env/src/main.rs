@@ -45,6 +45,12 @@ enum Commands {
     },
     /// 비번 조회 (stdout 에 평문. 내부 도메인이 호출)
     GetPassword { name: String },
+    /// 마운트 옵션 변경 (key=readonly|noappledouble|soft|nobrowse, value=true|false)
+    SetOption {
+        name: String,
+        key: String,
+        value: String,
+    },
     /// connections.json + .env 에서 카드로 일괄 이관
     Import,
     /// 카드 ↔ 서버 연결 테스트 (scheme 에 따라)
@@ -66,6 +72,7 @@ fn main() {
         Commands::Rm { name } => cmd_rm(&name),
         Commands::SetPassword { name, password } => cmd_set_password(&name, password.as_deref()),
         Commands::GetPassword { name } => cmd_get_password(&name),
+        Commands::SetOption { name, key, value } => cmd_set_option(&name, &key, &value),
         Commands::Import => cmd_import(),
         Commands::Test { name } => cmd_test(&name),
         Commands::Status => cmd_status(),
@@ -90,8 +97,44 @@ struct Card {
     /// "keychain" | "dotenvx:<KEY>" | "none". 기본 "keychain".
     #[serde(default = "default_pw_ref")]
     password_ref: String,
+    /// 마운트/접속 옵션. SMB/NFS 마운트 시 mount 도메인이 참조.
+    #[serde(default)]
+    mount_options: MountOptions,
 }
 fn default_pw_ref() -> String { "keychain".into() }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct MountOptions {
+    /// 읽기 전용 마운트 (mount_smbfs -o rdonly / NetFS MNT_RDONLY)
+    #[serde(default)]
+    readonly: bool,
+    /// .DS_Store / ._* 생성 억제 (NAS 노이즈 방지)
+    #[serde(default = "default_true_opt")]
+    noappledouble: bool,
+    /// 서버 무응답 시 hang 대신 EIO (mount_smbfs -o soft)
+    #[serde(default = "default_true_opt")]
+    soft: bool,
+    /// Finder 사이드바에 노출 안 함 (mount_smbfs -o nobrowse)
+    #[serde(default = "default_true_opt")]
+    nobrowse: bool,
+}
+fn default_true_opt() -> bool { true }
+
+impl Default for MountOptions {
+    fn default() -> Self {
+        Self {
+            readonly: false,
+            noappledouble: true,
+            soft: true,
+            nobrowse: true,
+        }
+    }
+}
+
+impl MountOptions {
+    /// 스킴별 권장 기본값. 추후 NFS 등 분기 가능.
+    fn default_for_scheme(_scheme: &str) -> Self { Self::default() }
+}
 
 fn home() -> String {
     std::env::var("HOME").unwrap_or_else(|_| "/tmp".into())
@@ -238,6 +281,7 @@ fn cmd_add(
         description: description.unwrap_or("").into(),
         tags: Vec::new(),
         password_ref: "keychain".into(),
+        mount_options: MountOptions::default_for_scheme(scheme),
     };
     if let Err(e) = save_card(&card) { eprintln!("✗ {}", e); std::process::exit(1); }
     if let Some(pw) = password {
@@ -300,6 +344,32 @@ fn cmd_get_password(name: &str) {
 
 // === import: connections.json + .env → 카드 ===
 
+fn cmd_set_option(name: &str, key: &str, value: &str) {
+    let Some(mut card) = load_card(name) else {
+        eprintln!("✗ 카드 '{}' 없음", name);
+        std::process::exit(1);
+    };
+    let v: bool = match value.to_ascii_lowercase().as_str() {
+        "true" | "1" | "on" | "yes" => true,
+        "false" | "0" | "off" | "no" => false,
+        _ => { eprintln!("✗ value 는 true|false"); std::process::exit(1); }
+    };
+    let mut opts = card.mount_options.clone();
+    match key {
+        "readonly" => opts.readonly = v,
+        "noappledouble" => opts.noappledouble = v,
+        "soft" => opts.soft = v,
+        "nobrowse" => opts.nobrowse = v,
+        _ => {
+            eprintln!("✗ key 는 readonly|noappledouble|soft|nobrowse");
+            std::process::exit(1);
+        }
+    }
+    card.mount_options = opts;
+    if let Err(e) = save_card(&card) { eprintln!("✗ {}", e); std::process::exit(1); }
+    println!("✓ {} {}={}", name, key, v);
+}
+
 fn cmd_import() {
     let conn_path = PathBuf::from(home()).join(".mac-app-init/connections.json");
     if !conn_path.exists() {
@@ -351,6 +421,7 @@ fn cmd_import() {
             description: format!("imported from connections.json"),
             tags: vec!["imported".into()],
             password_ref: "keychain".into(),
+            mount_options: MountOptions::default_for_scheme(scheme),
         };
         if let Err(e) = save_card(&card) {
             eprintln!("✗ {} 카드 저장 실패: {}", name, e);
