@@ -19,17 +19,22 @@ pub fn mount(req: &MountRequest<'_>, smbfs_fallback: impl Fn(&MountRequest<'_>) 
 {
     #[cfg(all(target_os = "macos", feature = "netfs"))]
     {
-        let url = build_smb_url(req.user, req.host, req.share);
-        match super::netfs::mount_url_sync(
-            &url,
-            req.mountpoint,
-            Some(req.user),
-            Some(req.password),
-            true,
-        ) {
-            Ok(_) => return Ok("netfs"),
-            Err(e) => {
-                eprintln!("NetFS 실패 → mount_smbfs 폴백: {}", e);
+        // NetFS 는 마운트 포인트가 존재해야 함 (mount_smbfs 와 달리 자동생성 X).
+        if let Err(e) = std::fs::create_dir_all(req.mountpoint) {
+            eprintln!("마운트 포인트 생성 실패: {} — mount_smbfs 폴백", e);
+        } else {
+            let url = build_smb_url(req.user, req.host, req.share);
+            match super::netfs::mount_url_sync(
+                &url,
+                req.mountpoint,
+                Some(req.user),
+                Some(req.password),
+                true,
+            ) {
+                Ok(_) => return Ok("netfs"),
+                Err(e) => {
+                    eprintln!("NetFS 실패 → mount_smbfs 폴백: {}", e);
+                }
             }
         }
     }
