@@ -28,6 +28,7 @@ jobs:
           - projects
           - worktree
           - mount
+          - env
 
     runs-on: macos-14
 
