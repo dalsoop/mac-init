@@ -35,24 +35,46 @@ build_target() {
   local target="$1"
   echo
   echo "═══ $target ═══"
-  rustup target add "$target" >/dev/null 2>&1 || true
+  command -v rustup >/dev/null && rustup target add "$target" >/dev/null 2>&1 || true
 
+  local ok=0
+  local skipped=()
   for d in "${DOMAINS[@]}"; do
     echo "  ▶ mac-domain-$d"
-    cargo build --release -p "mac-domain-$d" --target "$target" --quiet
-    tar czf "$OUT/mac-domain-$d-$target.tar.gz" \
-      -C "target/$target/release" "mac-domain-$d"
+    if cargo build --release -p "mac-domain-$d" --target "$target" --quiet 2>&1 | tail -3; then
+      tar czf "$OUT/mac-domain-$d-$target.tar.gz" \
+        -C "target/$target/release" "mac-domain-$d"
+      ok=$((ok+1))
+    else
+      echo "    ⚠ 빌드 실패 — 건너뜀"
+      skipped+=("$d")
+    fi
   done
 
-  echo "  ▶ mac-domain-manager / mac-host-tui"
-  cargo build --release -p mac-domain-manager --target "$target" --quiet
-  cargo build --release -p mac-host-tui --target "$target" --quiet
-  tar czf "$OUT/mac-$target.tar.gz" -C "target/$target/release" mac
-  tar czf "$OUT/mac-host-tui-$target.tar.gz" -C "target/$target/release" mac-host-tui
+  for extra in mac-domain-manager mac-host-tui; do
+    echo "  ▶ $extra"
+    if cargo build --release -p "$extra" --target "$target" --quiet 2>&1 | tail -3; then
+      # mac-domain-manager 는 'mac' 바이너리 이름
+      local bin="$extra"
+      [[ "$extra" == "mac-domain-manager" ]] && bin="mac"
+      local tar_name="$bin"
+      [[ "$extra" == "mac-domain-manager" ]] && tar_name="mac"
+      tar czf "$OUT/$tar_name-$target.tar.gz" -C "target/$target/release" "$bin"
+    else
+      echo "    ⚠ 빌드 실패 — 건너뜀"
+      skipped+=("$extra")
+    fi
+  done
+
+  echo "  성공 $ok, 스킵 ${#skipped[@]}: ${skipped[*]:-(없음)}"
 }
 
-build_target aarch64-apple-darwin
-build_target x86_64-apple-darwin
+# 타겟 선택: 환경변수 TARGETS 로 오버라이드 가능.
+# 예) TARGETS="aarch64-apple-darwin" scripts/release-local.sh v0.9.0
+TARGETS="${TARGETS:-aarch64-apple-darwin x86_64-apple-darwin}"
+for t in $TARGETS; do
+  build_target "$t"
+done
 
 echo
 echo "═══ 태그/릴리스 ═══"
