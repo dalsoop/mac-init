@@ -17,6 +17,27 @@ struct Card {
     scheme: String,
     #[serde(default)]
     description: String,
+    #[serde(default)]
+    mount_options: MountOptionsView,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct MountOptionsView {
+    #[serde(default)]
+    readonly: bool,
+    #[serde(default = "default_true")]
+    noappledouble: bool,
+    #[serde(default = "default_true")]
+    soft: bool,
+    #[serde(default = "default_true")]
+    nobrowse: bool,
+}
+fn default_true() -> bool { true }
+
+impl Default for MountOptionsView {
+    fn default() -> Self {
+        Self { readonly: false, noappledouble: true, soft: true, nobrowse: true }
+    }
 }
 
 pub struct CardTab {
@@ -81,9 +102,38 @@ impl CardTab {
                 self.show_password = !self.show_password;
                 if self.show_password { self.fetch_password().await; }
             }
+            // 마운트 옵션 토글
+            KeyCode::Char('R') => self.toggle_option("readonly").await,
+            KeyCode::Char('N') => self.toggle_option("noappledouble").await,
+            KeyCode::Char('S') => self.toggle_option("soft").await,
+            KeyCode::Char('B') => self.toggle_option("nobrowse").await,
             _ => {}
         }
         Ok(())
+    }
+
+    async fn toggle_option(&mut self, key: &str) {
+        let Some(c) = self.cards.get(self.selected) else { return; };
+        let cur = match key {
+            "readonly" => c.mount_options.readonly,
+            "noappledouble" => c.mount_options.noappledouble,
+            "soft" => c.mount_options.soft,
+            "nobrowse" => c.mount_options.nobrowse,
+            _ => return,
+        };
+        let next = if cur { "false" } else { "true" };
+        let name = c.name.clone();
+        let out = Command::new(env_binary())
+            .args(["set-option", &name, key, next])
+            .output();
+        match out {
+            Ok(o) if o.status.success() => {
+                self.output = format!("✓ {} {}={}", name, key, next);
+                let _ = self.load().await;
+            }
+            Ok(o) => self.output = String::from_utf8_lossy(&o.stderr).trim().to_string(),
+            Err(e) => self.output = format!("✗ {}", e),
+        }
     }
 
     async fn run_import(&mut self) {
@@ -170,6 +220,8 @@ impl CardTab {
                 } else {
                     "password    : (p 로 표시)".into()
                 };
+                let mo = &c.mount_options;
+                let mark = |b: bool| if b { "●" } else { "○" };
                 vec![
                     format!("name        : {}", c.name),
                     format!("scheme      : {}", c.scheme),
@@ -177,6 +229,10 @@ impl CardTab {
                     format!("host:port   : {}:{}", c.host, c.port),
                     format!("description : {}", c.description),
                     pw_line,
+                    format!(
+                        "options     : {} R readonly   {} N noappledouble   {} S soft   {} B nobrowse",
+                        mark(mo.readonly), mark(mo.noappledouble), mark(mo.soft), mark(mo.nobrowse)
+                    ),
                 ]
             }
             None => vec!["카드 없음".into()],
@@ -187,7 +243,7 @@ impl CardTab {
         frame.render_widget(detail, layout[1]);
 
         // 하단 상태
-        let bindings = "j/k: 이동  i: import  t: test  p: 비번 토글  r: 새로고침";
+        let bindings = "j/k:이동 i:import t:test p:비번  R/N/S/B:옵션 토글  r:새로고침";
         let footer = Paragraph::new(format!("{}  |  {}", bindings, self.output))
             .block(Block::bordered());
         frame.render_widget(footer, layout[2]);
