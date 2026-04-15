@@ -37,6 +37,8 @@ enum Commands {
     },
     /// .env 다시 암호화
     Encrypt,
+    /// TUI v2 스펙 (JSON)
+    TuiSpec,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -180,7 +182,53 @@ fn main() {
         Commands::Status => cmd_status(),
         Commands::Test { name } => cmd_test(&name),
         Commands::Encrypt => dotenvx_encrypt(),
+        Commands::TuiSpec => print_tui_spec(),
     }
+}
+
+fn print_tui_spec() {
+    let conns = load_connections();
+    let rows: Vec<serde_json::Value> = conns.services.iter().map(|c| {
+        serde_json::json!([
+            c.name,
+            c.host,
+            c.user,
+            c.port.to_string(),
+        ])
+    }).collect();
+
+    let spec = serde_json::json!({
+        "tab": { "label": "Connect", "icon": "🔌" },
+        "sections": [
+            {
+                "kind": "key-value",
+                "title": "Status",
+                "items": [
+                    {
+                        "key": "등록된 연결",
+                        "value": format!("{} 개", conns.services.len()),
+                        "status": if conns.services.is_empty() { "warn" } else { "ok" }
+                    }
+                ]
+            },
+            {
+                "kind": "table",
+                "title": "연결 목록",
+                "headers": ["NAME", "HOST", "USER", "PORT"],
+                "rows": rows
+            },
+            {
+                "kind": "buttons",
+                "title": "Actions",
+                "items": [
+                    { "label": "List (목록)", "command": "list", "key": "l" },
+                    { "label": "Status (ping/ssh 테스트)", "command": "status", "key": "s" },
+                    { "label": "Encrypt (.env 재암호화)", "command": "encrypt", "key": "e" }
+                ]
+            }
+        ]
+    });
+    println!("{}", serde_json::to_string_pretty(&spec).unwrap());
 }
 
 fn cmd_add(name: &str) {

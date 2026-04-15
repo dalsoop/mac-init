@@ -780,6 +780,7 @@ name = "mac-domain-bootstrap"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "serde_json",
 ]
 
 [[package]]
@@ -806,6 +807,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "mac-host-core",
+ "serde_json",
 ]
 
 [[package]]
@@ -814,6 +816,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "mac-host-core",
+ "serde_json",
 ]
 
 [[package]]
@@ -822,6 +825,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "mac-host-core",
+ "serde_json",
 ]
 
 [[package]]
@@ -830,6 +834,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "mac-host-core",
+ "serde_json",
 ]
 
 [[package]]
@@ -837,6 +842,7 @@ name = "mac-domain-git"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "serde_json",
 ]
 
 [[package]]
@@ -863,6 +869,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "mac-host-core",
+ "serde_json",
 ]
 
 [[package]]
@@ -870,6 +877,7 @@ name = "mac-domain-quickaction"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "serde_json",
 ]
 
 [[package]]
@@ -877,6 +885,7 @@ name = "mac-domain-vscode"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "serde_json",
 ]
 
 [[package]]
@@ -884,6 +893,7 @@ name = "mac-domain-wireguard"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "serde_json",
 ]
 
 [[package]]
@@ -892,6 +902,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "mac-host-core",
+ "serde_json",
 ]
 
 [[package]]

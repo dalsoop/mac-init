@@ -17,6 +17,8 @@ enum Commands {
     Install,
     /// 누락된 것만 설치
     Check,
+    /// TUI v2 스펙 (JSON)
+    TuiSpec,
 }
 
 struct Dep {
@@ -111,7 +113,44 @@ fn main() {
         Commands::Status => cmd_status(),
         Commands::Install => cmd_install(),
         Commands::Check => cmd_check(),
+        Commands::TuiSpec => print_tui_spec(),
     }
+}
+
+fn print_tui_spec() {
+    let items: Vec<serde_json::Value> = DEPS.iter().map(|dep| {
+        let ver = check_installed(dep);
+        let (value, status) = match &ver {
+            Some(v) => (format!("✓ {}", v), "ok"),
+            None => ("✗ 미설치".to_string(), "error"),
+        };
+        serde_json::json!({
+            "key": dep.name,
+            "value": value,
+            "status": status,
+        })
+    }).collect();
+
+    let spec = serde_json::json!({
+        "tab": { "label": "Bootstrap", "icon": "🚀" },
+        "sections": [
+            {
+                "kind": "key-value",
+                "title": "의존성 상태",
+                "items": items
+            },
+            {
+                "kind": "buttons",
+                "title": "Actions",
+                "items": [
+                    { "label": "Install (전체 의존성 설치)", "command": "install", "key": "i" },
+                    { "label": "Check (누락분만 설치)", "command": "check", "key": "c" },
+                    { "label": "Status (상태 재확인)", "command": "status", "key": "s" }
+                ]
+            }
+        ]
+    });
+    println!("{}", serde_json::to_string_pretty(&spec).unwrap());
 }
 
 fn cmd_status() {

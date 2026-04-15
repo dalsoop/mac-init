@@ -30,6 +30,8 @@ enum Commands {
     GhInstall,
     /// GitHub SSH 키 등록
     GhSshSetup,
+    /// TUI v2 스펙 (JSON)
+    TuiSpec,
 }
 
 fn home() -> String {
@@ -59,7 +61,66 @@ fn main() {
         Commands::GhAuth => cmd_gh_auth(),
         Commands::GhInstall => cmd_gh_install(),
         Commands::GhSshSetup => cmd_gh_ssh_setup(),
+        Commands::TuiSpec => print_tui_spec(),
     }
+}
+
+fn print_tui_spec() {
+    let name = git_config("user.name");
+    let email = git_config("user.email");
+    let ssh_key = PathBuf::from(home()).join(".ssh/id_ed25519");
+    let ssh_key_exists = ssh_key.exists();
+    let gh_installed = cmd_ok("gh", &["--version"]);
+    let gh_authed = gh_installed && cmd_ok("gh", &["auth", "token"]);
+
+    let spec = serde_json::json!({
+        "tab": { "label": "Git", "icon": "🔱" },
+        "sections": [
+            {
+                "kind": "key-value",
+                "title": "Status",
+                "items": [
+                    {
+                        "key": "user.name",
+                        "value": if name.is_empty() { "✗ 미설정".to_string() } else { format!("✓ {}", name) },
+                        "status": if name.is_empty() { "error" } else { "ok" }
+                    },
+                    {
+                        "key": "user.email",
+                        "value": if email.is_empty() { "✗ 미설정".to_string() } else { format!("✓ {}", email) },
+                        "status": if email.is_empty() { "error" } else { "ok" }
+                    },
+                    {
+                        "key": "SSH 키 (id_ed25519)",
+                        "value": if ssh_key_exists { "✓ 존재" } else { "✗ 없음" },
+                        "status": if ssh_key_exists { "ok" } else { "error" }
+                    },
+                    {
+                        "key": "GitHub CLI",
+                        "value": if gh_installed { "✓ 설치됨" } else { "✗ 미설치" },
+                        "status": if gh_installed { "ok" } else { "error" }
+                    },
+                    {
+                        "key": "gh auth",
+                        "value": if gh_authed { "✓ 인증됨" } else { "✗ 미인증" },
+                        "status": if gh_authed { "ok" } else { "warn" }
+                    }
+                ]
+            },
+            {
+                "kind": "buttons",
+                "title": "Actions",
+                "items": [
+                    { "label": "Status (상태)", "command": "status", "key": "s" },
+                    { "label": "SSH Setup (ed25519 키 생성)", "command": "ssh-setup", "key": "k" },
+                    { "label": "gh Auth (GitHub 로그인)", "command": "gh-auth", "key": "a" },
+                    { "label": "gh Install (gh CLI 설치)", "command": "gh-install", "key": "i" },
+                    { "label": "gh SSH Setup (키 등록)", "command": "gh-ssh-setup", "key": "g" }
+                ]
+            }
+        ]
+    });
+    println!("{}", serde_json::to_string_pretty(&spec).unwrap());
 }
 
 fn cmd_status() {
