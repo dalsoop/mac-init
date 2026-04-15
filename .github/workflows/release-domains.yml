@@ -27,6 +27,7 @@ jobs:
           - wireguard
           - projects
           - worktree
+          - mount
 
     runs-on: macos-14
 

@@ -195,10 +195,30 @@ fn cmd_available() {
     }
 }
 
+fn domain_deps(name: &str) -> &'static [&'static str] {
+    match name {
+        "mount" => &["connect"],
+        _ => &[],
+    }
+}
+
 fn cmd_install(name: &str) {
     let mut reg = load_registry();
     if reg.installed.iter().any(|d| d.name == name) {
         println!("'{}' 이미 설치되어 있습니다. 업데이트: mac update {}", name, name);
+        return;
+    }
+
+    // 의존성 체크
+    let deps = domain_deps(name);
+    let missing: Vec<&&str> = deps.iter()
+        .filter(|d| !reg.installed.iter().any(|inst| &inst.name == *d))
+        .collect();
+    if !missing.is_empty() {
+        eprintln!("✗ '{}' 은 다음 도메인이 먼저 필요합니다:", name);
+        for d in &missing {
+            eprintln!("    mac install {}", d);
+        }
         return;
     }
 
