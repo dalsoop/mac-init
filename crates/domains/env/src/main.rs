@@ -330,20 +330,23 @@ fn cmd_import() {
             skipped += 1;
             continue;
         }
-        // port 기반 scheme 추정
-        let scheme = match port {
-            22 => "ssh",
-            139 | 445 => "smb",
-            2049 => "nfs",
-            80 => "http",
-            443 => "https",
-            _ => "ssh",
+        // scheme 추정: port 우선, 비정형 포트면 실제 TCP 프로브.
+        let scheme = guess_scheme(host, port);
+        // SMB 추정인데 port 가 445/139 가 아니면 DSM UI 포트 등이 연결 저장된 것.
+        // 카드에는 실제 서비스 포트로 보정 저장.
+        let effective_port = match (scheme, port) {
+            ("smb", p) if p != 445 && p != 139 => 445,
+            ("nfs", p) if p != 2049 => 2049,
+            (_, p) => p,
         };
+        if effective_port != port {
+            eprintln!("  ↻ {} port 보정: {} → {} ({})", name, port, effective_port, scheme);
+        }
         let card = Card {
             name: name.into(),
             host: host.into(),
             user: user.into(),
-            port,
+            port: effective_port,
             scheme: scheme.into(),
             description: format!("imported from connections.json"),
             tags: vec!["imported".into()],
@@ -365,9 +368,38 @@ fn cmd_import() {
             }
         }
 
-        println!("  ✓ {} ({}@{}:{} / {})", name, user, host, port, scheme);
+        println!("  ✓ {} ({}@{}:{} / {})", name, user, host, effective_port, scheme);
     }
     println!("\nimport: 생성 {}, 이미 있음 {}, 비번 이관 {}", created, skipped, with_pw);
+}
+
+/// 포트 기반 1차 추정. 비표준 포트면 host 에 SMB(445)/SSH(22) TCP 프로브.
+fn guess_scheme(host: &str, port: u16) -> &'static str {
+    match port {
+        22 => return "ssh",
+        139 | 445 => return "smb",
+        2049 => return "nfs",
+        80 => return "http",
+        443 => return "https",
+        _ => {}
+    }
+    // 비정형 포트: 445 → 22 순으로 프로브
+    for (p, s) in [(445u16, "smb"), (22u16, "ssh")] {
+        if probe_tcp(host, p) { return s; }
+    }
+    "ssh"
+}
+
+fn probe_tcp(host: &str, port: u16) -> bool {
+    use std::net::ToSocketAddrs;
+    use std::time::Duration;
+    let addr = format!("{}:{}", host, port);
+    if let Ok(mut it) = addr.to_socket_addrs() {
+        if let Some(sock) = it.next() {
+            return std::net::TcpStream::connect_timeout(&sock, Duration::from_millis(500)).is_ok();
+        }
+    }
+    false
 }
 
 fn dotenvx_get(key: &str) -> Option<String> {

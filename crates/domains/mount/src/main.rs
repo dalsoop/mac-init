@@ -185,7 +185,7 @@ fn load_connections() -> Vec<Connection> {
     if !path.exists() { return Vec::new(); }
     let content = fs::read_to_string(&path).unwrap_or_default();
     let json: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
-    json.get("services").and_then(|v| v.as_array())
+    let result: Vec<Connection> = json.get("services").and_then(|v| v.as_array())
         .map(|arr| arr.iter().filter_map(|s| {
             Some(Connection {
                 name: s.get("name")?.as_str()?.to_string(),
@@ -194,7 +194,14 @@ fn load_connections() -> Vec<Connection> {
                 port: s.get("port")?.as_u64()? as u16,
             })
         }).collect())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    if !result.is_empty() {
+        eprintln!(
+            "⚠ legacy {} 를 읽는 중. `mac run env import` 로 카드로 이관 후 파일을 삭제하세요.",
+            path.display()
+        );
+    }
+    result
 }
 
 fn find_connection(name: &str) -> Option<Connection> {
