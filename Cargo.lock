@@ -845,6 +845,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "mac-host-core",
+ "serde_json",
 ]
 
 [[package]]
@@ -918,6 +919,19 @@ dependencies = [
  "color-eyre",
  "crossterm",
  "mac-host-core",
+ "ratatui",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tui-tree-widget",
+]
+
+[[package]]
+name = "mac-host-tui-v2"
+version = "0.2.0"
+dependencies = [
+ "color-eyre",
+ "crossterm",
  "ratatui",
  "serde",
  "serde_json",
