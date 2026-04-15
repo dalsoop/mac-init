@@ -297,8 +297,45 @@ fn cmd_add(name: &str) {
     // Encrypt
     dotenvx_encrypt();
 
+    // env 카드로도 동기화 (v2: 카드가 1차 소유자)
+    let scheme = match port {
+        139 | 445 => "smb",
+        2049 => "nfs",
+        80 => "http",
+        443 => "https",
+        _ => "ssh",
+    };
+    let mut env_add_args: Vec<String> = vec![
+        "add".into(), name.into(),
+        "--host".into(), host.clone(),
+        "--user".into(), user.clone(),
+        "--port".into(), port.to_string(),
+        "--scheme".into(), scheme.into(),
+    ];
+    if let Some(pw) = extra.get("PASSWORD") {
+        env_add_args.push("--password".into());
+        env_add_args.push(pw.clone());
+    }
+    let _ = Command::new(env_binary())
+        .args(&env_add_args)
+        .status();
+
     println!("\n✓ {} 연결 추가 완료", name);
     println!("  {}@{}:{}", user, host, port);
+}
+
+/// env 도메인 바이너리 경로 해석 (mount 의 것과 동일 로직).
+fn env_binary() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
+    let candidates = [
+        PathBuf::from(&home).join(".mac-app-init/domains/mac-domain-env"),
+        PathBuf::from("./target/debug/mac-domain-env"),
+        PathBuf::from("./target/release/mac-domain-env"),
+    ];
+    for c in &candidates {
+        if c.exists() { return c.clone(); }
+    }
+    PathBuf::from("mac-domain-env")
 }
 
 fn cmd_remove(name: &str) {
@@ -321,6 +358,12 @@ fn cmd_remove(name: &str) {
     remove_env(&format!("{}_PASSWORD", prefix));
 
     dotenvx_encrypt();
+
+    // env 카드도 함께 삭제
+    let _ = Command::new(env_binary())
+        .args(["rm", name])
+        .status();
+
     println!("✓ {} 연결 삭제 완료", name);
 }
 

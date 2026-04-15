@@ -68,11 +68,13 @@ in
 
     mount = {
       name = "mount",
-      description = "sshfs/SMB 마운트 관리",
+      description = "sshfs/SMB/NetFS 마운트 관리 (Apple NetFS.framework 사용)",
       enabled = true,
       tags = { product = 'infra, layer = 'remote },
-      requires = ["setup", "network", "ssh"],
-      provides = ["mount status", "mount up", "mount up-all", "mount down", "mount down-all"],
+      requires = ["setup", "network", "ssh", "env", "connect"],
+      provides = ["mount status", "mount shares", "mount list", "mount mount", "mount unmount",
+                  "mount auto-add", "mount auto-remove", "mount auto-toggle", "mount auto-list",
+                  "mount auto", "mount auto-enable", "mount auto-disable"],
     } | Domain,
 
     network = {
@@ -141,6 +143,27 @@ in
       provides = ["openclaw status", "openclaw install", "openclaw start", "openclaw stop", "openclaw sync-auth"],
     } | Domain,
 
+    env = {
+      name = "env",
+      description = "카드(서비스 연결정보 + 자격증명) 단일 소유. Keychain 기반",
+      enabled = true,
+      tags = { product = 'vault, layer = 'local },
+      provides = [
+        "env list", "env show", "env add", "env rm",
+        "env set-password", "env get-password",
+        "env import", "env test", "env status",
+      ],
+    } | Domain,
+
+    connect = {
+      name = "connect",
+      description = "서비스 연결 등록/탐지 (env 카드 쓰기 레이어)",
+      enabled = true,
+      tags = { product = 'infra, layer = 'remote },
+      requires = ["env"],
+      provides = ["connect status", "connect list", "connect add", "connect remove", "connect import"],
+    } | Domain,
+
     obsidian = {
       name = "obsidian",
       description = "Obsidian 볼트 관리, 플러그인, 동기화",
@@ -161,13 +184,13 @@ in
   # 번들 정의
   bundles = {
     init = ["keyboard", "setup", "workspace", "github", "config"],
-    infra = ["mount", "network", "ssh", "proxmox", "synology"],
+    infra = ["mount", "network", "ssh", "proxmox", "synology", "connect"],
     auto = ["cron", "files", "worktree", "projects"],
-    vault = ["openclaw"],
+    vault = ["env", "openclaw"],
     knowledge = ["obsidian"],
     full = ["keyboard", "setup", "workspace", "github", "config",
-            "mount", "network", "ssh", "proxmox", "synology",
-            "cron", "files", "worktree", "projects", "openclaw",
+            "mount", "network", "ssh", "proxmox", "synology", "connect",
+            "cron", "files", "worktree", "projects", "env", "openclaw",
             "obsidian"],
   },
 }

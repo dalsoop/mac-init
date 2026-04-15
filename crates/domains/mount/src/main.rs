@@ -198,7 +198,81 @@ fn load_connections() -> Vec<Connection> {
 }
 
 fn find_connection(name: &str) -> Option<Connection> {
+    // 1순위: env 카드. 2순위: legacy connections.json
+    if let Some(c) = env_card_show(name) {
+        return Some(c);
+    }
     load_connections().into_iter().find(|c| c.name == name)
+}
+
+/// env 카드 전체 목록 + legacy connections.json 를 합친 결과 (카드 우선, 이름 중복 제거).
+fn load_all_connections() -> Vec<Connection> {
+    let out = Command::new(env_binary()).args(["list"]).output();
+    let mut cards: Vec<Connection> = Vec::new();
+    if let Ok(o) = out {
+        if o.status.success() {
+            // parse 는 `env list` 테이블 대신 카드 파일 직접 읽기가 간결
+            let dir = PathBuf::from(home()).join(".mac-app-init/cards");
+            if let Ok(it) = std::fs::read_dir(&dir) {
+                for e in it.filter_map(|x| x.ok()) {
+                    if e.path().extension().and_then(|s| s.to_str()) != Some("json") { continue; }
+                    if let Ok(content) = std::fs::read_to_string(e.path()) {
+                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
+                            if let (Some(name), Some(host), Some(user), Some(port)) = (
+                                v.get("name").and_then(|x| x.as_str()),
+                                v.get("host").and_then(|x| x.as_str()),
+                                v.get("user").and_then(|x| x.as_str()),
+                                v.get("port").and_then(|x| x.as_u64()),
+                            ) {
+                                cards.push(Connection {
+                                    name: name.into(), host: host.into(), user: user.into(), port: port as u16,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let card_names: std::collections::HashSet<String> =
+        cards.iter().map(|c| c.name.clone()).collect();
+    for c in load_connections() {
+        if !card_names.contains(&c.name) {
+            cards.push(c);
+        }
+    }
+    cards.sort_by(|a, b| a.name.cmp(&b.name));
+    cards
+}
+
+/// env 도메인 바이너리 경로.
+/// 1) PATH 2) ~/.mac-app-init/domains/mac-domain-env 3) ./target/debug/mac-domain-env
+fn env_binary() -> PathBuf {
+    let candidates = [
+        PathBuf::from("mac-domain-env"),
+        PathBuf::from(home()).join(".mac-app-init/domains/mac-domain-env"),
+        PathBuf::from("./target/debug/mac-domain-env"),
+        PathBuf::from("./target/release/mac-domain-env"),
+    ];
+    for c in &candidates[1..] {
+        if c.exists() { return c.clone(); }
+    }
+    candidates[0].clone()
+}
+
+/// env 도메인 CLI 로 카드 조회 → Connection 으로 변환.
+fn env_card_show(name: &str) -> Option<Connection> {
+    let out = Command::new(env_binary())
+        .args(["show", name])
+        .output().ok()?;
+    if !out.status.success() { return None; }
+    let json: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
+    Some(Connection {
+        name: json.get("name")?.as_str()?.to_string(),
+        host: json.get("host")?.as_str()?.to_string(),
+        user: json.get("user")?.as_str()?.to_string(),
+        port: json.get("port")?.as_u64()? as u16,
+    })
 }
 
 fn dotenvx_get(key: &str) -> Option<String> {
@@ -211,8 +285,21 @@ fn dotenvx_get(key: &str) -> Option<String> {
 }
 
 fn get_password(name: &str) -> Option<String> {
+    // 1순위: env 카드 (keychain). 2순위: legacy .env
+    if let Some(pw) = env_card_password(name) {
+        return Some(pw);
+    }
     let key = format!("{}_PASSWORD", name.to_uppercase().replace('-', "_"));
     dotenvx_get(&key)
+}
+
+fn env_card_password(name: &str) -> Option<String> {
+    let out = Command::new(env_binary())
+        .args(["get-password", name])
+        .output().ok()?;
+    if !out.status.success() { return None; }
+    let v = String::from_utf8_lossy(&out.stdout).to_string();
+    if v.is_empty() { None } else { Some(v) }
 }
 
 fn url_encode(s: &str) -> String {
@@ -297,7 +384,7 @@ fn main() {
 }
 
 fn cmd_status() {
-    let conns = load_connections();
+    let conns = load_all_connections();
     let mounts = list_current_mounts();
     println!("=== Mount Status ===\n");
     println!("연결 ({}개):", conns.len());
@@ -311,7 +398,7 @@ fn cmd_status() {
 }
 
 fn cmd_shares() {
-    let conns = load_connections();
+    let conns = load_all_connections();
     if conns.is_empty() {
         println!("등록된 연결이 없습니다. mac run connect add <name>");
         return;
@@ -663,7 +750,7 @@ fn cmd_unmount(target: &str) {
 }
 
 fn print_tui_spec() {
-    let conns = load_connections();
+    let conns = load_all_connections();
     let mounts = list_current_mounts();
     let cfg = load_mount_config();
     let auto_enabled = automount_plist_path().exists();

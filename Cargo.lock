@@ -845,6 +845,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "mac-domain-env"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "mac-domain-files"
 version = "0.1.0"
 dependencies = [
