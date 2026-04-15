@@ -11,11 +11,13 @@ pub struct MountOpts {
     pub noappledouble: bool,
     pub soft: bool,
     pub nobrowse: bool,
+    pub rsize: u32,
+    pub wsize: u32,
 }
 
 impl Default for MountOpts {
     fn default() -> Self {
-        Self { readonly: false, noappledouble: true, soft: true, nobrowse: true }
+        Self { readonly: false, noappledouble: true, soft: true, nobrowse: true, rsize: 0, wsize: 0 }
     }
 }
 
@@ -25,10 +27,12 @@ impl MountOpts {
     /// .DS_Store/._ 억제는 카드 옵션과 별개로 `defaults write` 시스템 전역 설정이
     /// 필요. 여기선 mount_smbfs 가 인식하는 옵션만 조립.
     pub fn smbfs_opts_string(&self) -> String {
-        let mut v: Vec<&'static str> = Vec::new();
-        if self.readonly { v.push("rdonly"); }
-        if self.soft { v.push("soft"); }
-        if self.nobrowse { v.push("nobrowse"); }
+        let mut v: Vec<String> = Vec::new();
+        if self.readonly { v.push("rdonly".into()); }
+        if self.soft { v.push("soft".into()); }
+        if self.nobrowse { v.push("nobrowse".into()); }
+        if self.rsize > 0 { v.push(format!("rsize={}", self.rsize)); }
+        if self.wsize > 0 { v.push(format!("wsize={}", self.wsize)); }
         // noappledouble 은 mount_smbfs 옵션이 아님 → 의도적으로 제외.
         v.join(",")
     }

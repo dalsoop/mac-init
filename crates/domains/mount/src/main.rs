@@ -306,11 +306,16 @@ fn card_mount_opts(name: &str) -> backend::MountOpts {
     let get = |k: &str, d: bool| {
         mo.and_then(|m| m.get(k)).and_then(|v| v.as_bool()).unwrap_or(d)
     };
+    let get_u32 = |k: &str| -> u32 {
+        mo.and_then(|m| m.get(k)).and_then(|v| v.as_u64()).unwrap_or(0) as u32
+    };
     backend::MountOpts {
         readonly: get("readonly", false),
         noappledouble: get("noappledouble", true),
         soft: get("soft", true),
         nobrowse: get("nobrowse", true),
+        rsize: get_u32("rsize"),
+        wsize: get_u32("wsize"),
     }
 }
 
@@ -665,12 +670,44 @@ fn cmd_auto_list() {
     }
 }
 
+/// host:port 에 1초 안에 TCP 연결 가능한지. precheck 용.
+fn host_reachable(host: &str, port: u16) -> bool {
+    use std::net::ToSocketAddrs;
+    use std::time::Duration;
+    let addr = format!("{}:{}", host, port);
+    if let Ok(mut it) = addr.to_socket_addrs() {
+        if let Some(sock) = it.next() {
+            return std::net::TcpStream::connect_timeout(&sock, Duration::from_secs(1)).is_ok();
+        }
+    }
+    false
+}
+
+/// auto 사이클 시작 시 stale 마운트 일괄 청소. 좀비 마운트 누적 방지.
+fn sweep_stale_mounts() -> usize {
+    let mut swept = 0;
+    for (_, mp, _) in list_all_mounts() {
+        let path = PathBuf::from(&mp);
+        if !path.starts_with(format!("{}/NAS", home())) { continue; }
+        if is_stale(&path) {
+            if unmount_path(&path).is_ok() {
+                eprintln!("  🧹 stale 청소: {}", mp);
+                swept += 1;
+            }
+        }
+    }
+    swept
+}
+
 fn cmd_auto() {
     let cfg = load_mount_config();
     if cfg.auto_mounts.is_empty() {
         println!("자동 마운트 설정이 없습니다.");
         return;
     }
+    // [C] 사이클 시작 시 stale 일괄 청소.
+    sweep_stale_mounts();
+
     let mut state = load_retry_state();
     let now = epoch_now();
 
@@ -716,6 +753,17 @@ fn cmd_auto() {
             record_failure(&mut state, &key, now, "no_connection");
             continue;
         };
+
+        // [A] precheck: host TCP probe — 도달 불가하면 mount 시도 자체 skip.
+        // VPN 다운/네트워크 단절 상황에서 시도 폭주 + 로그 폭증 방지.
+        if conn.scheme != "rclone" && !host_reachable(&conn.host, conn.port) {
+            eprintln!("  ⌧ {}/{}: {}:{} 도달 불가 (네트워크/VPN 확인) — skip",
+                a.connection, a.share, conn.host, conn.port);
+            failed_count += 1;
+            record_failure(&mut state, &key, now, "unreachable");
+            continue;
+        }
+
         let Some(pw) = get_password(&a.connection) else {
             eprintln!("  ✗ {}/{}: 비번 없음 (.env 의 {}_PASSWORD)", a.connection, a.share, a.connection.to_uppercase());
             failed_count += 1;

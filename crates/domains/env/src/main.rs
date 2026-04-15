@@ -160,12 +160,20 @@ struct MountOptions {
     /// .DS_Store / ._* 생성 억제 (NAS 노이즈 방지)
     #[serde(default = "default_true_opt")]
     noappledouble: bool,
-    /// 서버 무응답 시 hang 대신 EIO (mount_smbfs -o soft)
+    /// 서버 무응답 시 hang 대신 EIO (mount_smbfs -o soft).
+    /// VPN 환경에선 false 권장 (transient 끊김에 강함).
     #[serde(default = "default_true_opt")]
     soft: bool,
     /// Finder 사이드바에 노출 안 함 (mount_smbfs -o nobrowse)
     #[serde(default = "default_true_opt")]
     nobrowse: bool,
+    /// SMB 읽기 청크 크기 (bytes). 0 이면 OS 기본. VPN MTU 1420 환경에선
+    /// 65536 정도가 분할 효율 좋음.
+    #[serde(default)]
+    rsize: u32,
+    /// SMB 쓰기 청크 크기 (bytes). 0 이면 OS 기본.
+    #[serde(default)]
+    wsize: u32,
 }
 fn default_true_opt() -> bool { true }
 
@@ -176,6 +184,8 @@ impl Default for MountOptions {
             noappledouble: true,
             soft: true,
             nobrowse: true,
+            rsize: 0,
+            wsize: 0,
         }
     }
 }
@@ -460,25 +470,40 @@ fn cmd_set_option(name: &str, key: &str, value: &str) {
         eprintln!("✗ 카드 '{}' 없음", name);
         std::process::exit(1);
     };
-    let v: bool = match value.to_ascii_lowercase().as_str() {
-        "true" | "1" | "on" | "yes" => true,
-        "false" | "0" | "off" | "no" => false,
-        _ => { eprintln!("✗ value 는 true|false"); std::process::exit(1); }
-    };
     let mut opts = card.mount_options.clone();
+    let display_value: String;
     match key {
-        "readonly" => opts.readonly = v,
-        "noappledouble" => opts.noappledouble = v,
-        "soft" => opts.soft = v,
-        "nobrowse" => opts.nobrowse = v,
+        "readonly" | "noappledouble" | "soft" | "nobrowse" => {
+            let v: bool = match value.to_ascii_lowercase().as_str() {
+                "true" | "1" | "on" | "yes" => true,
+                "false" | "0" | "off" | "no" => false,
+                _ => { eprintln!("✗ value 는 true|false"); std::process::exit(1); }
+            };
+            match key {
+                "readonly" => opts.readonly = v,
+                "noappledouble" => opts.noappledouble = v,
+                "soft" => opts.soft = v,
+                "nobrowse" => opts.nobrowse = v,
+                _ => unreachable!(),
+            }
+            display_value = v.to_string();
+        }
+        "rsize" | "wsize" => {
+            let n: u32 = value.parse().unwrap_or_else(|_| {
+                eprintln!("✗ {} 은 정수 (bytes). 0 = OS 기본", key);
+                std::process::exit(1);
+            });
+            if key == "rsize" { opts.rsize = n; } else { opts.wsize = n; }
+            display_value = if n == 0 { "0 (OS 기본)".into() } else { n.to_string() };
+        }
         _ => {
-            eprintln!("✗ key 는 readonly|noappledouble|soft|nobrowse");
+            eprintln!("✗ key 는 readonly|noappledouble|soft|nobrowse|rsize|wsize");
             std::process::exit(1);
         }
     }
     card.mount_options = opts;
     if let Err(e) = save_card(&card) { eprintln!("✗ {}", e); std::process::exit(1); }
-    println!("✓ {} {}={}", name, key, v);
+    println!("✓ {} {}={}", name, key, display_value);
 
     // 현재 마운트된 share 가 있으면 자동 재마운트 (옵션 즉시 적용).
     let remounted = remount_active_shares(name);

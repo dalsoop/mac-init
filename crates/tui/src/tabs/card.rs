@@ -31,12 +31,16 @@ struct MountOptionsView {
     soft: bool,
     #[serde(default = "default_true")]
     nobrowse: bool,
+    #[serde(default)]
+    rsize: u32,
+    #[serde(default)]
+    wsize: u32,
 }
 fn default_true() -> bool { true }
 
 impl Default for MountOptionsView {
     fn default() -> Self {
-        Self { readonly: false, noappledouble: true, soft: true, nobrowse: true }
+        Self { readonly: false, noappledouble: true, soft: true, nobrowse: true, rsize: 0, wsize: 0 }
     }
 }
 
@@ -289,7 +293,7 @@ impl CardTab {
     pub fn render(&self, frame: &mut Frame, area: Rect) {
         let layout = Layout::vertical([
             Constraint::Min(3),
-            Constraint::Length(10),
+            Constraint::Length(11),
             Constraint::Length(3),
         ]).split(area);
 
@@ -336,6 +340,7 @@ impl CardTab {
                 };
                 let mo = &c.mount_options;
                 let mark = |b: bool| if b { "●" } else { "○" };
+                let sz = |n: u32| if n == 0 { "-".to_string() } else { format!("{}", n) };
                 vec![
                     format!("name        : {}", c.name),
                     format!("scheme      : {}", c.scheme),
@@ -347,6 +352,7 @@ impl CardTab {
                         "options     : {} R readonly   {} N noappledouble   {} S soft   {} B nobrowse",
                         mark(mo.readonly), mark(mo.noappledouble), mark(mo.soft), mark(mo.nobrowse)
                     ),
+                    format!("io chunks   : rsize={}  wsize={}", sz(mo.rsize), sz(mo.wsize)),
                 ]
             }
             None => vec!["카드 없음".into()],
