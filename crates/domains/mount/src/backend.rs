@@ -81,6 +81,64 @@ pub fn mount(req: &MountRequest<'_>, smbfs_fallback: impl Fn(&MountRequest<'_>) 
     smbfs_fallback(req).map(|_| "mount_smbfs")
 }
 
+/// rclone mount 백그라운드 spawn.
+///
+/// **주의 (macOS)**: Homebrew 의 rclone 은 mount 미지원 (정적 링크 빠짐).
+/// https://rclone.org/downloads/ 에서 공식 바이너리를 받아 /usr/local/bin/rclone 또는
+/// 환경변수 RCLONE_BIN 으로 지정해야 함.
+pub fn rclone_mount(remote: &str, path: &str, mountpoint: &Path, opts: &MountOpts) -> Result<(), String> {
+    use std::process::Stdio;
+    std::fs::create_dir_all(mountpoint).map_err(|e| format!("dir 생성 실패: {}", e))?;
+    let target = if path.is_empty() { format!("{}:", remote) } else { format!("{}:{}", remote, path) };
+
+    let log_dir = std::path::PathBuf::from(std::env::var("HOME").unwrap_or("/tmp".into()))
+        .join(".mac-app-init/rclone-logs");
+    std::fs::create_dir_all(&log_dir).ok();
+    let log_path = log_dir.join(format!("{}.log",
+        mountpoint.file_name().and_then(|s| s.to_str()).unwrap_or("rclone")));
+    let log = std::fs::OpenOptions::new().create(true).append(true).open(&log_path)
+        .map_err(|e| format!("log 파일: {}", e))?;
+    let log_err = log.try_clone().map_err(|e| format!("log 복제: {}", e))?;
+
+    let rclone_bin = std::env::var("RCLONE_BIN").unwrap_or_else(|_| "rclone".into());
+    let mut cmd = std::process::Command::new(&rclone_bin);
+    cmd.arg("mount").arg(&target).arg(mountpoint)
+        .arg("--vfs-cache-mode").arg("writes")
+        .arg("--volname").arg(format!("rclone-{}", remote))
+        .arg("--log-level").arg("INFO")
+        .arg("--log-file").arg(&log_path)
+        .stdout(Stdio::from(log))
+        .stderr(Stdio::from(log_err))
+        .stdin(Stdio::null());
+    if opts.readonly { cmd.arg("--read-only"); }
+
+    let child = cmd.spawn().map_err(|e| format!("rclone 실행 실패: {} (https://rclone.org/downloads/)", e))?;
+
+    // 마운트가 실제로 올라올 때까지 최대 8초 대기.
+    for _ in 0..80 {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let mounted = std::process::Command::new("mount")
+            .output().ok()
+            .map(|o| String::from_utf8_lossy(&o.stdout).contains(&mountpoint.display().to_string()))
+            .unwrap_or(false);
+        if mounted { return Ok(()); }
+    }
+    let _ = child.id();
+
+    // 로그에서 흔한 원인 검사
+    let log_text = std::fs::read_to_string(&log_path).unwrap_or_default();
+    if log_text.contains("not supported on MacOS when rclone is installed via Homebrew") {
+        return Err(format!(
+            "Homebrew rclone 은 mount 미지원. https://rclone.org/downloads/ 공식 바이너리 설치 후\n  \
+             RCLONE_BIN=/usr/local/bin/rclone mac-domain-mount mount ... 또는 PATH 우선순위 조정"
+        ));
+    }
+    if log_text.contains("FUSE") && log_text.contains("not found") {
+        return Err("macFUSE 미설치 또는 시스템 확장 승인 필요. https://osxfuse.github.io".into());
+    }
+    Err(format!("rclone mount 타임아웃 (8s). log: {}", log_path.display()))
+}
+
 #[cfg(all(target_os = "macos", feature = "netfs"))]
 fn build_url(scheme: &str, user: &str, host: &str, port: u16, share: &str) -> String {
     // scheme 별 기본 포트. 다르면 명시.

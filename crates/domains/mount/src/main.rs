@@ -493,13 +493,27 @@ fn cmd_mount(name: &str, share: &str) {
         eprintln!("✗ 연결 '{}' 이(가) 없습니다. mac run connect list", name);
         return;
     };
+    let mp = mount_point(name, share);
+    let opts = card_mount_opts(name);
+
+    // rclone 백엔드 분기
+    if conn.scheme == "rclone" {
+        let (remote, path) = card_rclone_meta(name);
+        let path = if share == "/" || share.is_empty() { path } else { share.into() };
+        println!("마운트 중 (rclone): {}:{} → {}", remote, path, mp.display());
+        match backend::rclone_mount(&remote, &path, &mp, &opts) {
+            Ok(()) => println!("✓ {} (rclone)", mp.display()),
+            Err(e) => eprintln!("✗ {}", e),
+        }
+        return;
+    }
+
+    // 기존: SMB / NFS / AFP / WebDAV 등 NetFS 경로
     let Some(pw) = get_password(name) else {
         eprintln!("✗ {}_PASSWORD 가 .env 에 없습니다.", name.to_uppercase());
         return;
     };
-    let mp = mount_point(name, share);
     println!("마운트 중: {} → {}", conn.host, mp.display());
-    let opts = card_mount_opts(name);
     let opts_str = opts.smbfs_opts_string();
     let req = backend::MountRequest {
         host: &conn.host,
@@ -518,6 +532,18 @@ fn cmd_mount(name: &str, share: &str) {
         Ok(backend_name) => println!("✓ {} ({}) [-o {}]", mp.display(), backend_name, opts_str),
         Err(e) => eprintln!("✗ {}", e),
     }
+}
+
+/// rclone 카드의 (remote, path) 메타. env show 의 rclone_remote/rclone_path 필드.
+fn card_rclone_meta(name: &str) -> (String, String) {
+    let out = Command::new(env_binary()).args(["show", name]).output();
+    let Ok(o) = out else { return (String::new(), String::new()); };
+    let Ok(json) = serde_json::from_slice::<serde_json::Value>(&o.stdout) else {
+        return (String::new(), String::new());
+    };
+    let r = json.get("rclone_remote").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let p = json.get("rclone_path").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    (r, p)
 }
 
 // === Auto-mount config ===

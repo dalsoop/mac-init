@@ -35,6 +35,18 @@ enum Commands {
         #[arg(long)]
         description: Option<String>,
     },
+    /// 클라우드(rclone) 카드 추가. 사전에 `rclone config` 로 remote 등록 필요.
+    AddRclone {
+        name: String,
+        /// rclone config 의 remote 이름 (예: "gdrive", "s3-prod")
+        #[arg(long)]
+        remote: String,
+        /// remote 내 경로 (선택). 빈 값이면 root.
+        #[arg(long, default_value = "")]
+        path: String,
+        #[arg(long)]
+        description: Option<String>,
+    },
     /// 카드 삭제 (Keychain 비번도 같이)
     Rm { name: String },
     /// 비번 저장/갱신 (Keychain)
@@ -79,6 +91,9 @@ fn main() {
         Commands::Add { name, host, user, port, scheme, password, description } => {
             cmd_add(&name, &host, &user, port, &scheme, password.as_deref(), description.as_deref())
         }
+        Commands::AddRclone { name, remote, path, description } => {
+            cmd_add_rclone(&name, &remote, &path, description.as_deref())
+        }
         Commands::Rm { name } => cmd_rm(&name),
         Commands::SetPassword { name, password } => cmd_set_password(&name, password.as_deref()),
         Commands::GetPassword { name } => cmd_get_password(&name),
@@ -101,12 +116,19 @@ struct Card {
     host: String,
     user: String,
     port: u16,
-    /// ssh | smb | nfs | http | https | …
+    /// ssh | smb | nfs | afp | webdav | webdavs | ftp | rclone | …
+    /// "rclone" 인 경우 host/user/port 는 무시되고 rclone_remote / rclone_path 사용.
     scheme: String,
     #[serde(default)]
     description: String,
     #[serde(default)]
     tags: Vec<String>,
+    /// rclone scheme 전용: rclone config 의 remote 이름 (예: "gdrive", "s3-prod").
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    rclone_remote: String,
+    /// rclone scheme 전용: remote 내 경로 (예: "Photos/2026"). 빈 문자열이면 root.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    rclone_path: String,
     /// "dotenvx:<KEY>" | "none". 기본은 "dotenvx:{NAME}_PASSWORD".
     /// (codesign 없는 빌드에서 Keychain ACL 이 매번 깨지는 문제로 dotenvx 단일화)
     #[serde(default = "default_pw_ref")]
@@ -322,6 +344,8 @@ fn cmd_add(
         scheme: scheme.into(),
         description: description.unwrap_or("").into(),
         tags: Vec::new(),
+        rclone_remote: String::new(),
+        rclone_path: String::new(),
         password_ref: "dotenvx:auto".into(),
         mount_options: MountOptions::default_for_scheme(scheme),
     };
@@ -334,6 +358,45 @@ fn cmd_add(
         }
     }
     println!("✓ 카드 추가: {}", name);
+}
+
+fn cmd_add_rclone(name: &str, remote: &str, path: &str, description: Option<&str>) {
+    if load_card(name).is_some() {
+        eprintln!("✗ 이미 존재: {}", name);
+        std::process::exit(1);
+    }
+    // rclone remote 가 실제로 등록돼 있는지 확인
+    let listed = Command::new("rclone").args(["listremotes"]).output();
+    match listed {
+        Ok(o) if o.status.success() => {
+            let s = String::from_utf8_lossy(&o.stdout);
+            let target = format!("{}:", remote);
+            if !s.lines().any(|l| l.trim() == target) {
+                eprintln!("✗ rclone remote '{}' 미등록. `rclone config` 로 먼저 추가하세요.", remote);
+                eprintln!("  현재 remote: {}", s.trim().replace('\n', ", "));
+                std::process::exit(1);
+            }
+        }
+        _ => {
+            eprintln!("⚠ rclone listremotes 실패 — 검증 건너뜀");
+        }
+    }
+
+    let card = Card {
+        name: name.into(),
+        host: format!("rclone:{}", remote),
+        user: String::new(),
+        port: 0,
+        scheme: "rclone".into(),
+        description: description.unwrap_or("").into(),
+        tags: vec!["cloud".into()],
+        rclone_remote: remote.into(),
+        rclone_path: path.into(),
+        password_ref: "none".into(), // rclone config 가 자체 관리
+        mount_options: MountOptions::default(),
+    };
+    if let Err(e) = save_card(&card) { eprintln!("✗ {}", e); std::process::exit(1); }
+    println!("✓ rclone 카드 추가: {} → {}:{}", name, remote, path);
 }
 
 fn cmd_rm(name: &str) {
@@ -514,6 +577,8 @@ fn cmd_import() {
             scheme: scheme.into(),
             description: format!("imported from connections.json"),
             tags: vec!["imported".into()],
+            rclone_remote: String::new(),
+            rclone_path: String::new(),
             password_ref: "dotenvx:auto".into(),
             mount_options: MountOptions::default_for_scheme(scheme),
         };
