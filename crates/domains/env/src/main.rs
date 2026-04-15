@@ -61,6 +61,12 @@ enum Commands {
     FixPerms,
     /// 기존 keychain 비번을 dotenvx 로 일괄 이관 + Keychain 항목 삭제
     MigrateFromKeychain,
+    /// import 후 남은 connections.json / connections.json.legacy-backup 정리
+    Cleanup {
+        /// 실제 삭제 (--apply 없으면 dry-run)
+        #[arg(long)]
+        apply: bool,
+    },
     /// TUI v2 스펙 (JSON)
     TuiSpec,
 }
@@ -82,6 +88,7 @@ fn main() {
         Commands::Status => cmd_status(),
         Commands::FixPerms => cmd_fix_perms(),
         Commands::MigrateFromKeychain => cmd_migrate_from_keychain(),
+        Commands::Cleanup { apply } => cmd_cleanup(apply),
         Commands::TuiSpec => print_tui_spec(),
     }
 }
@@ -734,6 +741,33 @@ fn cmd_migrate_from_keychain() {
         moved += 1;
     }
     println!("\nmigrate: 이관 {}, skip {}, 실패 {}", moved, skipped, failed);
+}
+
+fn cmd_cleanup(apply: bool) {
+    let dir = PathBuf::from(home()).join(".mac-app-init");
+    let candidates = [
+        dir.join("connections.json"),
+        dir.join("connections.json.legacy-backup"),
+        dir.join("connections.json.bak"),
+    ];
+    let mut found = 0;
+    for p in &candidates {
+        if !p.exists() { continue; }
+        found += 1;
+        if apply {
+            match fs::remove_file(p) {
+                Ok(()) => println!("  ✓ 삭제: {}", p.display()),
+                Err(e) => eprintln!("  ✗ {}: {}", p.display(), e),
+            }
+        } else {
+            println!("  • [dry-run] 삭제 대상: {}", p.display());
+        }
+    }
+    if found == 0 {
+        println!("정리할 legacy 파일 없음.");
+    } else if !apply {
+        println!("\n실제 삭제하려면 `env cleanup --apply`");
+    }
 }
 
 fn cmd_fix_perms() {

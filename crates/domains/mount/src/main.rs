@@ -58,6 +58,13 @@ enum Commands {
     AutoList,
     /// 자동 마운트 실행 (config 의 enabled 항목들 중 미마운트인 것 마운트)
     Auto,
+    /// quarantine / backoff 상태 조회
+    AutoStatus,
+    /// quarantine 해제 (전부 또는 특정 share)
+    AutoResume {
+        /// "conn/share" 또는 생략 시 전부
+        target: Option<String>,
+    },
     /// LaunchAgent 등록 (로그인 시 + 5분마다 mount auto 실행)
     AutoEnable,
     /// LaunchAgent 제거
@@ -362,15 +369,28 @@ fn list_smb_shares(conn: &Connection, password: &str) -> Vec<String> {
 }
 
 fn list_current_mounts() -> Vec<(String, String)> {
+    list_all_mounts().into_iter().map(|(s, m, _)| (s, m)).collect()
+}
+
+/// 모든 네트워크 마운트 (source, mountpoint, fs_type).
+/// SMB/NFS/macFUSE/AFP/SSHFS/WebDAV 전부 인식.
+fn list_all_mounts() -> Vec<(String, String, String)> {
     let out = Command::new("mount").output();
     let Ok(o) = out else { return Vec::new(); };
     String::from_utf8_lossy(&o.stdout).lines()
-        .filter(|l| l.contains("smbfs") || l.contains("nfs") || l.contains("macfuse"))
         .filter_map(|l| {
-            let parts: Vec<&str> = l.splitn(4, ' ').collect();
-            if parts.len() >= 3 && parts[1] == "on" {
-                Some((parts[0].to_string(), parts[2].to_string()))
-            } else { None }
+            // 형식: "<source> on <mountpoint> (<fstype>, ...)"
+            let on_idx = l.find(" on ")?;
+            let source = &l[..on_idx];
+            let rest = &l[on_idx + 4..];
+            let paren = rest.find(" (")?;
+            let mountpoint = &rest[..paren];
+            let opts = &rest[paren + 2..];
+            let close = opts.find(')').unwrap_or(opts.len());
+            let fstype = opts[..close].split(',').next().unwrap_or("").trim().to_string();
+            let net_types = ["smbfs", "nfs", "afpfs", "macfuse", "osxfuse", "fuse", "webdav"];
+            if !net_types.iter().any(|t| fstype.contains(t)) { return None; }
+            Some((source.to_string(), mountpoint.to_string(), fstype))
         })
         .collect()
 }
@@ -405,6 +425,8 @@ fn main() {
         Commands::AutoToggle { connection, share } => cmd_auto_toggle(&connection, &share),
         Commands::AutoList => cmd_auto_list(),
         Commands::Auto => cmd_auto(),
+        Commands::AutoStatus => cmd_auto_status(),
+        Commands::AutoResume { target } => cmd_auto_resume(target.as_deref()),
         Commands::AutoEnable => cmd_auto_enable(),
         Commands::AutoDisable => cmd_auto_disable(),
         Commands::TuiSpec => print_tui_spec(),
@@ -450,15 +472,15 @@ fn cmd_shares() {
 }
 
 fn cmd_list() {
-    let mounts = list_current_mounts();
+    let mounts = list_all_mounts();
     if mounts.is_empty() {
-        println!("현재 마운트된 SMB/NFS 공유가 없습니다.");
+        println!("현재 마운트된 네트워크 공유가 없습니다.");
         return;
     }
-    println!("{:<40} {}", "SOURCE", "MOUNTPOINT");
-    println!("{}", "─".repeat(80));
-    for (src, mp) in mounts {
-        println!("{:<40} {}", src, mp);
+    println!("{:<10} {:<40} {}", "TYPE", "SOURCE", "MOUNTPOINT");
+    println!("{}", "─".repeat(90));
+    for (src, mp, ft) in mounts {
+        println!("{:<10} {:<40} {}", ft, src, mp);
     }
 }
 
@@ -617,25 +639,41 @@ fn cmd_auto() {
         println!("자동 마운트 설정이 없습니다.");
         return;
     }
+    let mut state = load_retry_state();
+    let now = epoch_now();
+
     let mut mounted_count = 0;
     let mut skipped_count = 0;
     let mut healed_count = 0;
     let mut failed_count = 0;
+    let mut quarantined_count = 0;
 
     for a in &cfg.auto_mounts {
         if !a.enabled { continue; }
+        let key = format!("{}/{}", a.connection, a.share);
         let mp = mount_point(&a.connection, &a.share);
 
-        // 이미 마운트되어 있나?
+        // quarantine / backoff 체크
+        if let Some(rs) = state.shares.get(&key) {
+            if rs.quarantined {
+                quarantined_count += 1;
+                continue;
+            }
+            if rs.next_attempt_at > now {
+                let wait = rs.next_attempt_at - now;
+                eprintln!("  ⏸ {}/{}: backoff (재시도 {}초 후, 누적 실패 {})", a.connection, a.share, wait, rs.failures);
+                continue;
+            }
+        }
+
         if is_mounted_at(&mp) {
-            // stale 검사
             if is_stale(&mp) {
                 eprintln!("  ⚠ {}/{}: stale 감지, 재마운트 시도", a.connection, a.share);
                 let _ = unmount_path(&mp);
                 healed_count += 1;
-                // fallthrough 해서 아래에서 다시 마운트
             } else {
                 skipped_count += 1;
+                state.shares.remove(&key); // 성공 상태면 카운터 리셋
                 continue;
             }
         }
@@ -643,11 +681,13 @@ fn cmd_auto() {
         let Some(conn) = find_connection(&a.connection) else {
             eprintln!("  ✗ {}/{}: 연결 없음", a.connection, a.share);
             failed_count += 1;
+            record_failure(&mut state, &key, now, "no_connection");
             continue;
         };
         let Some(pw) = get_password(&a.connection) else {
             eprintln!("  ✗ {}/{}: 비번 없음 (.env 의 {}_PASSWORD)", a.connection, a.share, a.connection.to_uppercase());
             failed_count += 1;
+            record_failure(&mut state, &key, now, "no_password");
             continue;
         };
 
@@ -668,15 +708,123 @@ fn cmd_auto() {
             Ok(backend_name) => {
                 println!("  ✓ {}/{} → {} ({})", a.connection, a.share, mp.display(), backend_name);
                 mounted_count += 1;
+                state.shares.remove(&key);
             }
             Err(e) => {
                 eprintln!("  ✗ {}/{}: {}", a.connection, a.share, e);
                 failed_count += 1;
+                let perm = is_permanent_failure(&e);
+                record_failure(&mut state, &key, now, if perm { "EACCES" } else { "transient" });
             }
         }
     }
-    println!("\nauto: 마운트 {}, 스킵 {}, stale-회복 {}, 실패 {}",
-        mounted_count, skipped_count, healed_count, failed_count);
+    let _ = save_retry_state(&state);
+    println!("\nauto: 마운트 {}, 스킵 {}, stale-회복 {}, 실패 {}, quarantine {}",
+        mounted_count, skipped_count, healed_count, failed_count, quarantined_count);
+}
+
+fn cmd_auto_status() {
+    let s = load_retry_state();
+    if s.shares.is_empty() {
+        println!("retry state 없음 (모든 자동마운트 정상).");
+        return;
+    }
+    let now = epoch_now();
+    println!("{:<28} {:<6} {:<10} {:<14} REASON", "TARGET", "FAILS", "STATE", "NEXT");
+    println!("{}", "─".repeat(80));
+    for (k, r) in &s.shares {
+        let state = if r.quarantined { "🔒 quar" } else { "↻ retry" };
+        let next = if r.quarantined { "—".into() }
+            else if r.next_attempt_at <= now { "now".into() }
+            else { format!("+{}s", r.next_attempt_at - now) };
+        println!("{:<28} {:<6} {:<10} {:<14} {}", k, r.failures, state, next, r.last_reason);
+    }
+}
+
+fn cmd_auto_resume(target: Option<&str>) {
+    let mut s = load_retry_state();
+    let mut released = 0;
+    let keys: Vec<String> = s.shares.keys().cloned().collect();
+    for k in keys {
+        if let Some(t) = target { if k != t { continue; } }
+        s.shares.remove(&k);
+        released += 1;
+        println!("  ✓ resume: {}", k);
+    }
+    if released == 0 { println!("해당 항목 없음."); return; }
+    if let Err(e) = save_retry_state(&s) { eprintln!("✗ 저장 실패: {}", e); }
+    else { println!("\n{} 개 항목 해제됨.", released); }
+}
+
+// === retry-state ===
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct RetryState {
+    #[serde(default)]
+    shares: HashMap<String, RetryRecord>,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct RetryRecord {
+    failures: u32,
+    next_attempt_at: u64,
+    last_reason: String,
+    #[serde(default)]
+    quarantined: bool,
+}
+
+fn retry_state_path() -> PathBuf {
+    PathBuf::from(home()).join(".mac-app-init/mount-retry-state.json")
+}
+
+fn load_retry_state() -> RetryState {
+    let p = retry_state_path();
+    if !p.exists() { return RetryState::default(); }
+    serde_json::from_str(&fs::read_to_string(&p).unwrap_or_default()).unwrap_or_default()
+}
+
+fn save_retry_state(s: &RetryState) -> Result<(), String> {
+    let p = retry_state_path();
+    if let Some(parent) = p.parent() { fs::create_dir_all(parent).ok(); }
+    fs::write(&p, serde_json::to_string_pretty(s).unwrap_or_default())
+        .map_err(|e| format!("{}", e))
+}
+
+fn epoch_now() -> u64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+/// 영구 실패로 보이는 에러 (권한 거부 계열). 무한 재시도하면 안 됨.
+fn is_permanent_failure(err: &str) -> bool {
+    let l = err.to_lowercase();
+    l.contains("eacces") || l.contains("permission denied")
+        || l.contains("access denied") || l.contains("logon_failure")
+        || l.contains("not_found") // share 자체가 없는 경우
+}
+
+/// 실패 기록 + 다음 시도 시각 계산 (exponential backoff + full jitter, max 1h).
+fn record_failure(state: &mut RetryState, key: &str, now: u64, reason: &str) {
+    let entry = state.shares.entry(key.to_string()).or_default();
+    entry.failures += 1;
+    entry.last_reason = reason.into();
+
+    // 영구 실패가 3회 이상 누적되면 quarantine
+    if reason == "EACCES" && entry.failures >= 3 {
+        entry.quarantined = true;
+        entry.next_attempt_at = u64::MAX;
+        eprintln!("    🔒 {} quarantine (사유: 권한 거부 {}회). `mount auto-resume {}` 로 해제.",
+            key, entry.failures, key);
+        return;
+    }
+
+    // exponential backoff: 30s, 60s, 120s, ... max 3600s + ±25% jitter
+    let base = (30u64).saturating_mul(1 << entry.failures.min(7).saturating_sub(1));
+    let cap = base.min(3600);
+    let jitter = (cap / 4).max(1);
+    let pseudo_rand = (now ^ (entry.failures as u64).wrapping_mul(2654435761)) % (jitter * 2 + 1);
+    let delay = cap.saturating_sub(jitter).saturating_add(pseudo_rand);
+    entry.next_attempt_at = now.saturating_add(delay);
 }
 
 const AUTOMOUNT_LABEL: &str = "com.mac-app-init.automount";
@@ -711,6 +859,8 @@ fn cmd_auto_enable() {
     <key>RunAtLoad</key>
     <true/>
     <key>StartInterval</key>
+    <integer>300</integer>
+    <key>ThrottleInterval</key>
     <integer>300</integer>
     <key>StandardOutPath</key>
     <string>{log_dir}/automount.log</string>
