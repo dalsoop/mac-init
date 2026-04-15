@@ -37,6 +37,8 @@ enum Commands {
     },
     /// .env 다시 암호화
     Encrypt,
+    /// .env 에서 연결 정보 스캔 → connections.json 병합
+    Import,
     /// TUI v2 스펙 (JSON)
     TuiSpec,
 }
@@ -182,6 +184,7 @@ fn main() {
         Commands::Status => cmd_status(),
         Commands::Test { name } => cmd_test(&name),
         Commands::Encrypt => dotenvx_encrypt(),
+        Commands::Import => cmd_import(),
         Commands::TuiSpec => print_tui_spec(),
     }
 }
@@ -219,9 +222,10 @@ fn print_tui_spec() {
             },
             {
                 "kind": "buttons",
-                "title": "Actions (읽기 전용)",
+                "title": "Actions",
                 "items": [
                     { "label": "Status (ping/ssh 테스트)", "command": "status", "key": "s" },
+                    { "label": "Import (.env → connections.json)", "command": "import", "key": "i" },
                     { "label": "Encrypt (.env 재암호화)", "command": "encrypt", "key": "e" }
                 ]
             },
@@ -343,6 +347,78 @@ fn cmd_status() {
             icon, c.name, c.user, c.host, c.port
         );
     }
+}
+
+fn dotenvx_get(key: &str) -> Option<String> {
+    let path = env_path();
+    let out = Command::new("dotenvx")
+        .args(["get", key, "-f", &path.to_string_lossy()])
+        .output()
+        .ok()?;
+    if !out.status.success() { return None; }
+    let val = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if val.is_empty() || val == "undefined" { None } else { Some(val) }
+}
+
+/// .env 에서 `<NAME>_{HOST|USER|PORT|PASSWORD|...}` 패턴으로 서비스 이름 수집
+fn scan_env_services() -> Vec<String> {
+    // SSH/네트워크 연결 식별자만 — API 키/토큰은 제외
+    const SUFFIXES: &[&str] = &["_HOST", "_PORT"];
+    let content = fs::read_to_string(env_path()).unwrap_or_default();
+    let mut names: Vec<String> = Vec::new();
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') { continue; }
+        let Some((key, _)) = line.split_once('=') else { continue; };
+        for suf in SUFFIXES {
+            if let Some(prefix) = key.strip_suffix(suf) {
+                let name = prefix.to_lowercase().replace('_', "-");
+                if !name.is_empty() && !names.contains(&name) {
+                    names.push(name);
+                }
+                break;
+            }
+        }
+    }
+    names
+}
+
+fn cmd_import() {
+    let services = scan_env_services();
+    if services.is_empty() {
+        println!(".env 에서 *_HOST 키를 찾지 못했습니다.");
+        return;
+    }
+
+    let mut conns = load_connections();
+    let mut added = 0;
+    let mut skipped = 0;
+
+    for name in &services {
+        if conns.services.iter().any(|c| &c.name == name) {
+            skipped += 1;
+            continue;
+        }
+        let prefix = name.to_uppercase().replace('-', "_");
+        let host = dotenvx_get(&format!("{}_HOST", prefix)).unwrap_or_else(|| "—".into());
+        let user = dotenvx_get(&format!("{}_USER", prefix)).unwrap_or_else(|| "—".into());
+        let port: u16 = dotenvx_get(&format!("{}_PORT", prefix))
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(22);
+
+        conns.services.push(Connection {
+            name: name.clone(),
+            host: host.clone(),
+            user: user.clone(),
+            port,
+            extra: HashMap::new(),
+        });
+        println!("  ✓ {} ({}@{}:{})", name, user, host, port);
+        added += 1;
+    }
+
+    if added > 0 { save_connections(&conns); }
+    println!("\nimport 완료: 추가 {}, 기존 {}", added, skipped);
 }
 
 fn cmd_test(name: &str) {
