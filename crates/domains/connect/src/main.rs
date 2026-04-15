@@ -80,6 +80,39 @@ fn load_connections() -> Connections {
     }
 }
 
+/// env 카드 + legacy connections.json 합친 결과 (카드 우선). 읽기 전용.
+fn load_all_connections() -> Connections {
+    let mut out = Connections::default();
+    let dir = PathBuf::from(home()).join(".mac-app-init/cards");
+    if let Ok(it) = fs::read_dir(&dir) {
+        for e in it.filter_map(|x| x.ok()) {
+            if e.path().extension().and_then(|s| s.to_str()) != Some("json") { continue; }
+            let Ok(content) = fs::read_to_string(e.path()) else { continue; };
+            let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) else { continue; };
+            if let (Some(name), Some(host), Some(user), Some(port)) = (
+                v.get("name").and_then(|x| x.as_str()),
+                v.get("host").and_then(|x| x.as_str()),
+                v.get("user").and_then(|x| x.as_str()),
+                v.get("port").and_then(|x| x.as_u64()),
+            ) {
+                out.services.push(Connection {
+                    name: name.into(), host: host.into(), user: user.into(),
+                    port: port as u16, extra: HashMap::new(),
+                });
+            }
+        }
+    }
+    let card_names: std::collections::HashSet<String> =
+        out.services.iter().map(|c| c.name.clone()).collect();
+    for c in load_connections().services {
+        if !card_names.contains(&c.name) {
+            out.services.push(c);
+        }
+    }
+    out.services.sort_by(|a, b| a.name.cmp(&b.name));
+    out
+}
+
 fn save_connections(conns: &Connections) {
     let path = connections_path();
     fs::create_dir_all(path.parent().unwrap()).ok();
@@ -368,7 +401,7 @@ fn cmd_remove(name: &str) {
 }
 
 fn cmd_list() {
-    let conns = load_connections();
+    let conns = load_all_connections();
     if conns.services.is_empty() {
         println!("등록된 연결이 없습니다.");
         println!("  mac run connect add proxmox");
@@ -383,7 +416,7 @@ fn cmd_list() {
 }
 
 fn cmd_status() {
-    let conns = load_connections();
+    let conns = load_all_connections();
     if conns.services.is_empty() {
         println!("등록된 연결이 없습니다.");
         return;

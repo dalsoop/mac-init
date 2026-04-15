@@ -1,3 +1,4 @@
+pub mod card;
 pub mod configs;
 pub mod connect;
 pub mod container;
@@ -12,6 +13,7 @@ pub mod install;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TabId {
+    Card,
     Env,
     Connect,
     Container,
@@ -28,6 +30,7 @@ pub enum TabId {
 impl TabId {
     pub fn all() -> Vec<TabId> {
         vec![
+            TabId::Card,
             TabId::Env,
             TabId::Connect,
             TabId::Container,
@@ -68,6 +71,7 @@ impl TabId {
 
     pub fn label(&self) -> &'static str {
         match self {
+            Self::Card => "Card",
             Self::Env => "Env",
             Self::Connect => "Connect",
             Self::Container => "Container",

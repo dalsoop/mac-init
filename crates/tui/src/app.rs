@@ -15,6 +15,7 @@ use crate::tabs::configs::ConfigsTab;
 use crate::tabs::cron::CronTab;
 #[cfg(domain = "defaults")]
 use crate::tabs::defaults::DefaultsTab;
+use crate::tabs::card::CardTab;
 use crate::tabs::connect::ConnectTab;
 use crate::tabs::container::ContainerTab;
 use crate::tabs::env::EnvTab;
@@ -25,6 +26,7 @@ use crate::ui::tabbar::render_tabbar;
 
 pub struct App {
     active_tab: TabId,
+    card_tab: CardTab,
     env_tab: EnvTab,
     connect_tab: ConnectTab,
     container_tab: ContainerTab,
@@ -43,9 +45,10 @@ pub struct App {
 
 impl App {
     pub fn new() -> Result<Self> {
-        let first_tab = TabId::all().first().copied().unwrap_or(TabId::Env);
+        let first_tab = TabId::all().first().copied().unwrap_or(TabId::Card);
         Ok(Self {
             active_tab: first_tab,
+            card_tab: CardTab::new(),
             env_tab: EnvTab::new(),
             connect_tab: ConnectTab::new(),
             container_tab: ContainerTab::new(),
@@ -71,6 +74,10 @@ impl App {
         let backend = CrosstermBackend::new(io::stdout());
         let mut terminal = ratatui::Terminal::new(backend)?;
         terminal.clear()?;
+
+        self.loading_msg = "Loading cards...".to_string();
+        terminal.draw(|frame| self.render(frame))?;
+        self.card_tab.load().await?;
 
         self.loading_msg = "Loading env...".to_string();
         terminal.draw(|frame| self.render(frame))?;
@@ -167,6 +174,7 @@ impl App {
         render_tabbar(frame, chunks[0], &self.active_tab);
 
         match self.active_tab {
+            TabId::Card => self.card_tab.render(frame, chunks[1]),
             TabId::Env => self.env_tab.render(frame, chunks[1]),
             TabId::Connect => self.connect_tab.render(frame, chunks[1]),
             TabId::Container => self.container_tab.render(frame, chunks[1]),
@@ -181,6 +189,7 @@ impl App {
         }
 
         let tab_hints = match self.active_tab {
+            TabId::Card => "j/k:이동 i:import t:test p:비번토글 r:새로고침",
             TabId::Env => "a:add Enter:edit x:del d:decrypt",
             TabId::Connect => "a:add x:del t:test T:test-all",
             TabId::Container => "s:start S:stop R:restart u:up d:down",
@@ -254,6 +263,7 @@ impl App {
                 }
 
                 match self.active_tab {
+                    TabId::Card => self.card_tab.handle_key(key).await?,
                     TabId::Env => self.env_tab.handle_key(key).await?,
                     TabId::Connect => self.connect_tab.handle_key(key).await?,
                     TabId::Container => self.container_tab.handle_key(key).await?,
