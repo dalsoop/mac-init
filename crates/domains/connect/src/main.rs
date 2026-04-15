@@ -219,12 +219,16 @@ fn print_tui_spec() {
             },
             {
                 "kind": "buttons",
-                "title": "Actions",
+                "title": "Actions (읽기 전용)",
                 "items": [
-                    { "label": "List (목록)", "command": "list", "key": "l" },
                     { "label": "Status (ping/ssh 테스트)", "command": "status", "key": "s" },
                     { "label": "Encrypt (.env 재암호화)", "command": "encrypt", "key": "e" }
                 ]
+            },
+            {
+                "kind": "text",
+                "title": "등록 / 삭제 / 수정 — 터미널에서 (stdin 입력 필요)",
+                "content": "  추가:  mac run connect add <name>\n  삭제:  mac run connect remove <name>\n  테스트: mac run connect test <name>\n\n  TUI는 입력 폼을 아직 지원하지 않아 대화형 명령은 터미널에서 실행해야 합니다."
             }
         ]
     });
