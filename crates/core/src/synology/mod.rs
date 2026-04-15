@@ -27,8 +27,9 @@ fn resolve_path(mac_path: &str) -> String {
     let normalized = mac_path.trim_start_matches('/').trim_end_matches('/');
 
     // 가장 긴 매치부터 시도
+    let pm = path_map();
     let mut best_match: Option<(&str, &str)> = None;
-    for (mac, syn) in &path_map() {
+    for (mac, syn) in &pm {
         if normalized.starts_with(mac) {
             if best_match.is_none() || mac.len() > best_match.unwrap().0.len() {
                 best_match = Some((mac, syn));

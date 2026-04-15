@@ -84,48 +84,35 @@ pub fn run(_skip_interactive: bool) {
     println!();
 
     // 5. github install
-    println!("--- [5/12] GitHub CLI ---");
+    println!("--- [5/10] GitHub CLI ---");
     crate::github::install();
     println!();
 
-    // 6. dal install
-    println!("--- [6/12] Dalcenter ---");
-    crate::dal::install();
-    println!();
-
-    // 7. veil bootstrap
-    println!("--- [7/12] VeilKey ---");
-    crate::veil::bootstrap();
-    println!();
-
-    // 8. mount
-    println!("--- [8/12] 스토리지 마운트 ---");
+    // 6. mount
+    println!("--- [6/10] 스토리지 마운트 ---");
     crate::mount::mount_all();
     println!();
 
-    // 9. obsidian install
-    println!("--- [9/12] Obsidian ---");
+    // 7. obsidian install
+    println!("--- [7/10] Obsidian ---");
     crate::obsidian::install();
     println!();
 
-    // 10. files setup-auto
-    println!("--- [10/12] 파일 자동 정리 ---");
+    // 8. files setup-auto
+    println!("--- [8/10] 파일 자동 정리 ---");
     crate::files::setup_auto();
     println!();
 
-    // 11. SD 백업
-    println!("--- [11/12] SD 카드 자동 백업 ---");
+    // 9. SD 백업
+    println!("--- [9/10] SD 카드 자동 백업 ---");
     crate::files::sd_enable();
     println!();
 
-    // 12. Synology 심볼릭 링크 + projects-sync
-    println!("--- [12/12] Synology 매핑 + projects-sync ---");
+    // 10. Synology 심볼릭 링크 + projects-sync
+    println!("--- [10/10] Synology 매핑 + projects-sync ---");
     setup_synology_links();
     setup_projects_sync();
     println!();
-
-    // PATH 등록
-    crate::dal::setup_path();
 
     println!("\n=== 초기 셋업 완료 ===");
     println!();
