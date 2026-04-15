@@ -152,27 +152,35 @@ fn dotenvx_encrypt() {
 }
 
 fn test_connection(conn: &Connection) -> bool {
-    // Try SSH first
-    let output = Command::new("ssh")
-        .args([
-            "-o", "BatchMode=yes",
-            "-o", "ConnectTimeout=3",
-            "-p", &conn.port.to_string(),
-            &format!("{}@{}", conn.user, conn.host),
-            "echo ok",
-        ])
-        .output();
-
-    match output {
-        Ok(o) => o.status.success(),
-        Err(_) => {
-            // Fallback: ping
-            let ping = Command::new("ping")
-                .args(["-c", "1", "-W", "3", &conn.host])
-                .output();
-            ping.map(|o| o.status.success()).unwrap_or(false)
+    // SSH 포트면 SSH 시도
+    if conn.port == 22 {
+        let ssh = Command::new("ssh")
+            .args([
+                "-o", "BatchMode=yes",
+                "-o", "ConnectTimeout=3",
+                "-p", &conn.port.to_string(),
+                &format!("{}@{}", conn.user, conn.host),
+                "echo ok",
+            ])
+            .output();
+        if let Ok(o) = ssh {
+            if o.status.success() { return true; }
         }
     }
+
+    // TCP 포트 연결 가능 여부 (nc)
+    let nc = Command::new("nc")
+        .args(["-z", "-G", "3", "-w", "3", &conn.host, &conn.port.to_string()])
+        .output();
+    if let Ok(o) = nc {
+        if o.status.success() { return true; }
+    }
+
+    // Fallback: ping
+    let ping = Command::new("ping")
+        .args(["-c", "1", "-W", "2000", &conn.host])
+        .output();
+    ping.map(|o| o.status.success()).unwrap_or(false)
 }
 
 fn main() {
