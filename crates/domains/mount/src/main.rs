@@ -1020,14 +1020,25 @@ fn print_tui_spec() {
     let mounts = list_current_mounts();
     let cfg = load_mount_config();
     let auto_enabled = automount_plist_path().exists();
-    let auto_rows: Vec<serde_json::Value> = cfg.auto_mounts.iter().map(|a| {
+    let auto_items: Vec<serde_json::Value> = cfg.auto_mounts.iter().map(|a| {
         let mp = mount_point(&a.connection, &a.share);
         let state = if !a.enabled { "off" }
                     else if is_mounted_at(&mp) {
                         if is_stale(&mp) { "⚠ STALE" } else { "✓ ON" }
                     }
                     else { "○ idle" };
-        serde_json::json!([state, a.connection, a.share, mp.to_string_lossy().to_string()])
+        serde_json::json!({
+            "key": format!("{}/{}", a.connection, a.share),
+            "value": format!("{}  →  {}", state, mp.to_string_lossy()),
+            "status": if a.enabled { "ok" } else { "warn" },
+            "data": {
+                "name": format!("{}/{}", a.connection, a.share),
+                "connection": a.connection,
+                "share": a.share,
+                "enabled": a.enabled.to_string(),
+                "mountpoint": mp.to_string_lossy().to_string(),
+            }
+        })
     }).collect();
 
     let mount_rows: Vec<serde_json::Value> = mounts.iter()
@@ -1051,6 +1062,7 @@ fn print_tui_spec() {
 
     let spec = serde_json::json!({
         "tab": { "label": "Mount", "icon": "💾" },
+        "list_section": "자동 마운트",
         "sections": [
             {
                 "kind": "key-value",
@@ -1087,10 +1099,9 @@ fn print_tui_spec() {
                 ]
             },
             {
-                "kind": "table",
-                "title": "자동 마운트 설정",
-                "headers": ["STATE", "CONN", "SHARE", "MOUNTPOINT"],
-                "rows": auto_rows
+                "kind": "key-value",
+                "title": "자동 마운트",
+                "items": auto_items
             },
             {
                 "kind": "table",
@@ -1122,6 +1133,24 @@ fn print_tui_spec() {
                 "title": "사용법 — 터미널",
                 "content": "  자동 마운트 설정:\n    mac run mount auto-add <conn> <share>\n    mac run mount auto-toggle <conn> <share>\n    mac run mount auto-enable      # 로그인 시 + 5분마다 자동 실행\n\n  수동:\n    mac run mount mount <name> <share>\n    mac run mount unmount <share>"
             }
+        ],
+        "keybindings": [
+            { "key": "T", "label": "토글(활성/비활성)",
+              "command": "auto-toggle",
+              "args": ["${selected.connection}", "${selected.share}"] },
+            { "key": "M", "label": "수동 마운트",
+              "command": "mount",
+              "args": ["${selected.connection}", "${selected.share}"] },
+            { "key": "U", "label": "언마운트",
+              "command": "unmount",
+              "args": ["${selected.mountpoint}"] },
+            { "key": "X", "label": "자동마운트 항목 제거",
+              "command": "auto-remove",
+              "args": ["${selected.connection}", "${selected.share}"],
+              "confirm": true },
+            { "key": "P", "label": "quarantine 해제",
+              "command": "auto-resume",
+              "args": ["${selected.name}"] }
         ]
     });
     println!("{}", serde_json::to_string_pretty(&spec).unwrap());

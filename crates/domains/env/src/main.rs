@@ -878,15 +878,24 @@ fn print_tui_spec() {
     let cards = list_cards();
     let items: Vec<serde_json::Value> = cards.iter().map(|c| {
         let has_pw = dotenvx_key_for(c).is_some_and(|k| dotenvx_get(&k).is_some());
+        let mo = &c.mount_options;
         serde_json::json!({
             "key": c.name,
             "value": format!("{}://{}@{}:{}", c.scheme, c.user, c.host, c.port),
-            "status": if has_pw { "ok" } else { "warn" }
+            "status": if has_pw { "ok" } else { "warn" },
+            "data": {
+                "name": c.name,
+                "readonly": mo.readonly.to_string(),
+                "noappledouble": mo.noappledouble.to_string(),
+                "soft": mo.soft.to_string(),
+                "nobrowse": mo.nobrowse.to_string(),
+            }
         })
     }).collect();
 
     let spec = serde_json::json!({
         "tab": { "label": "Env", "icon": "🔑" },
+        "list_section": "Cards",
         "sections": [
             {
                 "kind": "key-value",
@@ -899,14 +908,38 @@ fn print_tui_spec() {
                 "items": [
                     { "label": "List", "command": "list", "key": "l" },
                     { "label": "Import legacy", "command": "import", "key": "i" },
-                    { "label": "Status", "command": "status", "key": "s" }
+                    { "label": "Status", "command": "status", "key": "s" },
+                    { "label": "Cleanup", "command": "cleanup", "key": "c" },
+                    { "label": "Fix perms", "command": "fix-perms", "key": "f" }
                 ]
             },
             {
                 "kind": "text",
                 "title": "안내",
-                "content": "카드 = 서비스 연결정보 + 자격증명. 비번은 macOS Keychain 에 안전 저장."
+                "content": "j/k 로 카드 선택. R/N/S/B 로 선택 카드의 mount 옵션 토글. d 로 삭제."
             }
+        ],
+        "keybindings": [
+            { "key": "R", "label": "readonly 토글",
+              "command": "set-option",
+              "args": ["${selected.name}", "readonly", "${toggle:readonly}"] },
+            { "key": "N", "label": "noappledouble 토글",
+              "command": "set-option",
+              "args": ["${selected.name}", "noappledouble", "${toggle:noappledouble}"] },
+            { "key": "S", "label": "soft 토글",
+              "command": "set-option",
+              "args": ["${selected.name}", "soft", "${toggle:soft}"] },
+            { "key": "B", "label": "nobrowse 토글",
+              "command": "set-option",
+              "args": ["${selected.name}", "nobrowse", "${toggle:nobrowse}"] },
+            { "key": "d", "label": "카드 삭제",
+              "command": "rm",
+              "args": ["${selected.name}"],
+              "confirm": true },
+            { "key": "t", "label": "연결 테스트",
+              "command": "test",
+              "args": ["${selected.name}"],
+              "reload": false }
         ]
     });
     println!("{}", serde_json::to_string_pretty(&spec).unwrap());

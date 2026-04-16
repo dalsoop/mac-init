@@ -372,6 +372,9 @@ impl App {
     }
 
     fn activate_by_key(&mut self, ch: char) {
+        // 1) keybindings 우선 매치 (대소문자 구분)
+        if self.activate_keybinding(ch) { return; }
+        // 2) 버튼 key 매치 (legacy)
         let (domain, command, args) = {
             let Some((domain, buttons)) = self.current_buttons() else { return; };
             let Some(b) = buttons.iter().find(|b| b.key.as_deref() == Some(&ch.to_string())) else { return; };
@@ -382,5 +385,82 @@ impl App {
         self.output.push_str(&result);
         let domain_idx = self.selected_tab - 1;
         self.specs[domain_idx] = fetch_spec(&domain);
+    }
+
+    /// keybindings 섹션에서 ch 와 일치하는 항목 실행. 성공 시 true.
+    fn activate_keybinding(&mut self, ch: char) -> bool {
+        if self.selected_tab == 0 { return false; }
+        let domain_idx = self.selected_tab - 1;
+        let Some(spec) = self.specs[domain_idx].as_ref() else { return false; };
+        let key_str = ch.to_string();
+        let kb = match spec.keybindings.iter().find(|k| k.key == key_str) {
+            Some(k) => k.clone(),
+            None => return false,
+        };
+        let domain = self.domains[domain_idx].clone();
+
+        // 템플릿 치환
+        let selected_data = self.selected_item_data();
+        let args: Vec<String> = kb.args.iter().map(|a| self.resolve_template(a, &selected_data)).collect();
+
+        // TODO: confirm modal (Step 2 예정). 현재는 바로 실행.
+        self.output = format!("[{}] {} {}\n", kb.label, kb.command, args.join(" "));
+        let result = run_action(&domain, &kb.command, &args);
+        self.output.push_str(&result);
+
+        if kb.reload {
+            self.specs[domain_idx] = fetch_spec(&domain);
+        }
+        true
+    }
+
+    /// list_section 에서 현재 포커스된 항목의 data 맵 반환.
+    /// v2 1단계: focus_button 을 리스트 인덱스로도 재활용 (단순화).
+    fn selected_item_data(&self) -> std::collections::HashMap<String, String> {
+        use std::collections::HashMap;
+        let mut empty = HashMap::new();
+        if self.selected_tab == 0 { return empty; }
+        let domain_idx = self.selected_tab - 1;
+        let Some(spec) = self.specs[domain_idx].as_ref() else { return empty; };
+        let Some(list_title) = spec.list_section.as_ref() else { return empty; };
+        for section in &spec.sections {
+            if let crate::spec::Section::KeyValue { title, items } = section {
+                if title != list_title { continue; }
+                if items.is_empty() { return empty; }
+                let idx = self.focus_button.min(items.len() - 1);
+                let item = &items[idx];
+                empty = item.data.clone();
+                empty.entry("key".into()).or_insert(item.key.clone());
+                empty.entry("value".into()).or_insert(item.value.clone());
+                empty.entry("name".into()).or_insert(item.key.clone());
+                return empty;
+            }
+        }
+        empty
+    }
+
+    /// ${selected.<field>} 와 ${toggle:<field>} 치환.
+    fn resolve_template(&self, template: &str, data: &std::collections::HashMap<String, String>) -> String {
+        let mut out = String::new();
+        let mut rest = template;
+        while let Some(start) = rest.find("${") {
+            out.push_str(&rest[..start]);
+            let after = &rest[start + 2..];
+            let Some(end) = after.find('}') else {
+                out.push_str("${"); out.push_str(after); break;
+            };
+            let expr = &after[..end];
+            rest = &after[end + 1..];
+            if let Some(field) = expr.strip_prefix("selected.") {
+                out.push_str(data.get(field).map(|s| s.as_str()).unwrap_or(""));
+            } else if let Some(field) = expr.strip_prefix("toggle:") {
+                let cur = data.get(field).map(|s| s.as_str()).unwrap_or("false");
+                out.push_str(if cur == "true" { "false" } else { "true" });
+            } else {
+                out.push_str("${"); out.push_str(expr); out.push('}');
+            }
+        }
+        out.push_str(rest);
+        out
     }
 }
