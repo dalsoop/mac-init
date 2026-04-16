@@ -28,7 +28,7 @@ echo "▶ 산출물 디렉터리: $OUT"
 DOMAINS=(
   bootstrap keyboard connect container cron defaults dotfiles
   files git quickaction vscode wireguard projects worktree
-  mount env
+  mount env host
 )
 
 build_target() {
@@ -51,18 +51,16 @@ build_target() {
     fi
   done
 
-  for extra in mac-domain-manager mac-host-tui; do
-    echo "  ▶ $extra"
-    if cargo build --release -p "$extra" --target "$target" --quiet 2>&1 | tail -3; then
-      # mac-domain-manager 는 'mac' 바이너리 이름
-      local bin="$extra"
-      [[ "$extra" == "mac-domain-manager" ]] && bin="mac"
-      local tar_name="$bin"
-      [[ "$extra" == "mac-domain-manager" ]] && tar_name="mac"
-      tar czf "$OUT/$tar_name-$target.tar.gz" -C "target/$target/release" "$bin"
+  # manager (바이너리명 'mac') + tui v2 (바이너리명 'mac-tui')
+  for spec in "mac-domain-manager:mac" "mac-host-tui-v2:mac-tui"; do
+    local pkg="${spec%%:*}"
+    local bin="${spec##*:}"
+    echo "  ▶ $pkg (bin: $bin)"
+    if cargo build --release -p "$pkg" --target "$target" --quiet 2>&1 | tail -3; then
+      tar czf "$OUT/$bin-$target.tar.gz" -C "target/$target/release" "$bin"
     else
       echo "    ⚠ 빌드 실패 — 건너뜀"
-      skipped+=("$extra")
+      skipped+=("$pkg")
     fi
   done
 

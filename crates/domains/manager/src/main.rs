@@ -117,7 +117,7 @@ fn known_domains() -> Vec<&'static str> {
         // infra domains (available but not installed by default)
         "mount", "network", "ssh", "proxmox", "synology",
         "setup", "workspace", "github", "obsidian",
-        "env", "openclaw", "init",
+        "env", "host", "openclaw", "init",
     ]
 }
 
