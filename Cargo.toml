@@ -1,0 +1,35 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/core",
+    "crates/cli",
+    "crates/domains/*",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+authors = ["dalsoop"]
+license = "MIT"
+repository = "https://github.com/dalsoop/rust-ai-generate-template"
+
+[workspace.dependencies]
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+anyhow = "1"
+thiserror = "2"
+which = "6"
+dirs = "5"
+regex-lite = "0.1"
+walkdir = "2"
+
+# 내부 공용 크레이트
+rustai-core = { path = "crates/core" }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true

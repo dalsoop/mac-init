@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# ── rust-ai-generate-template: pre-push fail-closed gate ──
+# 푸시 전에 4종 검증을 순차 실행. 하나라도 실패하면 푸시 차단.
+#   1. cargo check  — hardcoded-lint + build.rs 도메인 스캔
+#   2. nickel eval  — 모든 .ncl 스키마 계약 검증
+#   3. shellcheck   — 셸 스크립트 정적 분석 (있을 때만)
+#   4. cargo test   — 단위 테스트 (있을 때만)
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+fail() { echo "✗ $1" >&2; exit 1; }
+ok()   { echo "✓ $1"; }
+
+echo "── pre-push fail-closed gate ──"
+
+# 1) cargo check
+if command -v cargo >/dev/null 2>&1; then
+  echo "[1/4] cargo check --workspace"
+  cargo check --workspace --all-targets --quiet \
+    || fail "cargo check 실패 (hardcoded-lint 또는 컴파일 오류)"
+  ok "cargo check"
+else
+  fail "cargo 미설치 — https://rustup.rs"
+fi
+
+# 2) nickel eval (contract.ncl은 타입 정의 전용 — export 대상 아님)
+if command -v nickel >/dev/null 2>&1; then
+  echo "[2/4] nickel eval"
+  while IFS= read -r f; do
+    case "$(basename "$f")" in
+      contract.ncl) continue ;;
+    esac
+    nickel export --format json "$f" >/dev/null \
+      || fail "nickel eval 실패: $f"
+  done < <(find ncl crates/domains -name "*.ncl" -type f 2>/dev/null)
+  ok "nickel eval (모든 .ncl)"
+else
+  echo "⚠ nickel 미설치 — 계약 검증 건너뜀 (brew install nickel 권장)"
+fi
+
+# 3) shellcheck (선택)
+if command -v shellcheck >/dev/null 2>&1; then
+  echo "[3/4] shellcheck"
+  shellcheck install.sh scripts/*.sh .githooks/* \
+    || fail "shellcheck 실패"
+  ok "shellcheck"
+else
+  echo "⚠ shellcheck 미설치 — 건너뜀 (brew install shellcheck 권장)"
+fi
+
+# 4) cargo test (테스트 있을 때만)
+if [ -d tests ] || grep -rq "#\[test\]" crates 2>/dev/null; then
+  echo "[4/4] cargo test --workspace"
+  cargo test --workspace --quiet \
+    || fail "cargo test 실패"
+  ok "cargo test"
+else
+  echo "(테스트 없음 — 건너뜀)"
+fi
+
+echo "── 모든 게이트 통과 → 푸시 진행 ──"

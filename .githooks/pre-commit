@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# git hooksPath entry — delegate to scripts/
+set -euo pipefail
+HOOK_DIR="$(git rev-parse --show-toplevel)/scripts"
+exec bash "$HOOK_DIR/pre-commit-no-hardcode.sh"

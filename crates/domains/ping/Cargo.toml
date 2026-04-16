@@ -1,0 +1,16 @@
+[package]
+name = "rustai-ping"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "rustai-ping"
+path = "src/main.rs"
+
+[dependencies]
+clap = { workspace = true }
+rustai-core = { workspace = true }
+anyhow = { workspace = true }
+
+[build-dependencies]
+hardcoded-lint = { git = "https://github.com/dalsoop/hardcoded-lint", rev = "c943f1f" }

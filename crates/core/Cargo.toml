@@ -1,0 +1,18 @@
+[package]
+name = "rustai-core"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+which = { workspace = true }
+regex-lite = { workspace = true }
+walkdir = { workspace = true }
+
+[build-dependencies]
+hardcoded-lint = { git = "https://github.com/dalsoop/hardcoded-lint", rev = "c943f1f" }
