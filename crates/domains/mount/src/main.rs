@@ -670,6 +670,16 @@ fn cmd_auto_list() {
     }
 }
 
+/// macOS 알림 센터에 메시지 표시. LaunchAgent 백그라운드에서도 동작.
+fn notify(title: &str, msg: &str) {
+    let script = format!(
+        "display notification \"{}\" with title \"{}\"",
+        msg.replace('"', "\\\""),
+        title.replace('"', "\\\""),
+    );
+    let _ = Command::new("osascript").args(["-e", &script]).output();
+}
+
 /// host:port 에 1초 안에 TCP 연결 가능한지. precheck 용.
 fn host_reachable(host: &str, port: u16) -> bool {
     use std::net::ToSocketAddrs;
@@ -803,6 +813,15 @@ fn cmd_auto() {
     let _ = save_retry_state(&state);
     println!("\nauto: 마운트 {}, 스킵 {}, stale-회복 {}, 실패 {}, quarantine {}",
         mounted_count, skipped_count, healed_count, failed_count, quarantined_count);
+
+    // 실패가 있으면 macOS 알림.
+    if failed_count > 0 || quarantined_count > 0 {
+        let msg = format!(
+            "마운트 실패 {}개, quarantine {}개. `mac-tui` 또는 `mac run mount auto-status` 로 확인.",
+            failed_count, quarantined_count
+        );
+        notify("mac-app-init: Mount", &msg);
+    }
 }
 
 fn cmd_auto_status() {
@@ -931,6 +950,13 @@ fn cmd_auto_enable() {
 <dict>
     <key>Label</key>
     <string>{label}</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin:{home}/.cargo/bin</string>
+        <key>HOME</key>
+        <string>{home}</string>
+    </dict>
     <key>ProgramArguments</key>
     <array>
         <string>{bin}</string>
@@ -950,7 +976,7 @@ fn cmd_auto_enable() {
     <string>{log_dir}/automount.log</string>
 </dict>
 </plist>
-"#, label=AUTOMOUNT_LABEL, bin=mac_bin, log_dir=log_dir);
+"#, label=AUTOMOUNT_LABEL, bin=mac_bin, log_dir=log_dir, home=home());
 
     let path = automount_plist_path();
     if let Some(p) = path.parent() { fs::create_dir_all(p).ok(); }
