@@ -138,8 +138,10 @@ impl App {
                             self.focus_button = 0;
                         }
                         SidebarItem::Domain { idx, .. } => {
-                            self.ensure_spec(idx);
                             self.selected_tab = idx + 1;
+                            self.output = "로딩 중...".into();
+                            self.ensure_spec(idx);
+                            self.output = String::new();
                             self.focus = Focus::Content; self.content_section = 0;
                             self.focus_button = 0;
                         }
@@ -468,10 +470,9 @@ impl App {
         frame.render_widget(
             Paragraph::new(vec![
                 Line::from(""),
-                Line::from(Span::styled(format!("  {} 도메인이 tui-spec을 지원하지 않습니다.", domain), Style::default().fg(Color::Yellow))),
+                Line::from(Span::styled("  로딩 중...", Style::default().fg(Color::Cyan).bold())),
                 Line::from(""),
-                Line::from(Span::styled("  터미널에서 직접 사용:", Style::default().fg(Color::Gray))),
-                Line::from(Span::styled(format!("    mac run {} --help", domain), Style::default().fg(Color::Cyan))),
+                Line::from(Span::styled(format!("  {} 도메인 정보를 가져오고 있습니다.", domain), Style::default().fg(Color::DarkGray))),
             ]).block(
                 Block::default().borders(Borders::ALL)
                     .border_style(Style::default().fg(Color::DarkGray))
