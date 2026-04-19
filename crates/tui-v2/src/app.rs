@@ -27,6 +27,13 @@ fn default_group(domain: &str) -> &'static str {
     }
 }
 
+/// 포커스가 사이드바인지 콘텐츠인지.
+#[derive(PartialEq, Clone, Copy)]
+pub enum Focus {
+    Sidebar,
+    Content,
+}
+
 pub struct App {
     pub should_quit: bool,
     pub domains: Vec<String>,
@@ -37,17 +44,22 @@ pub struct App {
     pub selected_tab: usize,            // 0 = Install, 1+ = 도메인 (flat index)
     pub focus_button: usize,
     pub output: String,
-    /// 사이드바 렌더링용: (group_label, domain_indices) 순서대로.
     pub sidebar_entries: Vec<SidebarEntry>,
+    /// 사이드바 커서 위치 (sidebar_entries 인덱스)
+    pub sidebar_cursor: usize,
+    /// 접힌 그룹 이름
+    pub collapsed_groups: std::collections::HashSet<String>,
+    /// 현재 포커스 뎁스
+    pub focus: Focus,
 }
 
 #[derive(Clone)]
 pub enum SidebarEntry {
-    /// 설치 관리 (항상 첫 번째)
+    /// 설치 관리
     Install,
-    /// 그룹 헤더 (클릭/선택 불가)
-    GroupHeader(String),
-    /// 도메인 (domain index 참조)
+    /// 그룹 헤더 — 접기/펼치기 가능
+    GroupHeader { label: String, group_id: String },
+    /// 도메인
     Domain { idx: usize, label: String },
 }
 
@@ -64,6 +76,9 @@ impl App {
             focus_button: 0,
             output: String::new(),
             sidebar_entries: Vec::new(),
+            sidebar_cursor: 0,
+            collapsed_groups: std::collections::HashSet::new(),
+            focus: Focus::Sidebar,
         }
     }
 
@@ -99,21 +114,92 @@ impl App {
         }
     }
 
-    /// Tab/BackTab 이동. 그룹 헤더는 skip.
-    fn navigate_tab(&mut self, dir: i32) {
-        let max = self.domains.len(); // 0=install, 1..=max = domains
-        let mut next = self.selected_tab as i32 + dir;
-        // wrap
-        if next < 0 { next = max as i32; }
-        if next > max as i32 { next = 0; }
-        self.selected_tab = next as usize;
+    fn handle_sidebar_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Up | KeyCode::Char('k') => {
+                if self.sidebar_cursor > 0 { self.sidebar_cursor -= 1; }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if self.sidebar_cursor + 1 < self.sidebar_entries.len() {
+                    self.sidebar_cursor += 1;
+                }
+            }
+            KeyCode::Right | KeyCode::Char('l') | KeyCode::Tab => {
+                // 뎁스 이동: 사이드바 → 콘텐츠
+                self.focus = Focus::Content;
+                self.focus_button = 0;
+            }
+            KeyCode::Enter => {
+                // 그룹 헤더 → 접기/펼치기, 도메인/Install → 선택 + 콘텐츠로
+                if let Some(entry) = self.sidebar_entries.get(self.sidebar_cursor).cloned() {
+                    match entry {
+                        SidebarEntry::GroupHeader { group_id, .. } => {
+                            if self.collapsed_groups.contains(&group_id) {
+                                self.collapsed_groups.remove(&group_id);
+                            } else {
+                                self.collapsed_groups.insert(group_id);
+                            }
+                            self.build_sidebar();
+                        }
+                        SidebarEntry::Install => {
+                            self.selected_tab = 0;
+                            self.focus = Focus::Content;
+                            self.focus_button = 0;
+                        }
+                        SidebarEntry::Domain { idx, .. } => {
+                            self.selected_tab = idx + 1;
+                            self.focus = Focus::Content;
+                            self.focus_button = 0;
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_content_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Left | KeyCode::Char('h') | KeyCode::BackTab => {
+                // 뎁스 이동: 콘텐츠 → 사이드바
+                self.focus = Focus::Sidebar;
+                return;
+            }
+            _ => {}
+        }
+
+        if self.selected_tab == 0 {
+            match key.code {
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.install_focus = self.install_focus.saturating_sub(1);
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    if self.install_focus + 1 < self.available.len() {
+                        self.install_focus += 1;
+                    }
+                }
+                KeyCode::Enter | KeyCode::Char(' ') => self.toggle_install(),
+                _ => {}
+            }
+        } else {
+            match key.code {
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.focus_button = self.focus_button.saturating_sub(1);
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    self.focus_button = self.focus_button.saturating_add(1);
+                }
+                KeyCode::Enter => self.activate_button(),
+                KeyCode::Char(c) => self.activate_by_key(c),
+                _ => {}
+            }
+        }
     }
 
     fn build_sidebar(&mut self) {
         let mut entries = Vec::new();
 
         for &(group_id, group_label) in GROUPS {
-            // init 그룹에는 "설치 관리" 를 먼저 넣음
             let is_init = group_id == "init";
 
             let mut group_domains: Vec<(usize, String)> = Vec::new();
@@ -130,17 +216,25 @@ impl App {
 
             if !is_init && group_domains.is_empty() { continue; }
 
-            entries.push(SidebarEntry::GroupHeader(group_label.to_string()));
+            let collapsed = self.collapsed_groups.contains(group_id);
+            entries.push(SidebarEntry::GroupHeader {
+                label: group_label.to_string(),
+                group_id: group_id.to_string(),
+            });
 
-            if is_init {
-                entries.push(SidebarEntry::Install);
-            }
-
-            for (idx, label) in group_domains {
-                entries.push(SidebarEntry::Domain { idx, label });
+            if !collapsed {
+                if is_init {
+                    entries.push(SidebarEntry::Install);
+                }
+                for (idx, label) in group_domains {
+                    entries.push(SidebarEntry::Domain { idx, label });
+                }
             }
         }
         self.sidebar_entries = entries;
+        if self.sidebar_cursor >= self.sidebar_entries.len() {
+            self.sidebar_cursor = self.sidebar_entries.len().saturating_sub(1);
+        }
     }
 
     fn is_installed(&self, name: &str) -> bool {
@@ -176,42 +270,57 @@ impl App {
 
     fn render_sidebar(&self, frame: &mut Frame, area: Rect) {
         let mut items = Vec::new();
+        let is_focused = self.focus == Focus::Sidebar;
 
-        for entry in &self.sidebar_entries {
+        for (i, entry) in self.sidebar_entries.iter().enumerate() {
+            let cursor = is_focused && i == self.sidebar_cursor;
             match entry {
                 SidebarEntry::Install => {
-                    let style = if self.selected_tab == 0 {
+                    let selected = self.selected_tab == 0;
+                    let style = if cursor {
+                        Style::default().bg(Color::Yellow).fg(Color::Black).bold()
+                    } else if selected {
                         Style::default().bg(Color::Cyan).fg(Color::Black).bold()
                     } else {
                         Style::default().fg(Color::White)
                     };
-                    items.push(ListItem::new(Line::from(Span::styled(" 설치 관리", style))));
+                    items.push(ListItem::new(Line::from(Span::styled("  📥 설치 관리", style))));
                 }
-                SidebarEntry::GroupHeader(label) => {
+                SidebarEntry::GroupHeader { label, group_id } => {
+                    let collapsed = self.collapsed_groups.contains(group_id);
+                    let arrow = if collapsed { "▶" } else { "▼" };
+                    let style = if cursor {
+                        Style::default().bg(Color::DarkGray).fg(Color::Yellow).bold()
+                    } else {
+                        Style::default().fg(Color::DarkGray).bold()
+                    };
                     items.push(ListItem::new(Line::from(Span::styled(
-                        format!("─ {} ─", label),
-                        Style::default().fg(Color::DarkGray).bold(),
+                        format!("{} {}", arrow, label), style,
                     ))));
                 }
                 SidebarEntry::Domain { idx, label } => {
                     let tab_idx = idx + 1;
+                    let selected = self.selected_tab == tab_idx;
                     let icon = self.specs[*idx].as_ref()
                         .and_then(|s| s.tab.icon.as_deref()).unwrap_or("");
-                    let style = if self.selected_tab == tab_idx {
+                    let style = if cursor {
+                        Style::default().bg(Color::Yellow).fg(Color::Black).bold()
+                    } else if selected {
                         Style::default().bg(Color::Cyan).fg(Color::Black).bold()
                     } else {
                         Style::default().fg(Color::White)
                     };
                     items.push(ListItem::new(Line::from(Span::styled(
-                        format!(" {} {}", icon, label), style,
+                        format!("  {} {}", icon, label), style,
                     ))));
                 }
             }
         }
 
+        let border_color = if is_focused { Color::Cyan } else { Color::DarkGray };
         let list = List::new(items).block(
             Block::default().borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::DarkGray))
+                .border_style(Style::default().fg(border_color))
                 .title(" mac-app-init "),
         );
         frame.render_widget(list, area);
@@ -359,52 +468,12 @@ impl App {
             KeyCode::Char('q') if key.modifiers.is_empty() => { self.should_quit = true; return; }
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => { self.should_quit = true; return; }
             KeyCode::Char('r') => { self.load(); self.output = "Refreshed.".into(); return; }
-            KeyCode::Tab => {
-                self.navigate_tab(1);
-                self.focus_button = 0;
-                return;
-            }
-            KeyCode::BackTab => {
-                self.navigate_tab(-1);
-                self.focus_button = 0;
-                return;
-            }
             _ => {}
         }
 
-        if self.selected_tab == 0 {
-            // Install 탭 — install_focus 조작
-            match key.code {
-                KeyCode::Up | KeyCode::Char('k') => {
-                    self.install_focus = self.install_focus.saturating_sub(1);
-                }
-                KeyCode::Down | KeyCode::Char('j') => {
-                    if self.install_focus + 1 < self.available.len() {
-                        self.install_focus += 1;
-                    }
-                }
-                KeyCode::Enter | KeyCode::Char(' ') => self.toggle_install(),
-                _ => {}
-            }
-        } else {
-            // 도메인 탭 — 기존 동작
-            match key.code {
-                KeyCode::Up | KeyCode::Char('k') => {
-                    if self.selected_tab > 0 { self.selected_tab -= 1; self.focus_button = 0; }
-                }
-                KeyCode::Down | KeyCode::Char('j') => {
-                    if self.selected_tab < self.domains.len() { self.selected_tab += 1; self.focus_button = 0; }
-                }
-                KeyCode::Left | KeyCode::Char('h') => {
-                    self.focus_button = self.focus_button.saturating_sub(1);
-                }
-                KeyCode::Right | KeyCode::Char('l') => {
-                    self.focus_button = self.focus_button.saturating_add(1);
-                }
-                KeyCode::Enter => self.activate_button(),
-                KeyCode::Char(c) => self.activate_by_key(c),
-                _ => {}
-            }
+        match self.focus {
+            Focus::Sidebar => self.handle_sidebar_key(key),
+            Focus::Content => self.handle_content_key(key),
         }
     }
 
@@ -413,17 +482,27 @@ impl App {
             // 왼쪽 사이드바 클릭 → sidebar_entries 기반 매핑
             if mouse.column < 24 && mouse.row > 0 {
                 let row = (mouse.row as usize).saturating_sub(1); // border 1줄 빼기
-                if let Some(entry) = self.sidebar_entries.get(row) {
+                if let Some(entry) = self.sidebar_entries.get(row).cloned() {
+                    self.sidebar_cursor = row;
                     match entry {
                         SidebarEntry::Install => {
                             self.selected_tab = 0;
+                            self.focus = Focus::Content;
                             self.focus_button = 0;
                         }
                         SidebarEntry::Domain { idx, .. } => {
                             self.selected_tab = idx + 1;
+                            self.focus = Focus::Content;
                             self.focus_button = 0;
                         }
-                        SidebarEntry::GroupHeader(_) => {} // 클릭 무시
+                        SidebarEntry::GroupHeader { group_id, .. } => {
+                            if self.collapsed_groups.contains(&group_id) {
+                                self.collapsed_groups.remove(&group_id);
+                            } else {
+                                self.collapsed_groups.insert(group_id);
+                            }
+                            self.build_sidebar();
+                        }
                     }
                 }
                 return;
