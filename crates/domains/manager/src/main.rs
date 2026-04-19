@@ -112,12 +112,18 @@ fn asset_name(domain: &str) -> String {
 
 fn known_domains() -> Vec<&'static str> {
     vec![
-        "bootstrap", "keyboard", "container", "cron", "git", "quickaction", "vscode", "wireguard",
-        "files", "sd-backup",
-        // infra domains (available but not installed by default)
-        "mount", "network", "ssh", "proxmox", "synology",
-        "setup", "workspace", "github", "obsidian",
-        "env", "host", "shell",  "openclaw", "init",
+        // 인입
+        "bootstrap",
+        // 인프라
+        "env", "mount", "host",
+        // 자동화
+        "cron", "files", "sd-backup",
+        // 개발
+        "git", "vscode", "container",
+        // Finder
+        "quickaction",
+        // 시스템
+        "keyboard", "shell", "wireguard",
     ]
 }
 
