@@ -378,26 +378,27 @@ impl App {
 
     pub fn handle_mouse(&mut self, mouse: MouseEvent) {
         if let MouseEventKind::Down(MouseButton::Left) = mouse.kind {
-            // 왼쪽 사이드바 클릭 → 탭 선택
-            if mouse.column < 20 && mouse.row > 0 {
-                let sidebar_idx = (mouse.row as usize).saturating_sub(1);
-                if sidebar_idx == 0 {
-                    self.selected_tab = 0;
-                    self.focus_button = 0;
-                } else if self.domains.is_empty() {
-                    // no-op
-                } else if sidebar_idx >= 2 {
-                    let domain_idx = sidebar_idx - 2;
-                    if domain_idx < self.domains.len() {
-                        self.selected_tab = domain_idx + 1;
-                        self.focus_button = 0;
+            // 왼쪽 사이드바 클릭 → sidebar_entries 기반 매핑
+            if mouse.column < 24 && mouse.row > 0 {
+                let row = (mouse.row as usize).saturating_sub(1); // border 1줄 빼기
+                if let Some(entry) = self.sidebar_entries.get(row) {
+                    match entry {
+                        SidebarEntry::Install => {
+                            self.selected_tab = 0;
+                            self.focus_button = 0;
+                        }
+                        SidebarEntry::Domain { idx, .. } => {
+                            self.selected_tab = idx + 1;
+                            self.focus_button = 0;
+                        }
+                        SidebarEntry::GroupHeader(_) => {} // 클릭 무시
                     }
                 }
                 return;
             }
 
             // Install 탭 리스트 클릭
-            if self.selected_tab == 0 && mouse.column >= 20 && mouse.row >= self.install_area_top {
+            if self.selected_tab == 0 && mouse.column >= 24 && mouse.row >= self.install_area_top {
                 let row_idx = (mouse.row - self.install_area_top) as usize;
                 if row_idx < self.available.len() {
                     if self.install_focus == row_idx {
