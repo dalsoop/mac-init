@@ -241,7 +241,28 @@ struct DetectedCard {
 }
 
 /// /Volumes/ 스캔해서 DCIM 있는 볼륨 감지 + 기기 판별
+/// SD 카드 감지. 10초 timeout — stuck 방지.
 fn detect_cards() -> Vec<DetectedCard> {
+    use std::sync::mpsc;
+    use std::thread;
+    use std::time::Duration;
+
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let result = detect_cards_inner();
+        let _ = tx.send(result);
+    });
+    // 10초 대기. timeout이면 빈 목록 반환 (stuck 방지)
+    match rx.recv_timeout(Duration::from_secs(10)) {
+        Ok(cards) => cards,
+        Err(_) => {
+            eprintln!("⚠ SD 카드 스캔 timeout (10초). SD 카드 응답 없음.");
+            Vec::new()
+        }
+    }
+}
+
+fn detect_cards_inner() -> Vec<DetectedCard> {
     let volumes = Path::new("/Volumes");
     let Ok(entries) = fs::read_dir(volumes) else { return Vec::new(); };
     let skip = ["Macintosh HD", "Preboot", "Recovery", "VM", "Data"];
@@ -874,21 +895,26 @@ fn cmd_watch() {
     if !cfg.auto_enabled { return; }
     if cfg.backup_target.is_empty() { return; }
 
-    // 이미 백업 진행 중이면 skip
+    // lock 먼저 — 이미 다른 백업/watch 실행 중이면 즉시 skip
+    if lock_path().exists() { return; }
+
+    // progress 체크
     let prog = load_progress();
     if prog.running { return; }
 
+    // 가벼운 감지 먼저 (DCIM 존재만)
+    let light = detect_cards_light();
+    if light == "미감지" { return; }
+
+    // 백업 대상 경로
+    let target = PathBuf::from(expand(&cfg.backup_target));
+    if !target.exists() { return; }
+
+    // 여기서부터 무거운 작업 (timeout 보호된 detect_cards)
     let cards = detect_cards();
     if cards.is_empty() { return; }
 
-    // 백업 대상 경로 존재 확인
-    let target = PathBuf::from(expand(&cfg.backup_target));
-    if !target.exists() {
-        // NAS 마운트 안 됐으면 그냥 skip (다음 30초에 재시도)
-        return;
-    }
-
-    // 차분 분석: 새 파일 있는지 확인
+    // 차분 분석
     let mut has_new = false;
     for card in &cards {
         if let Some(dcim) = &card.dcim_path {
