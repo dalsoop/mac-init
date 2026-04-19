@@ -501,9 +501,6 @@ fn cmd_mount(name: &str, share: &str) {
     let mp = mount_point(name, share);
     let opts = card_mount_opts(name);
 
-    // 마운트 전 잔재 파일 격리
-    sweep_mountless_files(&mp, name, share);
-
     // rclone 백엔드 분기
     if conn.scheme == "rclone" {
         let (remote, path) = card_rclone_meta(name);
@@ -542,103 +539,123 @@ fn cmd_mount(name: &str, share: &str) {
     }
 }
 
-/// 마운트 포인트에 마운트 전 남은 로컬 잔재 파일을 격리.
-/// ~/NAS/.mountless-trash/YYMMDD-HHMMSS-<conn>-<share>/ 로 이동.
+/// ~/NAS/ 전체를 재귀적으로 스캔해서 마운트/카드에 속하지 않는 잔재를
+/// ~/NAS/.mountless-trash/YYMMDD-HHMMSS/ 아래에 원래 경로 구조 그대로 격리.
 ///
-/// **안전장치**: 이미 마운트된 경로에는 실행하지 않음 (원격 파일 이동 방지).
-/// TOCTOU 윈도우(read_dir ↔ rename 사이 새 파일 생성)는 best-effort 허용.
-fn sweep_mountless_files(mp: &PathBuf, conn: &str, share: &str) {
-    if !mp.exists() { return; }
-    // 이미 마운트된 경로면 절대 건드리지 않음
-    if is_mounted_at(mp) { return; }
-
-    let entries: Vec<_> = match fs::read_dir(mp) {
-        Ok(it) => it.filter_map(|e| e.ok()).collect(),
-        Err(_) => return,
-    };
-    if entries.is_empty() { return; }
-
-    let ts = Command::new("date")
-        .args(["+%y%m%d-%H%M%S"])
-        .output().ok()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_else(|| format!("epoch-{}", epoch_now()));
-
-    let safe_share = share.replace('/', "_");
-    let trash_dir = nas_root().join(".mountless-trash")
-        .join(format!("{}-{}-{}", ts, conn, safe_share));
-
-    if let Err(e) = fs::create_dir_all(&trash_dir) {
-        eprintln!("  ⚠ mountless-trash 생성 실패: {}", e);
-        return;
-    }
-
-    let mut moved = 0;
-    for entry in entries {
-        let name = entry.file_name();
-        let dest = trash_dir.join(&name);
-        if let Err(e) = fs::rename(entry.path(), &dest) {
-            eprintln!("  ⚠ 이동 실패: {} → {}: {}", entry.path().display(), dest.display(), e);
-        } else {
-            moved += 1;
-        }
-    }
-    if moved > 0 {
-        eprintln!("  🗂 마운트 전 잔재 {}개 → {}", moved, trash_dir.display());
-    }
-}
-
-/// ~/NAS/ 루트에서 카드/자동마운트에 속하지 않는 잔재 항목을 .mountless-trash 로 격리.
-/// .mountless-trash 자체와 실제 카드 이름 디렉터리는 보존.
-fn sweep_nas_root() {
+/// 보존 대상:
+///   - .mountless-trash 자체
+///   - 카드에 등록된 연결 이름 디렉터리 (예: synology/, truenas/)
+///   - 활성 마운트 포인트 (예: synology/works/)와 그 하위 파일
+///   - 자동마운트에 등록된 share 디렉터리
+///
+/// 격리 대상:
+///   - 카드에 없는 디렉터리 (예: testafp/, unknown/)
+///   - 카드 하위에서 마운트도 아니고 자동마운트도 아닌 빈 디렉터리 (예: truenas/notexist/)
+///   - .DS_Store 등 dotfile
+fn sweep_nas_orphans() {
     let root = nas_root();
     if !root.exists() { return; }
 
     let conns = load_all_connections();
-    let known: std::collections::HashSet<String> = conns.iter().map(|c| c.name.clone()).collect();
+    let conn_names: std::collections::HashSet<String> =
+        conns.iter().map(|c| c.name.clone()).collect();
 
-    let entries: Vec<_> = match fs::read_dir(&root) {
-        Ok(it) => it.filter_map(|e| e.ok()).collect(),
-        Err(_) => return,
-    };
+    let cfg = load_mount_config();
+    let auto_shares: std::collections::HashSet<String> =
+        cfg.auto_mounts.iter().map(|a| format!("{}/{}", a.connection, a.share)).collect();
 
-    let mut to_move: Vec<std::fs::DirEntry> = Vec::new();
-    for entry in entries {
-        let name = entry.file_name().to_string_lossy().to_string();
-        // 보존 대상
-        if name == ".mountless-trash" { continue; }
-        if name == ".DS_Store" { to_move.push(entry); continue; }
-        if name.starts_with('.') { to_move.push(entry); continue; }
-        if known.contains(&name) { continue; }
-        to_move.push(entry);
-    }
-    if to_move.is_empty() { return; }
+    let active_mounts: std::collections::HashSet<String> =
+        list_current_mounts().into_iter().map(|(_, mp)| mp).collect();
 
     let ts = Command::new("date")
         .args(["+%y%m%d-%H%M%S"])
         .output().ok()
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .unwrap_or_else(|| format!("epoch-{}", epoch_now()));
-
-    let trash_dir = root.join(".mountless-trash").join(format!("{}-NAS-root", ts));
-    if let Err(e) = fs::create_dir_all(&trash_dir) {
-        eprintln!("  ⚠ mountless-trash 생성 실패: {}", e);
-        return;
-    }
+    let trash_base = root.join(".mountless-trash").join(ts);
 
     let mut moved = 0;
-    for entry in to_move {
-        let name = entry.file_name();
-        let dest = trash_dir.join(&name);
-        if let Err(e) = fs::rename(entry.path(), &dest) {
-            eprintln!("  ⚠ 이동 실패: {} → {}: {}", entry.path().display(), dest.display(), e);
-        } else {
-            moved += 1;
+
+    // 1단계: NAS 루트 직속 — 카드에 없는 항목
+    let root_entries = match fs::read_dir(&root) {
+        Ok(it) => it.filter_map(|e| e.ok()).collect::<Vec<_>>(),
+        Err(_) => return,
+    };
+    for entry in &root_entries {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name == ".mountless-trash" { continue; }
+        if name.starts_with('.') {
+            moved += move_to_trash(&entry.path(), &root, &trash_base);
+            continue;
+        }
+        if conn_names.contains(&name) { continue; }
+        moved += move_to_trash(&entry.path(), &root, &trash_base);
+    }
+
+    // 2단계: 카드 디렉터리 하위 — share 레벨 정리
+    for conn_name in &conn_names {
+        let conn_dir = root.join(conn_name);
+        if !conn_dir.exists() || !conn_dir.is_dir() { continue; }
+        let sub_entries = match fs::read_dir(&conn_dir) {
+            Ok(it) => it.filter_map(|e| e.ok()).collect::<Vec<_>>(),
+            Err(_) => continue,
+        };
+        for entry in &sub_entries {
+            let share_name = entry.file_name().to_string_lossy().to_string();
+            let full_key = format!("{}/{}", conn_name, share_name);
+            let mp = entry.path();
+            let mp_str = mp.to_string_lossy().to_string();
+
+            // dotfile → 격리
+            if share_name.starts_with('.') {
+                moved += move_to_trash(&mp, &root, &trash_base);
+                continue;
+            }
+            // 활성 마운트 → 보존
+            if active_mounts.contains(&mp_str) { continue; }
+            // 자동마운트 등록 → 보존 (마운트 안 됐어도 재시도 대상)
+            if auto_shares.contains(&full_key) { continue; }
+            // 비어있는 디렉터리 → 격리 (실패한 마운트 시도 잔재)
+            if mp.is_dir() {
+                let is_empty = fs::read_dir(&mp).map(|mut it| it.next().is_none()).unwrap_or(true);
+                if is_empty {
+                    moved += move_to_trash(&mp, &root, &trash_base);
+                    continue;
+                }
+            }
+            // 파일 → 격리
+            if mp.is_file() {
+                moved += move_to_trash(&mp, &root, &trash_base);
+            }
         }
     }
+
     if moved > 0 {
-        eprintln!("  🗂 NAS 루트 잔재 {}개 → {}", moved, trash_dir.display());
+        eprintln!("  🗂 NAS 잔재 {}개 → {}", moved, trash_base.display());
     }
+    // trash_base 디렉터리가 비었으면 제거 (아무것도 안 옮겼을 때)
+    if moved == 0 {
+        let _ = fs::remove_dir(&trash_base);
+    }
+}
+
+/// src 를 trash_base 아래 원래 경로 구조로 이동. 성공 시 1, 실패 시 0.
+fn move_to_trash(src: &PathBuf, nas_root: &PathBuf, trash_base: &PathBuf) -> usize {
+    let rel = match src.strip_prefix(nas_root) {
+        Ok(r) => r,
+        Err(_) => return 0,
+    };
+    let dest = trash_base.join(rel);
+    if let Some(parent) = dest.parent() {
+        if let Err(e) = fs::create_dir_all(parent) {
+            eprintln!("  ⚠ 디렉터리 생성 실패: {}: {}", parent.display(), e);
+            return 0;
+        }
+    }
+    if let Err(e) = fs::rename(src, &dest) {
+        eprintln!("  ⚠ 이동 실패: {} → {}: {}", src.display(), dest.display(), e);
+        0
+    } else { 1 }
 }
 
 /// rclone 카드의 (remote, path) 메타. env show 의 rclone_remote/rclone_path 필드.
@@ -817,9 +834,9 @@ fn cmd_auto() {
         println!("자동 마운트 설정이 없습니다.");
         return;
     }
-    // [C] 사이클 시작 시 stale 일괄 청소 + NAS 루트 잔재 정리.
+    // [C] 사이클 시작 시 stale 일괄 청소 + NAS 잔재 정리.
     sweep_stale_mounts();
-    sweep_nas_root();
+    sweep_nas_orphans();
 
     let mut state = load_retry_state();
     let now = epoch_now();
@@ -883,8 +900,6 @@ fn cmd_auto() {
             record_failure(&mut state, &key, now, "no_password");
             continue;
         };
-
-        sweep_mountless_files(&mp, &a.connection, &a.share);
 
         let opts = card_mount_opts(&a.connection);
         let opts_str = opts.smbfs_opts_string();
