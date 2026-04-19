@@ -561,8 +561,25 @@ fn sweep_nas_orphans() {
         conns.iter().map(|c| c.name.clone()).collect();
 
     let cfg = load_mount_config();
+    // enabled=true 인 자동마운트만 보존. off 는 격리 대상.
     let auto_shares: std::collections::HashSet<String> =
-        cfg.auto_mounts.iter().map(|a| format!("{}/{}", a.connection, a.share)).collect();
+        cfg.auto_mounts.iter()
+            .filter(|a| a.enabled)
+            .map(|a| format!("{}/{}", a.connection, a.share))
+            .collect();
+    // off 상태 항목은 auto-list 에서도 자동 제거.
+    let disabled: Vec<_> = cfg.auto_mounts.iter()
+        .filter(|a| !a.enabled)
+        .map(|a| format!("{}/{}", a.connection, a.share))
+        .collect();
+    if !disabled.is_empty() {
+        let mut cfg_mut = cfg.clone();
+        cfg_mut.auto_mounts.retain(|a| a.enabled);
+        let _ = save_mount_config(&cfg_mut);
+        for d in &disabled {
+            eprintln!("  ♻ 비활성 자동마운트 자동 제거: {}", d);
+        }
+    }
 
     let active_mounts: std::collections::HashSet<String> =
         list_current_mounts().into_iter().map(|(_, mp)| mp).collect();
@@ -681,7 +698,7 @@ struct AutoMount {
 }
 fn default_true() -> bool { true }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 struct MountConfig {
     #[serde(default)]
     auto_mounts: Vec<AutoMount>,
