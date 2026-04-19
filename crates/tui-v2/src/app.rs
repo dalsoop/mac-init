@@ -288,13 +288,28 @@ impl App {
     }
 
     pub fn render(&mut self, frame: &mut Frame) {
-        let chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Length(24), Constraint::Min(0)])
+        let outer = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(0), Constraint::Length(1)])
             .split(frame.area());
 
-        self.render_sidebar(frame, chunks[0]);
-        self.render_content(frame, chunks[1]);
+        let main = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Length(24), Constraint::Min(0)])
+            .split(outer[0]);
+
+        self.render_sidebar(frame, main[0]);
+        self.render_content(frame, main[1]);
+
+        // 하단 키 안내
+        let hints = match self.focus {
+            Focus::Sidebar => "↑↓ 이동 │ Enter/→ 선택 │ r 새로고침 │ q/Esc 종료",
+            Focus::Content => "↑↓ 항목 │ Tab 섹션 │ ←/Esc 뒤로 │ Enter 실행 │ r 새로고침",
+        };
+        frame.render_widget(
+            Paragraph::new(Span::styled(hints, Style::default().fg(Color::DarkGray))),
+            outer[1],
+        );
     }
 
     fn render_sidebar(&self, frame: &mut Frame, area: Rect) {
