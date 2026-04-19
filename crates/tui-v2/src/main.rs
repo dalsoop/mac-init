@@ -28,11 +28,21 @@ async fn main() -> Result<()> {
     let mut app = App::new();
     app.load();
 
+    let mut last_refresh = std::time::Instant::now();
+
     while !app.should_quit {
         terminal.draw(|f| app.render(f))?;
-        if event::poll(std::time::Duration::from_millis(50))? {
+
+        // 자동 갱신: 현재 탭의 refresh_interval 체크
+        let refresh_secs = app.current_refresh_interval();
+        if refresh_secs > 0 && last_refresh.elapsed().as_secs() >= refresh_secs as u64 {
+            app.refresh_current_tab();
+            last_refresh = std::time::Instant::now();
+        }
+
+        if event::poll(std::time::Duration::from_millis(200))? {
             match event::read()? {
-                Event::Key(k) => app.handle_key(k),
+                Event::Key(k) => { app.handle_key(k); last_refresh = std::time::Instant::now(); },
                 Event::Mouse(m) => app.handle_mouse(m),
                 _ => {}
             }

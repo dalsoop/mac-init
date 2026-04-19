@@ -851,6 +851,7 @@ fn print_tui_spec() {
     let spec = serde_json::json!({
         "tab": { "label_ko": "SD 미디어 백업", "label": "SD Backup", "icon": "📸" },
         "group": "auto",
+        "refresh_interval": 5,
         "sections": [
             {
                 "kind": "key-value",

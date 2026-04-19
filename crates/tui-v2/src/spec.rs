@@ -21,6 +21,10 @@ pub struct DomainSpec {
     /// ${selected.*} 치환에 사용.
     #[serde(default)]
     pub list_section: Option<String>,
+    /// 자동 갱신 간격 (초). 0 이면 자동 갱신 안 함.
+    /// SD 백업 같이 상태가 실시간으로 바뀌는 도메인에서 사용.
+    #[serde(default)]
+    pub refresh_interval: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

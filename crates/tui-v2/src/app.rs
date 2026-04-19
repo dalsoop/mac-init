@@ -80,6 +80,25 @@ impl App {
         }
     }
 
+    /// 현재 탭의 refresh_interval (초). 0 이면 자동 갱신 없음.
+    pub fn current_refresh_interval(&self) -> u32 {
+        if self.selected_tab == 0 { return 0; }
+        let idx = self.selected_tab - 1;
+        self.specs.get(idx)
+            .and_then(|s| s.as_ref())
+            .map(|s| s.refresh_interval)
+            .unwrap_or(0)
+    }
+
+    /// 현재 탭의 spec 만 재로드.
+    pub fn refresh_current_tab(&mut self) {
+        if self.selected_tab == 0 { return; }
+        let idx = self.selected_tab - 1;
+        if let Some(domain) = self.domains.get(idx) {
+            self.specs[idx] = crate::registry::fetch_spec(domain);
+        }
+    }
+
     /// Tab/BackTab 이동. 그룹 헤더는 skip.
     fn navigate_tab(&mut self, dir: i32) {
         let max = self.domains.len(); // 0=install, 1..=max = domains
