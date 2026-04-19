@@ -307,7 +307,7 @@ fn print_tui_spec() {
     }).collect();
 
     let spec = serde_json::json!({
-        "tab": { "label_ko": "셸(PATH)", "label": "Shell", "icon": "🐚" },
+        "tab": { "label_ko": "PATH+Alias", "label": "Shell", "icon": "🐚" },
         "group": "system",        "list_section": "PATH",
         "sections": [
             {
