@@ -323,7 +323,7 @@ fn cmd_status() {
     println!("LRF 포함: {}", if cfg.include_lrf { "예" } else { "아니오" });
     println!();
 
-    // SD 카드 감지
+    // SD 카드 감지 + 차분 분석
     let cards = detect_cards();
     if cards.is_empty() {
         println!("SD 카드: 미감지");
@@ -332,7 +332,22 @@ fn cmd_status() {
         for card in &cards {
             println!("SD 카드: {} ({})", card.volume_name, card.device_type);
             println!("  경로: {}", card.volume_path.display());
-            println!("  파일: {}개 ({})", card.file_count, human_bytes(card.total_bytes));
+            println!("  전체: {}개 ({})", card.file_count, human_bytes(card.total_bytes));
+
+            // 차분 분석: 이미 백업된 파일 vs 새 파일
+            if !cfg.backup_target.is_empty() {
+                if let Some(dcim) = &card.dcim_path {
+                    let (new_count, new_bytes, existing) = diff_analysis(dcim, &cfg, &card.device_type);
+                    if new_count == 0 {
+                        println!("  상태: ✓ 이미 백업 완료 (새 파일 없음)");
+                    } else if existing > 0 {
+                        println!("  상태: ⚡ 추가 파일 {}개 ({}) — 기존 {}개 skip",
+                            new_count, human_bytes(new_bytes), existing);
+                    } else {
+                        println!("  상태: 📸 새 SD — {}개 백업 필요", new_count);
+                    }
+                }
+            }
         }
     }
 
@@ -341,6 +356,32 @@ fn cmd_status() {
     if let Some(last) = hist.entries.last() {
         println!("\n최근 백업: {} | {} | {}개 파일", last.timestamp, last.device, last.files_copied);
     }
+}
+
+/// SD 카드 vs 로컬 백업 차분 분석. (새 파일 수, 새 바이트, 기존 파일 수)
+fn diff_analysis(dcim: &Path, cfg: &Config, device_type: &str) -> (usize, u64, usize) {
+    let target = PathBuf::from(expand(&cfg.backup_target)).join(device_type);
+    let files = collect_media_files(dcim);
+    let mut new_count = 0usize;
+    let mut new_bytes = 0u64;
+    let mut existing = 0usize;
+    for f in &files {
+        let fname = f.file_name().unwrap_or_default().to_string_lossy().to_string();
+        if !cfg.include_lrf && fname.to_uppercase().ends_with(".LRF") { continue; }
+        let ext = fname.rsplit('.').next().unwrap_or("").to_uppercase();
+        if cfg.exclude_extensions.iter().any(|e| e.to_uppercase() == ext) { continue; }
+
+        let date = extract_date(&fname);
+        let dest = target.join(&date).join(&fname);
+        if dest.exists() {
+            let src_size = fs::metadata(f).map(|m| m.len()).unwrap_or(0);
+            let dst_size = fs::metadata(&dest).map(|m| m.len()).unwrap_or(0);
+            if src_size == dst_size { existing += 1; continue; }
+        }
+        new_count += 1;
+        new_bytes += fs::metadata(f).map(|m| m.len()).unwrap_or(0);
+    }
+    (new_count, new_bytes, existing)
 }
 
 fn cmd_set_target(path: &str) {
@@ -747,8 +788,22 @@ fn cmd_watch() {
         return;
     }
 
-    // SD 감지됨 + 백업 대상 접근 가능 → 자동 백업 실행
-    println!("[{}] SD 감지 → 자동 백업 시작", now_str());
+    // 차분 분석: 새 파일 있는지 확인
+    let mut has_new = false;
+    for card in &cards {
+        if let Some(dcim) = &card.dcim_path {
+            let (new_count, _, _) = diff_analysis(dcim, &cfg, &card.device_type);
+            if new_count > 0 { has_new = true; }
+        }
+    }
+
+    if !has_new {
+        // 이미 백업 완료된 SD — run 호출 안 함
+        println!("[{}] SD 감지 (이미 백업 완료, 새 파일 없음)", now_str());
+        return;
+    }
+
+    println!("[{}] SD 감지 → 새 파일 발견 → 자동 백업 시작", now_str());
     cmd_run();
 }
 
@@ -821,11 +876,21 @@ fn print_tui_spec() {
     let cards = detect_cards();
     let hist = load_history();
 
-    let card_info = if cards.is_empty() {
-        "미감지".into()
+    let (card_info, diff_info) = if cards.is_empty() {
+        ("미감지".into(), String::new())
     } else {
-        cards.iter().map(|c| format!("{} ({}개, {})", c.device_type, c.file_count, human_bytes(c.total_bytes)))
-            .collect::<Vec<_>>().join(", ")
+        let info = cards.iter().map(|c| format!("{} ({}개, {})", c.device_type, c.file_count, human_bytes(c.total_bytes)))
+            .collect::<Vec<_>>().join(", ");
+        let diff = if !cfg.backup_target.is_empty() {
+            cards.iter().filter_map(|c| {
+                let dcim = c.dcim_path.as_ref()?;
+                let (new_c, new_b, exist) = diff_analysis(dcim, &cfg, &c.device_type);
+                if new_c == 0 { Some("✓ 백업 완료 (새 파일 없음)".into()) }
+                else if exist > 0 { Some(format!("⚡ 추가 {}개 ({}) — 기존 {}개 skip", new_c, human_bytes(new_b), exist)) }
+                else { Some(format!("📸 새 SD — {}개 백업 필요", new_c)) }
+            }).collect::<Vec<_>>().join(", ")
+        } else { String::new() };
+        (info, diff)
     };
 
     let target_status = if cfg.backup_target.is_empty() { "미설정" }
@@ -859,6 +924,8 @@ fn print_tui_spec() {
                 "items": [
                     { "key": "SD 카드", "value": card_info,
                       "status": if cards.is_empty() { "warn" } else { "ok" } },
+                    { "key": "백업 상태", "value": if diff_info.is_empty() { "—" } else { &diff_info },
+                      "status": if diff_info.contains("완료") { "ok" } else if diff_info.contains("추가") || diff_info.contains("새") { "warn" } else { "ok" } },
                     { "key": "진행 상태", "value": prog_info,
                       "status": if prog.running { "ok" } else { "warn" } },
                     { "key": "최근 백업", "value": last_backup, "status": "ok" },
