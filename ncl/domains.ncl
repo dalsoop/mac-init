@@ -71,7 +71,7 @@ in
       description = "sshfs/SMB/NetFS 마운트 관리 (Apple NetFS.framework 사용)",
       enabled = true,
       tags = { product = 'infra, layer = 'remote },
-      requires = ["setup", "network", "ssh", "env", "connect"],
+      requires = ["setup", "network", "ssh", "env"],
       provides = ["mount status", "mount shares", "mount list", "mount mount", "mount unmount",
                   "mount auto-add", "mount auto-remove", "mount auto-toggle", "mount auto-list",
                   "mount auto", "mount auto-enable", "mount auto-disable"],
@@ -155,14 +155,7 @@ in
       ],
     } | Domain,
 
-    connect = {
-      name = "connect",
-      description = "서비스 연결 등록/탐지 (env 카드 쓰기 레이어)",
-      enabled = true,
-      tags = { product = 'infra, layer = 'remote },
-      requires = ["env"],
-      provides = ["connect status", "connect list", "connect add", "connect remove", "connect import"],
-    } | Domain,
+    # connect 도메인 → env 에 흡수 (v0.9.9+).
 
     obsidian = {
       name = "obsidian",
@@ -184,12 +177,12 @@ in
   # 번들 정의
   bundles = {
     init = ["keyboard", "setup", "workspace", "github", "config"],
-    infra = ["mount", "network", "ssh", "proxmox", "synology", "connect"],
+    infra = ["mount", "network", "ssh", "proxmox", "synology"],
     auto = ["cron", "files", "worktree", "projects"],
     vault = ["env", "openclaw"],
     knowledge = ["obsidian"],
     full = ["keyboard", "setup", "workspace", "github", "config",
-            "mount", "network", "ssh", "proxmox", "synology", "connect",
+            "mount", "network", "ssh", "proxmox", "synology",
             "cron", "files", "worktree", "projects", "env", "openclaw",
             "obsidian"],
   },

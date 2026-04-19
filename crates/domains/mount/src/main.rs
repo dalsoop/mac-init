@@ -11,7 +11,7 @@ mod netfs;
 
 #[derive(Parser)]
 #[command(name = "mac-domain-mount")]
-#[command(about = "SMB/NFS 공유 마운트 관리 (connect 필요)")]
+#[command(about = "SMB/NFS 공유 마운트 관리 (env 카드 필요)")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -180,7 +180,7 @@ fn env_path() -> PathBuf {
 }
 
 fn has_connect_domain() -> bool {
-    PathBuf::from(home()).join(".mac-app-init/domains/mac-domain-connect").exists()
+    PathBuf::from(home()).join(".mac-app-init/domains/mac-domain-env").exists()
 }
 
 #[derive(Debug, Clone)]
@@ -425,7 +425,7 @@ fn is_mounted_at(mp: &PathBuf) -> bool {
 
 fn main() {
     if !has_connect_domain() {
-        eprintln!("⚠ connect 도메인이 필요합니다: mac install connect");
+        eprintln!("⚠ env 도메인이 필요합니다: mac install env");
     }
     let cli = Cli::parse();
     match cli.command {
@@ -465,7 +465,7 @@ fn cmd_status() {
 fn cmd_shares() {
     let conns = load_all_connections();
     if conns.is_empty() {
-        println!("등록된 연결이 없습니다. mac run connect add <name>");
+        println!("등록된 연결이 없습니다. mac run env add");
         return;
     }
     for c in &conns {
@@ -501,7 +501,7 @@ fn cmd_list() {
 
 fn cmd_mount(name: &str, share: &str) {
     let Some(conn) = find_connection(name) else {
-        eprintln!("✗ 연결 '{}' 이(가) 없습니다. mac run connect list", name);
+        eprintln!("✗ 연결 '{}' 이(가) 없습니다. mac run env list", name);
         return;
     };
     let mp = mount_point(name, share);
@@ -1278,8 +1278,8 @@ fn print_tui_spec() {
                 "title": "Status",
                 "items": [
                     {
-                        "key": "connect 도메인",
-                        "value": if connect_ok { "✓ 설치됨" } else { "✗ 미설치 (mac install connect)" },
+                        "key": "env 도메인",
+                        "value": if connect_ok { "✓ 설치됨" } else { "✗ 미설치 (mac install env)" },
                         "status": if connect_ok { "ok" } else { "error" }
                     },
                     {

@@ -65,8 +65,10 @@ enum Commands {
     },
     /// connections.json + .env 에서 카드로 일괄 이관
     Import,
-    /// 카드 ↔ 서버 연결 테스트 (scheme 에 따라)
+    /// 카드 ↔ 서버 연결 테스트 (SSH→TCP→ping fallback)
     Test { name: String },
+    /// 전체 카드 연결 상태 (구 connect status)
+    TestAll,
     /// 상태 요약
     Status,
     /// 모든 카드 파일 권한을 0600 (디렉터리 0700) 으로 보정
@@ -100,6 +102,7 @@ fn main() {
         Commands::SetOption { name, key, value } => cmd_set_option(&name, &key, &value),
         Commands::Import => cmd_import(),
         Commands::Test { name } => cmd_test(&name),
+        Commands::TestAll => cmd_test_all(),
         Commands::Status => cmd_status(),
         Commands::FixPerms => cmd_fix_perms(),
         Commands::MigrateFromKeychain => cmd_migrate_from_keychain(),
@@ -707,25 +710,57 @@ fn cmd_test(name: &str) {
         std::process::exit(1);
     };
     println!("{} ({}://{}@{}:{}) 테스트 중...", card.name, card.scheme, card.user, card.host, card.port);
+    let ok = test_card(&card);
+    if !ok { std::process::exit(2); }
+}
 
-    // TCP 연결 가능 여부만 가볍게
+fn cmd_test_all() {
+    let cards = list_cards();
+    if cards.is_empty() { println!("카드 없음."); return; }
+    println!("=== 연결 상태 ===\n");
+    for card in &cards {
+        let ok = test_card(card);
+        let icon = if ok { "✓" } else { "✗" };
+        println!("  {} {:<15} {}://{}@{}:{}", icon, card.name, card.scheme, card.user, card.host, card.port);
+    }
+}
+
+/// 카드 연결 테스트. SSH→TCP→ping 순서 fallback.
+fn test_card(card: &Card) -> bool {
+    // 1) SSH 포트면 SSH BatchMode 시도
+    if card.port == 22 || card.scheme == "ssh" {
+        let ssh = Command::new("ssh")
+            .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=3",
+                   "-p", &card.port.to_string(),
+                   &format!("{}@{}", card.user, card.host), "echo ok"])
+            .output();
+        if let Ok(o) = ssh {
+            if o.status.success() { println!("  ✓ SSH OK"); return true; }
+        }
+    }
+
+    // 2) TCP 연결
     use std::net::ToSocketAddrs;
     use std::time::Duration;
     let addr = format!("{}:{}", card.host, card.port);
-    match addr.to_socket_addrs() {
-        Ok(mut iter) => {
-            if let Some(sock) = iter.next() {
-                match std::net::TcpStream::connect_timeout(&sock, Duration::from_secs(3)) {
-                    Ok(_) => println!("✓ TCP 연결 성공 ({})", sock),
-                    Err(e) => { eprintln!("✗ TCP 실패: {}", e); std::process::exit(2); }
-                }
-            } else {
-                eprintln!("✗ 주소 해석 실패");
-                std::process::exit(2);
+    if let Ok(mut iter) = addr.to_socket_addrs() {
+        if let Some(sock) = iter.next() {
+            if std::net::TcpStream::connect_timeout(&sock, Duration::from_secs(3)).is_ok() {
+                println!("  ✓ TCP OK ({})", sock);
+                return true;
             }
         }
-        Err(e) => { eprintln!("✗ 주소 해석 실패: {}", e); std::process::exit(2); }
     }
+
+    // 3) Fallback: ping
+    let ping = Command::new("ping").args(["-c", "1", "-W", "2000", &card.host]).output();
+    if ping.map(|o| o.status.success()).unwrap_or(false) {
+        println!("  ✓ ping OK (TCP 포트 {}는 닫힘)", card.port);
+        return true;
+    }
+
+    eprintln!("  ✗ 도달 불가 ({}:{})", card.host, card.port);
+    false
 }
 
 // === status ===
@@ -909,6 +944,7 @@ fn print_tui_spec() {
                     { "label": "List", "command": "list", "key": "l" },
                     { "label": "Import legacy", "command": "import", "key": "i" },
                     { "label": "Status", "command": "status", "key": "s" },
+                    { "label": "Test all", "command": "test-all", "key": "T" },
                     { "label": "Cleanup", "command": "cleanup", "key": "c" },
                     { "label": "Fix perms", "command": "fix-perms", "key": "f" }
                 ]

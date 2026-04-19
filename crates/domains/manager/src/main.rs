@@ -117,7 +117,7 @@ fn known_domains() -> Vec<&'static str> {
         // infra domains (available but not installed by default)
         "mount", "network", "ssh", "proxmox", "synology",
         "setup", "workspace", "github", "obsidian",
-        "env", "host", "shell", "openclaw", "init",
+        "env", "host", "shell",  "openclaw", "init",
     ]
 }
 
@@ -196,8 +196,7 @@ fn cmd_available() {
 
 fn domain_deps(name: &str) -> &'static [&'static str] {
     match name {
-        "mount" => &["env", "connect"],
-        "connect" => &["env"],
+        "mount" => &["env"],
         _ => &[],
     }
 }
