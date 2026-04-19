@@ -308,7 +308,7 @@ impl App {
 
         // 하단 키 안내
         let hints = match self.focus {
-            Focus::Sidebar => "↑↓ 이동 │ Enter/→ 선택 │ r 새로고침 │ q/Esc 종료",
+            Focus::Sidebar => "↑↓ 이동 │ Enter/→ 선택 │ r 새로고침 │ Esc 종료",
             Focus::Content => "↑↓ 항목 │ Tab 섹션 │ ←/Esc 뒤로 │ Enter 실행 │ r 새로고침",
         };
         frame.render_widget(
@@ -496,7 +496,7 @@ impl App {
         let tick = (std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
-            .as_millis() / 100) as usize;
+            .as_millis() / 66) as usize; // ~15fps 스피너
         let spinner = spinners[tick % spinners.len()];
         frame.render_widget(
             Paragraph::new(vec![
@@ -525,7 +525,6 @@ impl App {
 
         // 공통 키
         match key.code {
-            KeyCode::Char('q') if key.modifiers.is_empty() => { self.should_quit = true; return; }
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => { self.should_quit = true; return; }
             KeyCode::Char('r') => { self.load(); self.output = "Refreshed.".into(); return; }
             _ => {}
