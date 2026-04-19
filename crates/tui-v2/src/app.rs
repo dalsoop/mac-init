@@ -372,18 +372,99 @@ impl App {
     fn render_content(&mut self, frame: &mut Frame, area: Rect) {
         if self.selected_tab == 0 {
             self.render_install(frame, area);
-        } else {
-            let domain_idx = self.selected_tab - 1;
-            if let Some(Some(spec)) = self.specs.get(domain_idx) {
-                self.render_domain(frame, area, spec);
-            } else {
-                // 스피너 표시 후 다음 틱에서 로드
-                self.render_no_spec(frame, area);
-                // 로드 예약 (렌더 후 실행)
-                if domain_idx < self.domains.len() && self.specs[domain_idx].is_none() {
-                    self.pending_load = Some(domain_idx);
-                }
+            return;
+        }
+        let domain_idx = self.selected_tab - 1;
+        if self.specs.get(domain_idx).and_then(|s| s.as_ref()).is_none() {
+            self.render_no_spec(frame, area);
+            if domain_idx < self.domains.len() && self.specs[domain_idx].is_none() {
+                self.pending_load = Some(domain_idx);
             }
+            return;
+        }
+
+        // 2열(서브메뉴) + 3열(섹션 콘텐츠)
+        let cols = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Length(20), Constraint::Min(0)])
+            .split(area);
+
+        self.render_section_menu(frame, cols[0]);
+        self.render_section_content(frame, cols[1]);
+    }
+
+    /// 2열: 섹션 제목 리스트
+    fn render_section_menu(&self, frame: &mut Frame, area: Rect) {
+        let domain_idx = self.selected_tab - 1;
+        let Some(Some(spec)) = self.specs.get(domain_idx) else { return; };
+        let in_content = self.focus == Focus::Content;
+
+        let mut items = Vec::new();
+        for (i, section) in spec.sections.iter().enumerate() {
+            let title = match section {
+                Section::KeyValue { title, .. } => title,
+                Section::Table { title, .. } => title,
+                Section::Buttons { title, .. } => title,
+                Section::Text { title, .. } => title,
+            };
+            let is_selected = i == self.content_section;
+            let style = if in_content && is_selected {
+                Style::default().bg(Color::Cyan).fg(Color::Black).bold()
+            } else {
+                Style::default().fg(Color::White)
+            };
+            items.push(ListItem::new(Line::from(Span::styled(
+                format!(" {}", title), style,
+            ))));
+        }
+
+        let border = if in_content { Color::Cyan } else { Color::DarkGray };
+        let domain_label = spec.tab.label_ko.as_deref().unwrap_or(&spec.tab.label);
+        let list = List::new(items).block(
+            Block::default().borders(Borders::ALL)
+                .border_style(Style::default().fg(border))
+                .title(format!(" {} ", domain_label)),
+        );
+        frame.render_widget(list, area);
+    }
+
+    /// 3열: 선택된 섹션 내용만
+    fn render_section_content(&mut self, frame: &mut Frame, area: Rect) {
+        let domain_idx = self.selected_tab - 1;
+        let Some(Some(spec)) = self.specs.get(domain_idx) else { return; };
+        let section_idx = self.content_section.min(spec.sections.len().saturating_sub(1));
+        let Some(section) = spec.sections.get(section_idx) else { return; };
+
+        let domain = &self.domains[domain_idx];
+
+        // output 영역 분할
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(0), Constraint::Length(6)])
+            .split(area);
+
+        // 섹션 렌더
+        widgets::render_section(frame, chunks[0], section, self.focus_button);
+
+        // output
+        if !self.output.is_empty() {
+            frame.render_widget(
+                Paragraph::new(self.output.as_str())
+                    .wrap(ratatui::widgets::Wrap { trim: false })
+                    .block(Block::default().borders(Borders::ALL)
+                        .border_style(Style::default().fg(Color::DarkGray))
+                        .title(" Output ")),
+                chunks[1],
+            );
+        } else {
+            frame.render_widget(
+                Paragraph::new(Span::styled(
+                    format!("  mac run {} --help", domain),
+                    Style::default().fg(Color::DarkGray),
+                )).block(Block::default().borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::DarkGray))),
+                chunks[1],
+            );
         }
     }
 
