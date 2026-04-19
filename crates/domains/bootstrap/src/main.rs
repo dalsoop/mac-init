@@ -190,7 +190,7 @@ fn print_tui_spec() {
     }).collect();
 
     let spec = serde_json::json!({
-        "tab": { "label_ko": "부트스트랩", "label": "Bootstrap", "icon": "🚀" },
+        "tab": { "label_ko": "의존성 설치", "label": "Bootstrap", "icon": "🚀" },
         "group": "system",        "sections": [
             {
                 "kind": "key-value",
@@ -201,9 +201,9 @@ fn print_tui_spec() {
                 "kind": "buttons",
                 "title": "Actions",
                 "items": [
-                    { "label_ko": "부트스트랩", "label": "Install (전체 의존성 설치)", "command": "install", "key": "i" },
-                    { "label_ko": "부트스트랩", "label": "Check (누락분만 설치)", "command": "check", "key": "c" },
-                    { "label_ko": "부트스트랩", "label": "Status (상태 재확인)", "command": "status", "key": "s" }
+                    { "label_ko": "의존성 설치", "label": "Install (전체 의존성 설치)", "command": "install", "key": "i" },
+                    { "label_ko": "의존성 설치", "label": "Check (누락분만 설치)", "command": "check", "key": "c" },
+                    { "label_ko": "의존성 설치", "label": "Status (상태 재확인)", "command": "status", "key": "s" }
                 ]
             }
         ]

@@ -34,7 +34,7 @@ fn main() {
 fn print_tui_spec() {
     let s = keyboard::get_status();
     let spec = serde_json::json!({
-        "tab": { "label_ko": "키보드", "label": "Keyboard", "icon": "⌨" },
+        "tab": { "label_ko": "키보드 재매핑", "label": "Keyboard", "icon": "⌨" },
         "group": "system",        "sections": [
             {
                 "kind": "key-value",
@@ -61,8 +61,8 @@ fn print_tui_spec() {
                 "kind": "buttons",
                 "title": "Actions",
                 "items": [
-                    { "label_ko": "키보드", "label": "Setup (매핑 + LaunchAgent 등록)", "command": "setup", "key": "s" },
-                    { "label_ko": "키보드", "label": "Remove (매핑 + LaunchAgent 삭제)", "command": "remove", "key": "x" }
+                    { "label_ko": "키보드 재매핑", "label": "Setup (매핑 + LaunchAgent 등록)", "command": "setup", "key": "s" },
+                    { "label_ko": "키보드 재매핑", "label": "Remove (매핑 + LaunchAgent 삭제)", "command": "remove", "key": "x" }
                 ]
             },
             {
