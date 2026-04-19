@@ -54,8 +54,10 @@ pub struct App {
     pub focus: Focus,
     /// 다음 틱에서 로드할 도메인 인덱스 (스피너 1프레임 보장)
     pub pending_load: Option<usize>,
-    /// 백그라운드 spec 로딩 채널
+    /// 단일 도메인 백그라운드 로딩
     pub bg_loading: Option<std::sync::mpsc::Receiver<(usize, Option<DomainSpec>)>>,
+    /// 전체 프리로드 채널
+    pub preload_rx: Option<std::sync::mpsc::Receiver<(usize, Option<DomainSpec>)>>,
 }
 
 #[derive(Clone)]
@@ -85,6 +87,7 @@ impl App {
             focus: Focus::Sidebar,
             pending_load: None,
             bg_loading: None,
+            preload_rx: None,
         }
     }
 
@@ -103,11 +106,35 @@ impl App {
         if self.selected_tab > self.domains.len() { self.selected_tab = 0; }
     }
 
-    /// 선택된 도메인 spec 로드 (lazy)
+    /// 선택된 도메인 spec 로드 (lazy + 캐시)
+    /// 한 번 로드하면 refresh 전까지 재호출 안 함.
     pub fn ensure_spec(&mut self, idx: usize) {
         if self.specs[idx].is_none() {
             self.specs[idx] = fetch_spec(&self.domains[idx]);
         }
+    }
+
+    pub fn has_spec(&self, idx: usize) -> bool {
+        self.specs.get(idx).and_then(|s| s.as_ref()).is_some()
+    }
+
+    /// 백그라운드에서 전체 도메인 spec 프리로드. 사이드바는 즉시 표시.
+    pub fn preload_all_specs(&mut self) {
+        use std::sync::mpsc;
+        use std::thread;
+
+        let domains: Vec<(usize, String)> = self.domains.iter().enumerate()
+            .map(|(i, d)| (i, d.clone())).collect();
+        let (tx, rx) = mpsc::channel();
+
+        thread::spawn(move || {
+            for (idx, domain) in domains {
+                let spec = crate::registry::fetch_spec(&domain);
+                let _ = tx.send((idx, spec));
+            }
+        });
+
+        self.preload_rx = Some(rx);
     }
 
     /// 현재 탭의 refresh_interval (초). 0 이면 자동 갱신 없음.
@@ -145,9 +172,15 @@ impl App {
                         }
                         SidebarItem::Domain { idx, .. } => {
                             self.selected_tab = idx + 1;
-                            self.bg_loading = None; // 이전 로딩 취소
-                            self.focus = Focus::Content; self.content_section = 0;
+                            self.bg_loading = None;
+                            self.content_section = 0;
                             self.focus_button = 0;
+                            // 캐시 있으면 즉시 전환, 없으면 스피너
+                            if self.has_spec(idx) {
+                                self.focus = Focus::Content; self.content_section = 0;
+                            } else {
+                                self.focus = Focus::Content; self.content_section = 0;
+                            }
                         }
                         SidebarItem::GroupHeader(_) => {} // 선택 불가
                     }

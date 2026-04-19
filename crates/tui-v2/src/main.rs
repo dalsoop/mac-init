@@ -27,8 +27,9 @@ async fn main() -> Result<()> {
 
     let mut app = App::new();
 
-    // 1차(그룹 목록)에 필요한 것만 빠르게 로드. spec은 나중에.
+    // 사이드바 즉시 표시. spec은 백그라운드에서 전체 프리로드.
     app.load_fast();
+    app.preload_all_specs();
 
     let mut last_refresh = std::time::Instant::now();
 
@@ -52,6 +53,14 @@ async fn main() -> Result<()> {
             if let Ok((idx, spec)) = rx.try_recv() {
                 app.specs[idx] = spec;
                 app.bg_loading = None;
+            }
+        }
+        // 프리로드 결과 수신 (논블로킹, 하나씩)
+        if let Some(ref rx) = app.preload_rx {
+            while let Ok((idx, spec)) = rx.try_recv() {
+                if app.specs[idx].is_none() {
+                    app.specs[idx] = spec;
+                }
             }
         }
 
