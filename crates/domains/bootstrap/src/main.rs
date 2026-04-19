@@ -19,6 +19,10 @@ enum Commands {
     Check,
     /// PATH + alias.sh source 설정 (초기 셋업 or 재설정)
     SetupPath,
+    /// SD 백업 초기 설정 (경로 + 자동백업 + 자동추출)
+    SetupSd,
+    /// 전체 초기 셋업 (의존성 + PATH + SD)
+    SetupAll,
     /// TUI v2 스펙 (JSON)
     TuiSpec,
 }
@@ -125,6 +129,8 @@ fn main() {
         Commands::Install => cmd_install(),
         Commands::Check => cmd_check(),
         Commands::SetupPath => cmd_setup_path(),
+        Commands::SetupSd => cmd_setup_sd(),
+        Commands::SetupAll => { cmd_install(); cmd_setup_path(); cmd_setup_sd(); },
         Commands::TuiSpec => print_tui_spec(),
     }
 }
@@ -184,6 +190,36 @@ fn cmd_setup_path() {
     println!("  mac-tui, mac-domain-* 등이 바로 실행 가능해짐.");
 }
 
+fn cmd_setup_sd() {
+    use std::fs;
+    use std::path::PathBuf;
+
+    println!("=== SD 백업 초기 설정 ===\n");
+
+    let sd_bin = PathBuf::from(home()).join(".mac-app-init/domains/mac-domain-sd-backup");
+    if !sd_bin.exists() {
+        eprintln!("✗ sd-backup 도메인 미설치. `mac install sd-backup` 먼저.");
+        return;
+    }
+
+    // 1. 로컬 백업 경로
+    let backup_dir = format!("{}/Documents/WORK/미디어/SD백업", home());
+    let _ = fs::create_dir_all(&backup_dir);
+    let _ = Command::new(&sd_bin).args(["set-target", &backup_dir]).status();
+
+    // 2. 자동 백업 on
+    let _ = Command::new(&sd_bin).args(["auto", "on"]).status();
+
+    // 3. 자동 추출 on
+    let _ = Command::new(&sd_bin).args(["eject", "on"]).status();
+
+    println!("\n=== SD 백업 설정 완료 ===");
+    println!("  로컬 경로: {}", backup_dir);
+    println!("  자동 백업: ✓ (30초마다 스캔)");
+    println!("  자동 추출: ✓ (백업 후 SD 안전 추출)");
+    println!("  NAS 동기화: 꺼짐 (LAN 환경에서 `mac run sd-backup sync on`)");
+}
+
 fn print_tui_spec() {
     let items: Vec<serde_json::Value> = DEPS.iter().map(|dep| {
         let ver = check_installed(dep);
@@ -210,9 +246,12 @@ fn print_tui_spec() {
                 "kind": "buttons",
                 "title": "Actions",
                 "items": [
-                    { "label_ko": "의존성 설치", "label": "Install (전체 의존성 설치)", "command": "install", "key": "i" },
-                    { "label_ko": "의존성 설치", "label": "Check (누락분만 설치)", "command": "check", "key": "c" },
-                    { "label_ko": "의존성 설치", "label": "Status (상태 재확인)", "command": "status", "key": "s" }
+                    { "label": "Install (전체 의존성)", "command": "install", "key": "i" },
+                    { "label": "Check (누락분만)", "command": "check", "key": "c" },
+                    { "label": "Setup PATH", "command": "setup-path", "key": "p" },
+                    { "label": "Setup SD", "command": "setup-sd", "key": "d" },
+                    { "label": "Setup All (전체)", "command": "setup-all", "key": "a" },
+                    { "label": "Status", "command": "status", "key": "s" }
                 ]
             }
         ]
