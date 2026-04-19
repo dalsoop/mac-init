@@ -9,6 +9,7 @@ const GROUPS: &[(&str, &str)] = &[
     ("infra",  "인프라"),
     ("auto",   "자동화"),
     ("dev",    "개발"),
+    ("finder", "Finder"),
     ("system", "시스템"),
     ("other",  "기타"),
 ];
@@ -18,8 +19,9 @@ fn default_group(domain: &str) -> &'static str {
     match domain {
         "mount" | "env" | "host" | "network" | "ssh" | "proxmox" | "synology" => "infra",
         "cron" | "files" | "projects" | "worktree" => "auto",
-        "git" | "vscode" | "container" | "quickaction" => "dev",
-        "keyboard" | "shell" | "defaults" | "dotfiles" | "bootstrap" | "wireguard" => "system",
+        "git" | "vscode" | "container" => "dev",
+        "quickaction" => "finder",
+        "keyboard" | "shell" | "bootstrap" | "wireguard" => "system",
         _ => "other",
     }
 }

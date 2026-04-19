@@ -818,24 +818,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mac-domain-defaults"
-version = "0.1.0"
-dependencies = [
- "clap",
- "mac-host-core",
- "serde_json",
-]
-
-[[package]]
-name = "mac-domain-dotfiles"
-version = "0.1.0"
-dependencies = [
- "clap",
- "mac-host-core",
- "serde_json",
-]
-
-[[package]]
 name = "mac-domain-env"
 version = "0.1.0"
 dependencies = [

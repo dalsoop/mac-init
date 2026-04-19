@@ -112,7 +112,7 @@ fn asset_name(domain: &str) -> String {
 
 fn known_domains() -> Vec<&'static str> {
     vec![
-        "bootstrap", "keyboard", "connect", "container", "cron", "defaults", "dotfiles", "git", "quickaction", "vscode", "wireguard",
+        "bootstrap", "keyboard", "container", "cron", "git", "quickaction", "vscode", "wireguard",
         "files", "projects", "worktree",
         // infra domains (available but not installed by default)
         "mount", "network", "ssh", "proxmox", "synology",
