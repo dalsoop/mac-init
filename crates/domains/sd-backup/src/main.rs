@@ -21,6 +21,15 @@ enum Commands {
     Run,
     /// 백업 대상 경로 설정
     SetTarget { path: String },
+    /// 자동 감지 모드 on/off (30초마다 /Volumes/ 스캔)
+    Auto {
+        /// on | off | status
+        toggle: String,
+    },
+    /// 감시 루프 (LaunchAgent 에서 호출 — 내부용)
+    Watch,
+    /// 현재 백업 진행률 조회
+    Progress,
     /// 기기 프로필 목록
     Devices,
     /// 백업 이력 조회
@@ -35,6 +44,9 @@ fn main() {
         Commands::Status => cmd_status(),
         Commands::Run => cmd_run(),
         Commands::SetTarget { path } => cmd_set_target(&path),
+        Commands::Auto { toggle } => cmd_auto(&toggle),
+        Commands::Watch => cmd_watch(),
+        Commands::Progress => cmd_progress(),
         Commands::Devices => cmd_devices(),
         Commands::History => cmd_history(),
         Commands::TuiSpec => print_tui_spec(),
@@ -58,6 +70,22 @@ struct Config {
     /// 제외 확장자
     #[serde(default)]
     exclude_extensions: Vec<String>,
+    /// 자동 감지 모드 (SD 꽂으면 자동 백업)
+    #[serde(default)]
+    auto_enabled: bool,
+}
+
+/// 백업 진행 상태 (실시간 파일)
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct ProgressState {
+    running: bool,
+    device: String,
+    current_file: String,
+    files_done: usize,
+    files_total: usize,
+    bytes_done: u64,
+    bytes_total: u64,
+    started_at: String,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -97,6 +125,28 @@ fn load_history() -> BackupHistory {
 fn save_history(h: &BackupHistory) {
     let p = history_path();
     let _ = fs::write(&p, serde_json::to_string_pretty(h).unwrap_or_default());
+}
+
+fn progress_path() -> PathBuf { PathBuf::from(home()).join(".mac-app-init/sd-backup-progress.json") }
+
+const LAUNCH_LABEL: &str = "com.mac-app-init.sd-backup-watch";
+
+fn plist_path() -> PathBuf {
+    PathBuf::from(home()).join(format!("Library/LaunchAgents/{}.plist", LAUNCH_LABEL))
+}
+
+fn save_progress(p: &ProgressState) {
+    let _ = fs::write(progress_path(), serde_json::to_string_pretty(p).unwrap_or_default());
+}
+
+fn load_progress() -> ProgressState {
+    let p = progress_path();
+    if !p.exists() { return ProgressState::default(); }
+    serde_json::from_str(&fs::read_to_string(&p).unwrap_or_default()).unwrap_or_default()
+}
+
+fn clear_progress() {
+    let _ = fs::remove_file(progress_path());
 }
 
 fn expand(p: &str) -> String {
@@ -331,8 +381,25 @@ fn cmd_run() {
             by_date.entry(date).or_default().push(f.clone());
         }
 
+        // 대상 파일 수 카운트 (skip 포함해서 전체 기준)
+        let eligible_files: Vec<PathBuf> = by_date.values().flatten().cloned().collect();
+        let files_total = eligible_files.len();
+        let bytes_total: u64 = eligible_files.iter()
+            .map(|f| fs::metadata(f).map(|m| m.len()).unwrap_or(0)).sum();
+
+        // progress 초기화
+        save_progress(&ProgressState {
+            running: true,
+            device: card.device_type.clone(),
+            current_file: String::new(),
+            files_done: 0, files_total,
+            bytes_done: 0, bytes_total,
+            started_at: now_str(),
+        });
+
         let mut total_copied = 0usize;
         let mut total_bytes = 0u64;
+        let mut files_processed = 0usize;
 
         let mut dates: Vec<String> = by_date.keys().cloned().collect();
         dates.sort();
@@ -347,23 +414,48 @@ fn cmd_run() {
             let mut day_copied = 0;
             for src in files {
                 let fname = src.file_name().unwrap_or_default();
-                let dst = dest.join(fname);
+                let fname_str = fname.to_string_lossy().to_string();
+                files_processed += 1;
+
+                let dst = dest.join(&fname);
                 if dst.exists() {
-                    // 이미 있으면 크기 비교 — 같으면 skip
                     let src_size = fs::metadata(src).map(|m| m.len()).unwrap_or(0);
                     let dst_size = fs::metadata(&dst).map(|m| m.len()).unwrap_or(0);
-                    if src_size == dst_size { continue; }
+                    if src_size == dst_size {
+                        total_bytes += src_size;
+                        // progress 갱신 (skip 도 진행률에 반영)
+                        save_progress(&ProgressState {
+                            running: true,
+                            device: card.device_type.clone(),
+                            current_file: format!("(skip) {}", fname_str),
+                            files_done: files_processed, files_total,
+                            bytes_done: total_bytes, bytes_total,
+                            started_at: String::new(),
+                        });
+                        continue;
+                    }
                 }
-                // rsync 로 복사 (progress + resume 가능)
+
+                // progress 갱신
+                save_progress(&ProgressState {
+                    running: true,
+                    device: card.device_type.clone(),
+                    current_file: fname_str.clone(),
+                    files_done: files_processed, files_total,
+                    bytes_done: total_bytes, bytes_total,
+                    started_at: String::new(),
+                });
+
                 let status = Command::new("rsync")
                     .args(["-a", "--progress"])
                     .arg(src)
                     .arg(&dest)
                     .status();
+                let file_size = fs::metadata(src).map(|m| m.len()).unwrap_or(0);
                 match status {
                     Ok(s) if s.success() => {
                         day_copied += 1;
-                        total_bytes += fs::metadata(src).map(|m| m.len()).unwrap_or(0);
+                        total_bytes += file_size;
                     }
                     _ => eprintln!("  ✗ 복사 실패: {}", src.display()),
                 }
@@ -391,6 +483,14 @@ fn cmd_run() {
         }
     }
     save_history(&history);
+    clear_progress();
+
+    // macOS 알림
+    let total_cards = cards.len();
+    let msg = format!("SD 백업 완료 ({}개 카드)", total_cards);
+    let _ = Command::new("osascript")
+        .args(["-e", &format!("display notification \"{}\" with title \"mac-app-init\"", msg)])
+        .output();
 }
 
 fn collect_media_files(dcim: &Path) -> Vec<PathBuf> {
@@ -406,6 +506,124 @@ fn collect_media_files(dcim: &Path) -> Vec<PathBuf> {
     walk(dcim, &mut files);
     files.sort();
     files
+}
+
+fn cmd_auto(toggle: &str) {
+    let mut cfg = load_config();
+    match toggle.to_lowercase().as_str() {
+        "on" | "true" => {
+            cfg.auto_enabled = true;
+            save_config(&cfg);
+            install_launchagent();
+            println!("✓ SD 자동 백업 켜짐 (30초마다 스캔)");
+        }
+        "off" | "false" => {
+            cfg.auto_enabled = false;
+            save_config(&cfg);
+            uninstall_launchagent();
+            println!("✓ SD 자동 백업 꺼짐");
+        }
+        "status" => {
+            println!("자동 백업: {}", if cfg.auto_enabled { "켜짐" } else { "꺼짐" });
+            println!("LaunchAgent: {}", if plist_path().exists() { "✓ 등록" } else { "✗ 미등록" });
+        }
+        _ => {
+            eprintln!("사용법: sd-backup auto <on|off|status>");
+            std::process::exit(1);
+        }
+    }
+}
+
+fn install_launchagent() {
+    let bin = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("mac-domain-sd-backup"));
+    let log_dir = format!("{}/문서/시스템/로그", home());
+    let _ = fs::create_dir_all(&log_dir);
+
+    let plist = format!(r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{label}</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:{home}/.cargo/bin:{home}/.mac-app-init/domains</string>
+        <key>HOME</key>
+        <string>{home}</string>
+    </dict>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{bin}</string>
+        <string>watch</string>
+    </array>
+    <key>StartInterval</key>
+    <integer>30</integer>
+    <key>StandardOutPath</key>
+    <string>{log}/sd-backup.log</string>
+    <key>StandardErrorPath</key>
+    <string>{log}/sd-backup.log</string>
+</dict>
+</plist>
+"#, label=LAUNCH_LABEL, bin=bin.display(), home=home(), log=log_dir);
+
+    let path = plist_path();
+    if let Some(p) = path.parent() { let _ = fs::create_dir_all(p); }
+    let _ = fs::write(&path, plist);
+    let _ = Command::new("launchctl").args(["unload", &path.to_string_lossy()]).output();
+    let _ = Command::new("launchctl").args(["load", &path.to_string_lossy()]).output();
+}
+
+fn uninstall_launchagent() {
+    let path = plist_path();
+    if path.exists() {
+        let _ = Command::new("launchctl").args(["unload", &path.to_string_lossy()]).output();
+        let _ = fs::remove_file(&path);
+    }
+}
+
+/// LaunchAgent 에서 30초마다 호출. SD 감지 시 자동 백업.
+fn cmd_watch() {
+    let cfg = load_config();
+    if !cfg.auto_enabled { return; }
+    if cfg.backup_target.is_empty() { return; }
+
+    // 이미 백업 진행 중이면 skip
+    let prog = load_progress();
+    if prog.running { return; }
+
+    let cards = detect_cards();
+    if cards.is_empty() { return; }
+
+    // 백업 대상 경로 존재 확인
+    let target = PathBuf::from(expand(&cfg.backup_target));
+    if !target.exists() {
+        // NAS 마운트 안 됐으면 그냥 skip (다음 30초에 재시도)
+        return;
+    }
+
+    // SD 감지됨 + 백업 대상 접근 가능 → 자동 백업 실행
+    println!("[{}] SD 감지 → 자동 백업 시작", now_str());
+    cmd_run();
+}
+
+fn cmd_progress() {
+    let prog = load_progress();
+    if !prog.running {
+        println!("백업 진행 중 아님.");
+        return;
+    }
+    let pct = if prog.bytes_total > 0 {
+        (prog.bytes_done as f64 / prog.bytes_total as f64 * 100.0) as u32
+    } else { 0 };
+    println!("=== 백업 진행 중 ===\n");
+    println!("기기  : {}", prog.device);
+    println!("파일  : {}/{}", prog.files_done, prog.files_total);
+    println!("용량  : {} / {} ({}%)", human_bytes(prog.bytes_done), human_bytes(prog.bytes_total), pct);
+    println!("현재  : {}", prog.current_file);
+    if !prog.started_at.is_empty() {
+        println!("시작  : {}", prog.started_at);
+    }
 }
 
 fn cmd_devices() {
@@ -458,6 +676,13 @@ fn print_tui_spec() {
         .map(|e| format!("{} | {} | {}개", e.timestamp, e.device, e.files_copied))
         .unwrap_or_else(|| "없음".into());
 
+    // 진행 상태
+    let prog = load_progress();
+    let prog_info = if prog.running {
+        let pct = if prog.bytes_total > 0 { (prog.bytes_done as f64 / prog.bytes_total as f64 * 100.0) as u32 } else { 0 };
+        format!("▶ 백업 중 ({}/{} 파일, {}%) — {}", prog.files_done, prog.files_total, pct, prog.current_file)
+    } else { "대기 중".into() };
+
     let spec = serde_json::json!({
         "tab": { "label_ko": "SD 미디어 백업", "label": "SD Backup", "icon": "📸" },
         "group": "auto",
@@ -469,6 +694,10 @@ fn print_tui_spec() {
                     { "key": "SD 카드", "value": card_info, "status": if cards.is_empty() { "warn" } else { "ok" } },
                     { "key": "백업 대상", "value": format!("{} ({})", cfg.backup_target, target_status),
                       "status": if cfg.backup_target.is_empty() { "error" } else { "ok" } },
+                    { "key": "자동 백업", "value": if cfg.auto_enabled { "✓ 켜짐 (30초 스캔)" } else { "꺼짐" },
+                      "status": if cfg.auto_enabled { "ok" } else { "warn" } },
+                    { "key": "진행 상태", "value": prog_info,
+                      "status": if prog.running { "ok" } else { "warn" } },
                     { "key": "LRF 포함", "value": if cfg.include_lrf { "예" } else { "아니오" }, "status": "ok" },
                     { "key": "최근 백업", "value": last_backup, "status": "ok" },
                 ]
@@ -478,7 +707,11 @@ fn print_tui_spec() {
                 "title": "Actions",
                 "items": [
                     { "label": "Status", "command": "status", "key": "s" },
-                    { "label": "Run (백업 실행)", "command": "run", "key": "r" },
+                    { "label": "Run (수동 백업)", "command": "run", "key": "r" },
+                    { "label": "Progress (진행률)", "command": "progress", "key": "p" },
+                    { "label": if cfg.auto_enabled { "Auto OFF" } else { "Auto ON" },
+                      "command": if cfg.auto_enabled { "auto off" } else { "auto on" },
+                      "key": "a" },
                     { "label": "History (이력)", "command": "history", "key": "h" },
                     { "label": "Devices (기기 목록)", "command": "devices", "key": "v" },
                 ]
@@ -486,7 +719,7 @@ fn print_tui_spec() {
             {
                 "kind": "text",
                 "title": "안내",
-                "content": "  mac run sd-backup set-target ~/NAS/synology/works/백업\n  mac run sd-backup run\n\n  기기별·날짜별 자동 분류:\n    <백업대상>/<기기명>/<YYYY-MM-DD>/파일들"
+                "content": "  mac run sd-backup set-target ~/NAS/synology/works/백업\n  mac run sd-backup auto on       # SD 꽂으면 자동 백업\n  mac run sd-backup run            # 수동 백업\n  mac run sd-backup progress       # 진행률\n\n  기기별·날짜별 자동 분류:\n    <백업대상>/<기기명>/<YYYY-MM-DD>/파일들"
             }
         ]
     });
