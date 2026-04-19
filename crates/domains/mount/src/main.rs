@@ -82,12 +82,12 @@ fn home() -> String {
     std::env::var("HOME").unwrap_or_else(|_| "/tmp".into())
 }
 
-/// 통합 마운트 루트 (~/NAS)
+/// 통합 마운트 루트 (~/Documents/WORK/NAS)
 fn nas_root() -> PathBuf {
-    PathBuf::from(home()).join("NAS")
+    PathBuf::from(home()).join("Documents/WORK/NAS")
 }
 
-/// 마운트 포인트: ~/NAS/<conn>/<share>
+/// 마운트 포인트: ~/Documents/WORK/NAS/<conn>/<share>
 fn mount_point(connection: &str, share: &str) -> PathBuf {
     nas_root().join(connection).join(share)
 }
