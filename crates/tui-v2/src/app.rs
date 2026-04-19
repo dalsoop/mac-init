@@ -43,6 +43,8 @@ pub struct App {
     pub install_area_top: u16,
     pub selected_tab: usize,            // 0 = Install, 1+ = 도메인 (flat index)
     pub focus_button: usize,
+    /// 콘텐츠 내 현재 포커스된 섹션 인덱스
+    pub content_section: usize,
     pub output: String,
     pub sidebar_entries: Vec<SidebarEntry>,
     /// 사이드바 커서 위치 (sidebar_entries 인덱스)
@@ -74,6 +76,7 @@ impl App {
             install_area_top: 0,
             selected_tab: 0,
             focus_button: 0,
+            content_section: 0,
             output: String::new(),
             sidebar_entries: Vec::new(),
             sidebar_cursor: 0,
@@ -126,7 +129,7 @@ impl App {
             }
             KeyCode::Right | KeyCode::Char('l') | KeyCode::Tab => {
                 // 뎁스 이동: 사이드바 → 콘텐츠
-                self.focus = Focus::Content;
+                self.focus = Focus::Content; self.content_section = 0;
                 self.focus_button = 0;
             }
             KeyCode::Enter => {
@@ -143,12 +146,12 @@ impl App {
                         }
                         SidebarEntry::Install => {
                             self.selected_tab = 0;
-                            self.focus = Focus::Content;
+                            self.focus = Focus::Content; self.content_section = 0;
                             self.focus_button = 0;
                         }
                         SidebarEntry::Domain { idx, .. } => {
                             self.selected_tab = idx + 1;
-                            self.focus = Focus::Content;
+                            self.focus = Focus::Content; self.content_section = 0;
                             self.focus_button = 0;
                         }
                     }
@@ -160,9 +163,25 @@ impl App {
 
     fn handle_content_key(&mut self, key: KeyEvent) {
         match key.code {
-            KeyCode::Left | KeyCode::Char('h') | KeyCode::BackTab => {
-                // 뎁스 이동: 콘텐츠 → 사이드바
+            KeyCode::Left | KeyCode::Char('h') => {
                 self.focus = Focus::Sidebar;
+                return;
+            }
+            KeyCode::Tab => {
+                // 콘텐츠 내 섹션 이동 (다음)
+                let max = self.current_section_count();
+                if max > 0 {
+                    self.content_section = (self.content_section + 1) % max;
+                    self.focus_button = 0;
+                }
+                return;
+            }
+            KeyCode::BackTab => {
+                let max = self.current_section_count();
+                if max > 0 {
+                    self.content_section = (self.content_section + max - 1) % max;
+                    self.focus_button = 0;
+                }
                 return;
             }
             _ => {}
@@ -194,6 +213,15 @@ impl App {
                 _ => {}
             }
         }
+    }
+
+    fn current_section_count(&self) -> usize {
+        if self.selected_tab == 0 { return 1; }
+        let idx = self.selected_tab - 1;
+        self.specs.get(idx)
+            .and_then(|s| s.as_ref())
+            .map(|s| s.sections.len())
+            .unwrap_or(1)
     }
 
     fn build_sidebar(&mut self) {
@@ -487,12 +515,12 @@ impl App {
                     match entry {
                         SidebarEntry::Install => {
                             self.selected_tab = 0;
-                            self.focus = Focus::Content;
+                            self.focus = Focus::Content; self.content_section = 0;
                             self.focus_button = 0;
                         }
                         SidebarEntry::Domain { idx, .. } => {
                             self.selected_tab = idx + 1;
-                            self.focus = Focus::Content;
+                            self.focus = Focus::Content; self.content_section = 0;
                             self.focus_button = 0;
                         }
                         SidebarEntry::GroupHeader { group_id, .. } => {

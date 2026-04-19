@@ -41,23 +41,42 @@ fn main() {
 }
 
 fn print_tui_spec() {
+    use std::path::PathBuf;
+    let home = std::env::var("HOME").unwrap_or_default();
+    let dl = PathBuf::from(&home).join("Downloads");
+    let dl_count = std::fs::read_dir(&dl).map(|it| it.count()).unwrap_or(0);
+    let tmp = PathBuf::from(&home).join("Documents/WORK/임시");
+    let tmp_count = std::fs::read_dir(&tmp).map(|it| it.count()).unwrap_or(0);
+    let auto_plist = PathBuf::from(&home).join("Library/LaunchAgents/com.mac-host.file-organizer.plist");
+    let auto_on = auto_plist.exists();
+
     let spec = serde_json::json!({
         "tab": { "label_ko": "파일정리", "label": "Files", "icon": "📁" },
-        "refresh_interval": 30, "group": "auto",        "sections": [
+        "refresh_interval": 30, "group": "auto",
+        "sections": [
             {
-                "kind": "text",
-                "title": "설명",
-                "content": "Downloads 자동 분류, 임시 폴더 정리, lint 유틸리티.\nSD 백업은 별도 도메인 (SD 미디어 백업) 참조."
+                "kind": "key-value",
+                "title": "상태",
+                "items": [
+                    { "key": "Downloads", "value": format!("{}개 파일", dl_count),
+                      "status": if dl_count > 20 { "warn" } else { "ok" } },
+                    { "key": "임시 폴더", "value": format!("{}개 파일", tmp_count),
+                      "status": if tmp_count > 10 { "warn" } else { "ok" } },
+                    { "key": "자동 정리", "value": if auto_on { "✓ 켜짐" } else { "꺼짐" },
+                      "status": if auto_on { "ok" } else { "warn" } },
+                ]
             },
             {
                 "kind": "buttons",
                 "title": "Actions",
                 "items": [
-                    { "label_ko": "파일정리", "label": "Status (파일 관리 상태)", "command": "status", "key": "s" },
-                    { "label_ko": "파일정리", "label": "Organize (Downloads 자동 분류)", "command": "organize", "key": "o" },
-                    { "label_ko": "파일정리", "label": "Cleanup Temp (임시 정리)", "command": "cleanup-temp", "key": "c" },
-                    { "label_ko": "파일정리", "label": "Setup Auto (자동화 활성화)", "command": "setup-auto", "key": "a" },
-                    { "label_ko": "파일정리", "label": "Lint (파일 lint)", "command": "lint", "key": "l" }
+                    { "label": "Status (상세)", "command": "status", "key": "s" },
+                    { "label": "Organize (정리 실행)", "command": "organize", "key": "o" },
+                    { "label": "Cleanup Temp", "command": "cleanup-temp", "key": "c" },
+                    { "label": if auto_on { "자동정리 OFF" } else { "자동정리 ON" },
+                      "command": if auto_on { "disable-auto" } else { "setup-auto" },
+                      "key": "a" },
+                    { "label": "Lint", "command": "lint", "key": "l" }
                 ]
             }
         ]
