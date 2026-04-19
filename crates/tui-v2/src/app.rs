@@ -52,6 +52,8 @@ pub struct App {
     /// 1열 커서 (선택 가능 항목만 이동)
     pub sidebar_cursor: usize,
     pub focus: Focus,
+    /// 다음 틱에서 로드할 도메인 인덱스 (스피너 1프레임 보장)
+    pub pending_load: Option<usize>,
 }
 
 #[derive(Clone)]
@@ -79,6 +81,7 @@ impl App {
             sidebar_items: Vec::new(),
             sidebar_cursor: 0,
             focus: Focus::Sidebar,
+            pending_load: None,
         }
     }
 
@@ -98,7 +101,7 @@ impl App {
     }
 
     /// 선택된 도메인 spec 로드 (lazy)
-    fn ensure_spec(&mut self, idx: usize) {
+    pub fn ensure_spec(&mut self, idx: usize) {
         if self.specs[idx].is_none() {
             self.specs[idx] = fetch_spec(&self.domains[idx]);
         }
@@ -138,10 +141,9 @@ impl App {
                             self.focus_button = 0;
                         }
                         SidebarItem::Domain { idx, .. } => {
+                            // selected_tab만 설정. spec은 다음 프레임에서 lazy 로드.
+                            // render_content에서 spec 없으면 스피너 표시 → 다음 틱에서 로드.
                             self.selected_tab = idx + 1;
-                            self.output = "로딩 중...".into();
-                            self.ensure_spec(idx);
-                            self.output = String::new();
                             self.focus = Focus::Content; self.content_section = 0;
                             self.focus_button = 0;
                         }
@@ -372,7 +374,12 @@ impl App {
             if let Some(Some(spec)) = self.specs.get(domain_idx) {
                 self.render_domain(frame, area, spec);
             } else {
+                // 스피너 표시 후 다음 틱에서 로드
                 self.render_no_spec(frame, area);
+                // 로드 예약 (렌더 후 실행)
+                if domain_idx < self.domains.len() && self.specs[domain_idx].is_none() {
+                    self.pending_load = Some(domain_idx);
+                }
             }
         }
     }

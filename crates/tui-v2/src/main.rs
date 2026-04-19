@@ -35,6 +35,11 @@ async fn main() -> Result<()> {
     while !app.should_quit {
         terminal.draw(|f| app.render(f))?;
 
+        // pending_load: 스피너 프레임 후 spec 로드
+        if let Some(idx) = app.pending_load.take() {
+            app.ensure_spec(idx);
+        }
+
         // 자동 갱신: 현재 탭의 refresh_interval 체크
         let refresh_secs = app.current_refresh_interval();
         if refresh_secs > 0 && last_refresh.elapsed().as_secs() >= refresh_secs as u64 {
