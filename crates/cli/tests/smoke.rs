@@ -1,17 +1,14 @@
 //! CLI 스모크 테스트 — pre-push 훅의 `cargo test` 게이트가 실제 의미를 갖도록.
-//!
-//! 도메인을 **직접 호출**하지 않고 Cargo가 빌드한 바이너리에 `std::process::Command`로
-//! 접근. 템플릿 유저가 새 도메인을 추가했을 때 기본 CLI가 여전히 동작하는지 확인.
 
 use std::process::Command;
 
-fn mac-dev-ssl_cmd() -> Command {
+fn cli_cmd() -> Command {
     Command::new(env!("CARGO_BIN_EXE_mac-dev-ssl"))
 }
 
 #[test]
 fn list_runs_and_exits_zero() {
-    let out = mac-dev-ssl_cmd()
+    let out = cli_cmd()
         .arg("list")
         .output()
         .expect("mac-dev-ssl 바이너리 실행 실패");
@@ -20,7 +17,7 @@ fn list_runs_and_exits_zero() {
 
 #[test]
 fn doctor_runs_and_reports_domains() {
-    let out = mac-dev-ssl_cmd()
+    let out = cli_cmd()
         .arg("doctor")
         .output()
         .expect("mac-dev-ssl 바이너리 실행 실패");
@@ -33,21 +30,15 @@ fn doctor_runs_and_reports_domains() {
 }
 
 #[test]
-fn hello_greets_named_target() {
+fn cert_status_runs() {
     let bin = env!("CARGO_BIN_EXE_mac-dev-ssl");
-    let hello = bin.replace("mac-dev-ssl", "mac-dev-ssl-hello");
-    if !std::path::Path::new(&hello).exists() {
-        // hello 도메인이 제거된 템플릿 파생본에서는 조용히 skip.
+    let cert = bin.replace("mac-dev-ssl", "mac-dev-ssl-cert");
+    if !std::path::Path::new(&cert).exists() {
         return;
     }
-    let out = Command::new(&hello)
-        .args(["greet", "Claude"])
+    let out = Command::new(&cert)
+        .arg("status")
         .output()
-        .expect("mac-dev-ssl-hello 실행 실패");
+        .expect("mac-dev-ssl-cert 실행 실패");
     assert!(out.status.success());
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(
-        stdout.contains("Claude"),
-        "hello greet 출력에 인자(Claude)가 없음: {stdout}"
-    );
 }
