@@ -318,6 +318,24 @@ fn detect_canon(dcim: &Path, vol_name: &str) -> String {
     "Canon".into()
 }
 
+/// tui-spec 용 초경량 감지: /Volumes/ 에 DCIM 있는지만. 파일 스캔 안 함.
+fn detect_cards_light() -> String {
+    let volumes = Path::new("/Volumes");
+    let Ok(entries) = fs::read_dir(volumes) else { return "미감지".into(); };
+    let skip = ["Macintosh HD", "Preboot", "Recovery", "VM", "Data"];
+    let mut found = Vec::new();
+    for entry in entries.filter_map(|e| e.ok()) {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if skip.iter().any(|s| name == *s) { continue; }
+        let vol = entry.path();
+        if vol.join("DCIM").exists() {
+            let device = detect_device_type(&vol);
+            found.push(format!("{} ({})", name, device));
+        }
+    }
+    if found.is_empty() { "미감지".into() } else { found.join(", ") }
+}
+
 fn count_media(dcim: &Path) -> (usize, u64) {
     let mut count = 0usize;
     let mut bytes = 0u64;
@@ -955,25 +973,12 @@ fn cmd_history() {
 
 fn print_tui_spec() {
     let cfg = load_config();
-    let cards = detect_cards();
     let hist = load_history();
 
-    let (card_info, diff_info) = if cards.is_empty() {
-        ("미감지".into(), String::new())
-    } else {
-        let info = cards.iter().map(|c| format!("{} ({}개, {})", c.device_type, c.file_count, human_bytes(c.total_bytes)))
-            .collect::<Vec<_>>().join(", ");
-        let diff = if !cfg.backup_target.is_empty() {
-            cards.iter().filter_map(|c| {
-                let dcim = c.dcim_path.as_ref()?;
-                let (new_c, new_b, exist) = diff_analysis(dcim, &cfg, &c.device_type);
-                if new_c == 0 { Some("✓ 백업 완료 (새 파일 없음)".into()) }
-                else if exist > 0 { Some(format!("⚡ 추가 {}개 ({}) — 기존 {}개 skip", new_c, human_bytes(new_b), exist)) }
-                else { Some(format!("📸 새 SD — {}개 백업 필요", new_c)) }
-            }).collect::<Vec<_>>().join(", ")
-        } else { String::new() };
-        (info, diff)
-    };
+    // tui-spec 은 가볍게 — SD 파일 스캔 안 함 (detect_cards/diff_analysis 호출 금지).
+    // 5초마다 refresh 되므로 무거운 작업은 status/run 에서만.
+    let card_info = detect_cards_light();
+    let diff_info = String::new(); // 차분은 status 에서만
 
     let target_status = if cfg.backup_target.is_empty() { "미설정" }
         else if Path::new(&expand(&cfg.backup_target)).exists() { "✓ 접근 가능" }
@@ -1004,10 +1009,8 @@ fn print_tui_spec() {
                 "kind": "key-value",
                 "title": "감지",
                 "items": [
-                    { "key": "SD 카드", "value": card_info,
-                      "status": if cards.is_empty() { "warn" } else { "ok" } },
-                    { "key": "백업 상태", "value": if diff_info.is_empty() { "—" } else { &diff_info },
-                      "status": if diff_info.contains("완료") { "ok" } else if diff_info.contains("추가") || diff_info.contains("새") { "warn" } else { "ok" } },
+                    { "key": "SD 카드", "value": &card_info,
+                      "status": if card_info == "미감지" { "warn" } else { "ok" } },
                     { "key": "진행 상태", "value": prog_info,
                       "status": if prog.running { "ok" } else { "warn" } },
                     { "key": "최근 백업", "value": last_backup, "status": "ok" },
