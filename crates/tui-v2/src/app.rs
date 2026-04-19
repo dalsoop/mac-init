@@ -89,6 +89,16 @@ impl App {
         }
     }
 
+    /// 1차 그룹 목록에 필요한 것만 빠르게. spec은 lazy.
+    pub fn load_fast(&mut self) {
+        self.domains = installed_domains();
+        // spec은 None으로 초기화 — 그룹 진입 시 로드
+        self.specs = vec![None; self.domains.len()];
+        self.available = available_domains();
+        self.build_groups();
+    }
+
+    /// 전체 reload (r 키, refresh 등)
     pub fn load(&mut self) {
         self.domains = installed_domains();
         self.specs = self.domains.iter().map(|d| fetch_spec(d)).collect();
@@ -99,6 +109,16 @@ impl App {
         }
         if self.install_focus >= self.available.len() {
             self.install_focus = self.available.len().saturating_sub(1);
+        }
+    }
+
+    /// 그룹 진입 시 해당 그룹 도메인 spec만 로드
+    fn load_group_specs(&mut self, group_idx: usize) {
+        let Some(g) = self.groups.get(group_idx) else { return; };
+        for (di, _, _) in &g.domains {
+            if self.specs[*di].is_none() {
+                self.specs[*di] = fetch_spec(&self.domains[*di]);
+            }
         }
     }
 
@@ -130,7 +150,9 @@ impl App {
                 if self.group_cursor + 1 < self.groups.len() { self.group_cursor += 1; }
             }
             KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
-                // 그룹 진입 → 도메인 목록
+                // 그룹 진입 → 해당 그룹 spec lazy 로드 → 도메인 목록
+                self.load_group_specs(self.group_cursor);
+                self.build_groups(); // label 갱신
                 self.focus = Focus::Domains;
                 self.domain_cursor = 0;
             }
@@ -533,6 +555,8 @@ impl App {
                     Focus::Groups => {
                         if row < self.groups.len() {
                             self.group_cursor = row;
+                            self.load_group_specs(self.group_cursor);
+                            self.build_groups();
                             self.focus = Focus::Domains;
                             self.domain_cursor = 0;
                         }

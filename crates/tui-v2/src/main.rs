@@ -26,7 +26,9 @@ async fn main() -> Result<()> {
     terminal.clear()?;
 
     let mut app = App::new();
-    app.load();
+
+    // 1차(그룹 목록)에 필요한 것만 빠르게 로드. spec은 나중에.
+    app.load_fast();
 
     let mut last_refresh = std::time::Instant::now();
 
