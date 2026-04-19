@@ -23,8 +23,29 @@ enum Commands {
     SetupSd,
     /// 전체 초기 셋업 (의존성 + PATH + SD)
     SetupAll,
+    /// 시스템 LaunchAgent 관리
+    Agent {
+        #[command(subcommand)]
+        action: AgentAction,
+    },
     /// TUI v2 스펙 (JSON)
     TuiSpec,
+}
+
+#[derive(Subcommand)]
+enum AgentAction {
+    /// 전체 LaunchAgent 목록
+    List,
+    /// 상세 정보
+    Info { label: String },
+    /// 로드 (시작)
+    Load { label: String },
+    /// 언로드 (정지)
+    Unload { label: String },
+    /// 재시작
+    Restart { label: String },
+    /// 로그 확인
+    Logs { label: String },
 }
 
 struct Dep {
@@ -131,6 +152,14 @@ fn main() {
         Commands::SetupPath => cmd_setup_path(),
         Commands::SetupSd => cmd_setup_sd(),
         Commands::SetupAll => { cmd_install(); cmd_setup_path(); cmd_setup_sd(); },
+        Commands::Agent { action } => match action {
+            AgentAction::List => mac_host_core::cron::list(),
+            AgentAction::Info { label } => mac_host_core::cron::info(&label),
+            AgentAction::Load { label } => mac_host_core::cron::load(&label),
+            AgentAction::Unload { label } => mac_host_core::cron::unload(&label),
+            AgentAction::Restart { label } => mac_host_core::cron::restart(&label),
+            AgentAction::Logs { label } => mac_host_core::cron::logs(&label),
+        },
         Commands::TuiSpec => print_tui_spec(),
     }
 }

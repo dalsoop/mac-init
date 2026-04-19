@@ -796,6 +796,7 @@ name = "mac-domain-bootstrap"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "mac-host-core",
  "serde_json",
 ]
 
