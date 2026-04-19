@@ -930,7 +930,7 @@ fn print_tui_spec() {
 
     let spec = serde_json::json!({
         "tab": { "label_ko": "서비스 카드", "label": "Env", "icon": "🔑" },
-        "group": "infra",        "list_section": "Cards",
+        "refresh_interval": 30, "group": "infra",        "list_section": "Cards",
         "sections": [
             {
                 "kind": "key-value",

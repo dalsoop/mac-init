@@ -115,7 +115,7 @@ fn print_tui_spec() {
 
     let spec = serde_json::json!({
         "tab": { "label_ko": "Git 설정", "label": "Git", "icon": "🔱" },
-        "group": "dev",        "sections": [
+        "refresh_interval": 30, "group": "dev",        "sections": [
             {
                 "kind": "key-value",
                 "title": "Status",

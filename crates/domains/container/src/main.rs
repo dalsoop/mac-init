@@ -75,7 +75,7 @@ fn print_tui_spec() {
 
     let spec = serde_json::json!({
         "tab": { "label_ko": "컨테이너", "label": "Container", "icon": "📦" },
-        "group": "dev",        "sections": [
+        "refresh_interval": 15, "group": "dev",        "sections": [
             {
                 "kind": "key-value",
                 "title": "Status",

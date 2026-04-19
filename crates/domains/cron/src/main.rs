@@ -166,7 +166,7 @@ fn print_tui_spec() {
 
     let spec = serde_json::json!({
         "tab": { "label_ko": "크론(스케줄)", "label": "Cron", "icon": "⏰" },
-        "group": "auto",        "sections": [
+        "refresh_interval": 30, "group": "auto",        "sections": [
             {
                 "kind": "key-value",
                 "title": "Status",

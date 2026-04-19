@@ -265,7 +265,7 @@ fn print_tui_spec() {
 
     let spec = serde_json::json!({
         "tab": { "label_ko": "의존성 설치", "label": "Bootstrap", "icon": "🚀" },
-        "group": "init",
+        "refresh_interval": 60, "group": "init",
         "sections": [
             {
                 "kind": "key-value",

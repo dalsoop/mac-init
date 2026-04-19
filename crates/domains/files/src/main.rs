@@ -43,7 +43,7 @@ fn main() {
 fn print_tui_spec() {
     let spec = serde_json::json!({
         "tab": { "label_ko": "파일정리", "label": "Files", "icon": "📁" },
-        "group": "auto",        "sections": [
+        "refresh_interval": 30, "group": "auto",        "sections": [
             {
                 "kind": "text",
                 "title": "설명",
