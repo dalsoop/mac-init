@@ -271,36 +271,51 @@ fn detect_cards() -> Vec<DetectedCard> {
 
 /// 폴더 구조로 기기 종류 판별
 fn detect_device_type(vol: &Path) -> String {
-    // DJI: DCIM/DJI_NNN/ + MISC/AC*.db
-    if vol.join("DCIM/DJI_001").exists() || vol.join("MISC").exists() {
-        // DJI 모델 구분: MISC/AC004.db → Action 시리즈
-        if vol.join("MISC/AC004.db").exists() {
-            return "DJI-Action-Pro-5".into();
-        }
-        if vol.join("MISC/AC003.db").exists() {
-            return "DJI-Action-4".into();
-        }
-        return "DJI-Camera".into();
-    }
-    // GoPro: DCIM/NNNGOPR/
     let dcim = vol.join("DCIM");
-    if let Ok(it) = fs::read_dir(&dcim) {
-        for e in it.filter_map(|x| x.ok()) {
-            let n = e.file_name().to_string_lossy().to_string();
-            if n.contains("GOPR") || n.contains("HERO") { return "GoPro".into(); }
-        }
-    }
-    // Sony: DCIM/NNNMSDCF/ or PRIVATE/M4ROOT/
-    if vol.join("PRIVATE/M4ROOT").exists() { return "Sony-Camera".into(); }
-    // Canon: DCIM/NNNCANON/
+    let vol_name = vol.file_name().unwrap_or_default().to_string_lossy().to_uppercase();
+
+    // 볼륨 이름으로 빠른 판별
+    if vol_name.contains("EOS") { return detect_canon(&dcim, &vol_name); }
+
+    // DCIM 하위 폴더명으로 판별 (Canon/Nikon/GoPro 등 — DJI/MISC 보다 먼저)
     if let Ok(it) = fs::read_dir(&dcim) {
         for e in it.filter_map(|x| x.ok()) {
             let n = e.file_name().to_string_lossy().to_string().to_uppercase();
-            if n.contains("CANON") { return "Canon-Camera".into(); }
-            if n.contains("NIKON") { return "Nikon-Camera".into(); }
+            if n.contains("CANON") || n.starts_with("CANONMSC") { return detect_canon(&dcim, &vol_name); }
+            if n.contains("NIKON") || n.starts_with("NIKON") { return "Nikon".into(); }
+            if n.contains("GOPR") || n.contains("HERO") { return "GoPro".into(); }
+            if n.starts_with("FUJI") { return "Fujifilm".into(); }
         }
     }
+
+    // Sony: PRIVATE/M4ROOT/
+    if vol.join("PRIVATE/M4ROOT").exists() { return "Sony".into(); }
+
+    // DJI: DCIM/DJI_NNN/ + MISC/AC*.db (MISC만으로 판별 안 함)
+    if vol.join("DCIM/DJI_001").exists() {
+        if vol.join("MISC/AC004.db").exists() { return "DJI-Action-Pro-5".into(); }
+        if vol.join("MISC/AC003.db").exists() { return "DJI-Action-4".into(); }
+        return "DJI".into();
+    }
     "Generic-Camera".into()
+}
+
+/// Canon 모델 판별: DCIM/100EOSR6 → Canon-EOS-R6
+fn detect_canon(dcim: &Path, vol_name: &str) -> String {
+    if let Ok(it) = fs::read_dir(dcim) {
+        for e in it.filter_map(|x| x.ok()) {
+            let n = e.file_name().to_string_lossy().to_string().to_uppercase();
+            // 100EOSR6, 101EOS5D, 100CANON 등
+            if n.contains("EOSR6") { return "Canon-EOS-R6".into(); }
+            if n.contains("EOSR5") { return "Canon-EOS-R5".into(); }
+            if n.contains("EOSR3") { return "Canon-EOS-R3".into(); }
+            if n.contains("EOSR7") { return "Canon-EOS-R7".into(); }
+            if n.contains("EOSR") { return "Canon-EOS-R".into(); }
+            if n.contains("EOS5D") { return "Canon-5D".into(); }
+        }
+    }
+    if vol_name.contains("EOS") { return "Canon-EOS".into(); }
+    "Canon".into()
 }
 
 fn count_media(dcim: &Path) -> (usize, u64) {
@@ -392,7 +407,7 @@ fn cmd_status() {
 
 /// SD 카드 vs 로컬 백업 차분 분석. (새 파일 수, 새 바이트, 기존 파일 수)
 fn diff_analysis(dcim: &Path, cfg: &Config, device_type: &str) -> (usize, u64, usize) {
-    let target = PathBuf::from(expand(&cfg.backup_target)).join(device_type);
+    let target = PathBuf::from(expand(&cfg.backup_target));
     let files = collect_media_files(dcim);
     let mut new_count = 0usize;
     let mut new_bytes = 0u64;
@@ -417,7 +432,7 @@ fn diff_analysis(dcim: &Path, cfg: &Config, device_type: &str) -> (usize, u64, u
                     .unwrap_or_else(date_str)
             } else { d }
         };
-        let dest = target.join(&date).join(&fname);
+        let dest = target.join(&date).join(device_type).join(&fname);
         if dest.exists() {
             let src_size = fs::metadata(f).map(|m| m.len()).unwrap_or(0);
             let dst_size = fs::metadata(&dest).map(|m| m.len()).unwrap_or(0);
@@ -468,7 +483,9 @@ fn cmd_run() {
         let Some(dcim) = &card.dcim_path else { continue; };
 
         // 기기별 디렉터리
-        let device_dir = target_root.join(&card.device_type);
+        // 저장 구조: <백업대상>/<날짜>/<기기명>/파일
+        // (기존: <기기>/<날짜> → 변경: <날짜>/<기기>)
+        let device_type = &card.device_type;
 
         // DCIM 하위 파일 수집 + 날짜별 분류
         let files = collect_media_files(dcim);
@@ -531,7 +548,7 @@ fn cmd_run() {
         dates.sort();
         for date in &dates {
             let files = &by_date[date];
-            let dest = device_dir.join(date);
+            let dest = target_root.join(date).join(device_type);
             if let Err(e) = fs::create_dir_all(&dest) {
                 eprintln!("  ✗ 디렉터리 생성 실패: {}: {}", dest.display(), e);
                 continue;
@@ -630,7 +647,7 @@ fn cmd_run() {
                 bytes_copied: total_bytes,
                 duration_secs: elapsed,
                 speed_bps: speed,
-                target_dir: device_dir.to_string_lossy().to_string(),
+                target_dir: target_root.to_string_lossy().to_string(),
                 files: file_records.clone(),
             });
         }
@@ -711,16 +728,16 @@ fn cmd_eject_toggle(toggle: &str) {
 }
 
 /// 로컬 백업 → NAS 동기화 (rsync)
-fn sync_to_nas(cfg: &Config, device_type: &str) {
+fn sync_to_nas(cfg: &Config, _device_type: &str) {
     if !cfg.sync_enabled || cfg.sync_target.is_empty() { return; }
-    let local = PathBuf::from(expand(&cfg.backup_target)).join(device_type);
-    let remote = PathBuf::from(expand(&cfg.sync_target)).join(device_type);
+    let local = PathBuf::from(expand(&cfg.backup_target));
+    let remote = PathBuf::from(expand(&cfg.sync_target));
     if !local.exists() { return; }
-    if !Path::new(&expand(&cfg.sync_target)).exists() {
+    if !remote.exists() {
         eprintln!("  ⚠ NAS 동기화 경로 없음: {} (마운트 확인)", cfg.sync_target);
         return;
     }
-    let _ = fs::create_dir_all(&remote);
+    // 전체 백업 디렉터리 rsync (날짜/기기 구조 그대로)
     println!("\n  NAS 동기화: {} → {}", local.display(), remote.display());
     let status = Command::new("rsync")
         .args(["-av", "--progress"])
