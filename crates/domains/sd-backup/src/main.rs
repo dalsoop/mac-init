@@ -19,8 +19,14 @@ enum Commands {
     Status,
     /// 백업 실행 (감지된 SD 카드 → 백업 대상)
     Run,
-    /// 백업 대상 경로 설정
+    /// 로컬 백업 경로 설정
     SetTarget { path: String },
+    /// NAS 동기화 경로 설정
+    SetSync { path: String },
+    /// NAS 동기화 on/off
+    Sync { toggle: String },
+    /// 백업 완료 후 SD 자동 추출 on/off
+    Eject { toggle: String },
     /// 자동 감지 모드 on/off (30초마다 /Volumes/ 스캔)
     Auto {
         /// on | off | status
@@ -44,6 +50,9 @@ fn main() {
         Commands::Status => cmd_status(),
         Commands::Run => cmd_run(),
         Commands::SetTarget { path } => cmd_set_target(&path),
+        Commands::SetSync { path } => cmd_set_sync(&path),
+        Commands::Sync { toggle } => cmd_sync_toggle(&toggle),
+        Commands::Eject { toggle } => cmd_eject_toggle(&toggle),
         Commands::Auto { toggle } => cmd_auto(&toggle),
         Commands::Watch => cmd_watch(),
         Commands::Progress => cmd_progress(),
@@ -61,9 +70,18 @@ fn history_path() -> PathBuf { PathBuf::from(home()).join(".mac-app-init/sd-back
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct Config {
-    /// 백업 대상 루트 경로 (예: ~/NAS/synology/works/백업)
+    /// 로컬 백업 대상 루트 경로
     #[serde(default)]
     backup_target: String,
+    /// NAS 동기화 경로 (비어있으면 동기화 안 함)
+    #[serde(default)]
+    sync_target: String,
+    /// NAS 동기화 활성 (경로 있어도 off 가능)
+    #[serde(default)]
+    sync_enabled: bool,
+    /// 백업+동기화 완료 후 SD 카드 자동 추출
+    #[serde(default)]
+    auto_eject: bool,
     /// LRF(저해상도 프리뷰) 파일 포함 여부
     #[serde(default)]
     include_lrf: bool,
@@ -100,8 +118,23 @@ struct HistoryEntry {
     device: String,
     volume: String,
     files_copied: usize,
+    #[serde(default)]
+    files_skipped: usize,
     bytes_copied: u64,
+    #[serde(default)]
+    duration_secs: u64,
+    #[serde(default)]
+    speed_bps: u64,
     target_dir: String,
+    #[serde(default)]
+    files: Vec<FileRecord>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct FileRecord {
+    name: String,
+    size: u64,
+    date: String,
 }
 
 fn load_config() -> Config {
@@ -398,8 +431,11 @@ fn cmd_run() {
         });
 
         let mut total_copied = 0usize;
+        let mut total_skipped = 0usize;
         let mut total_bytes = 0u64;
         let mut files_processed = 0usize;
+        let mut file_records: Vec<FileRecord> = Vec::new();
+        let start_time = std::time::Instant::now();
 
         let mut dates: Vec<String> = by_date.keys().cloned().collect();
         dates.sort();
@@ -423,7 +459,7 @@ fn cmd_run() {
                     let dst_size = fs::metadata(&dst).map(|m| m.len()).unwrap_or(0);
                     if src_size == dst_size {
                         total_bytes += src_size;
-                        // progress 갱신 (skip 도 진행률에 반영)
+                        total_skipped += 1;
                         save_progress(&ProgressState {
                             running: true,
                             device: card.device_type.clone(),
@@ -456,6 +492,11 @@ fn cmd_run() {
                     Ok(s) if s.success() => {
                         day_copied += 1;
                         total_bytes += file_size;
+                        file_records.push(FileRecord {
+                            name: fname_str.clone(),
+                            size: file_size,
+                            date: date.clone(),
+                        });
                     }
                     _ => eprintln!("  ✗ 복사 실패: {}", src.display()),
                 }
@@ -471,23 +512,43 @@ fn cmd_run() {
         } else {
             println!("\n  합계: {}개 파일, {}", total_copied, human_bytes(total_bytes));
 
-            // 이력 기록
+            let elapsed = start_time.elapsed().as_secs().max(1);
+            let speed = total_bytes / elapsed;
+            println!("  속도: {} ({:.0}초)", human_bytes(speed) + "/s", elapsed);
+
             history.entries.push(HistoryEntry {
                 timestamp: now_str(),
                 device: card.device_type.clone(),
                 volume: card.volume_name.clone(),
                 files_copied: total_copied,
+                files_skipped: total_skipped,
                 bytes_copied: total_bytes,
+                duration_secs: elapsed,
+                speed_bps: speed,
                 target_dir: device_dir.to_string_lossy().to_string(),
+                files: file_records.clone(),
             });
         }
     }
     save_history(&history);
     clear_progress();
 
+    // NAS 동기화
+    for card in &cards {
+        sync_to_nas(&cfg, &card.device_type);
+    }
+
+    // SD 자동 추출
+    if cfg.auto_eject {
+        for card in &cards {
+            eject_sd(&card.volume_path);
+        }
+    }
+
     // macOS 알림
-    let total_cards = cards.len();
-    let msg = format!("SD 백업 완료 ({}개 카드)", total_cards);
+    let eject_msg = if cfg.auto_eject { " → 추출됨" } else { "" };
+    let sync_msg = if cfg.sync_enabled { " → NAS 동기화" } else { "" };
+    let msg = format!("SD 백업 완료{}{}", sync_msg, eject_msg);
     let _ = Command::new("osascript")
         .args(["-e", &format!("display notification \"{}\" with title \"mac-app-init\"", msg)])
         .output();
@@ -506,6 +567,81 @@ fn collect_media_files(dcim: &Path) -> Vec<PathBuf> {
     walk(dcim, &mut files);
     files.sort();
     files
+}
+
+fn cmd_set_sync(path: &str) {
+    let mut cfg = load_config();
+    cfg.sync_target = path.to_string();
+    cfg.sync_enabled = true;
+    save_config(&cfg);
+    let expanded = expand(path);
+    let exists = Path::new(&expanded).exists();
+    println!("✓ NAS 동기화 경로: {}{}", path, if exists { "" } else { " (⚠ 경로 없음 — 마운트 확인)" });
+}
+
+fn cmd_sync_toggle(toggle: &str) {
+    let mut cfg = load_config();
+    match toggle.to_lowercase().as_str() {
+        "on" | "true" => { cfg.sync_enabled = true; println!("✓ NAS 동기화 켜짐"); }
+        "off" | "false" => { cfg.sync_enabled = false; println!("✓ NAS 동기화 꺼짐"); }
+        "status" => {
+            println!("NAS 동기화: {}", if cfg.sync_enabled { "켜짐" } else { "꺼짐" });
+            println!("경로: {}", if cfg.sync_target.is_empty() { "미설정" } else { &cfg.sync_target });
+        }
+        _ => { eprintln!("사용법: sd-backup sync <on|off|status>"); std::process::exit(1); }
+    }
+    save_config(&cfg);
+}
+
+fn cmd_eject_toggle(toggle: &str) {
+    let mut cfg = load_config();
+    match toggle.to_lowercase().as_str() {
+        "on" | "true" => { cfg.auto_eject = true; println!("✓ 자동 추출 켜짐"); }
+        "off" | "false" => { cfg.auto_eject = false; println!("✓ 자동 추출 꺼짐"); }
+        "status" => { println!("자동 추출: {}", if cfg.auto_eject { "켜짐" } else { "꺼짐" }); }
+        _ => { eprintln!("사용법: sd-backup eject <on|off|status>"); std::process::exit(1); }
+    }
+    save_config(&cfg);
+}
+
+/// 로컬 백업 → NAS 동기화 (rsync)
+fn sync_to_nas(cfg: &Config, device_type: &str) {
+    if !cfg.sync_enabled || cfg.sync_target.is_empty() { return; }
+    let local = PathBuf::from(expand(&cfg.backup_target)).join(device_type);
+    let remote = PathBuf::from(expand(&cfg.sync_target)).join(device_type);
+    if !local.exists() { return; }
+    if !Path::new(&expand(&cfg.sync_target)).exists() {
+        eprintln!("  ⚠ NAS 동기화 경로 없음: {} (마운트 확인)", cfg.sync_target);
+        return;
+    }
+    let _ = fs::create_dir_all(&remote);
+    println!("\n  NAS 동기화: {} → {}", local.display(), remote.display());
+    let status = Command::new("/opt/homebrew/bin/rsync")
+        .args(["-av", "--progress"])
+        .arg(format!("{}/", local.display()))
+        .arg(format!("{}/", remote.display()))
+        .status();
+    match status {
+        Ok(s) if s.success() => println!("  ✓ NAS 동기화 완료"),
+        _ => eprintln!("  ✗ NAS 동기화 실패"),
+    }
+}
+
+/// SD 카드 안전 추출
+fn eject_sd(volume_path: &Path) {
+    println!("\n  SD 추출: {}", volume_path.display());
+    let status = Command::new("diskutil")
+        .args(["eject", &volume_path.to_string_lossy()])
+        .status();
+    match status {
+        Ok(s) if s.success() => {
+            println!("  ✓ SD 카드 안전 추출 완료");
+            let _ = Command::new("osascript")
+                .args(["-e", "display notification \"SD 카드 안전 추출됨\" with title \"mac-app-init\""])
+                .output();
+        }
+        _ => eprintln!("  ✗ SD 추출 실패"),
+    }
 }
 
 fn cmd_auto(toggle: &str) {
@@ -658,10 +794,25 @@ fn cmd_history() {
         println!("백업 이력 없음.");
         return;
     }
-    println!("{:<20} {:<22} {:<8} {}", "TIMESTAMP", "DEVICE", "FILES", "SIZE");
-    println!("{}", "─".repeat(65));
-    for e in hist.entries.iter().rev().take(20) {
-        println!("{:<20} {:<22} {:<8} {}", e.timestamp, e.device, e.files_copied, human_bytes(e.bytes_copied));
+    for (i, e) in hist.entries.iter().rev().enumerate() {
+        if i >= 10 { break; }
+        println!("━━━ {} ━━━", e.timestamp);
+        println!("  기기    : {}", e.device);
+        println!("  볼륨    : {}", e.volume);
+        println!("  복사    : {}개 (skip {}개)", e.files_copied, e.files_skipped);
+        println!("  용량    : {}", human_bytes(e.bytes_copied));
+        if e.duration_secs > 0 {
+            println!("  시간    : {}초", e.duration_secs);
+            println!("  속도    : {}/s", human_bytes(e.speed_bps));
+        }
+        println!("  저장 위치: {}", e.target_dir);
+        if !e.files.is_empty() {
+            println!("  파일:");
+            for f in &e.files {
+                println!("    {} ({})", f.name, human_bytes(f.size));
+            }
+        }
+        println!();
     }
 }
 
@@ -692,43 +843,73 @@ fn print_tui_spec() {
         format!("▶ 백업 중 ({}/{} 파일, {}%) — {}", prog.files_done, prog.files_total, pct, prog.current_file)
     } else { "대기 중".into() };
 
+    let sync_status = if cfg.sync_target.is_empty() { "미설정" }
+        else if !cfg.sync_enabled { "꺼짐" }
+        else if Path::new(&expand(&cfg.sync_target)).exists() { "✓ 켜짐 (접근 가능)" }
+        else { "⚠ 켜짐 (경로 없음 — 마운트 확인)" };
+
     let spec = serde_json::json!({
         "tab": { "label_ko": "SD 미디어 백업", "label": "SD Backup", "icon": "📸" },
         "group": "auto",
         "sections": [
             {
                 "kind": "key-value",
-                "title": "상태",
+                "title": "감지",
                 "items": [
-                    { "key": "SD 카드", "value": card_info, "status": if cards.is_empty() { "warn" } else { "ok" } },
-                    { "key": "백업 대상", "value": format!("{} ({})", cfg.backup_target, target_status),
-                      "status": if cfg.backup_target.is_empty() { "error" } else { "ok" } },
-                    { "key": "자동 백업", "value": if cfg.auto_enabled { "✓ 켜짐 (30초 스캔)" } else { "꺼짐" },
-                      "status": if cfg.auto_enabled { "ok" } else { "warn" } },
+                    { "key": "SD 카드", "value": card_info,
+                      "status": if cards.is_empty() { "warn" } else { "ok" } },
                     { "key": "진행 상태", "value": prog_info,
                       "status": if prog.running { "ok" } else { "warn" } },
-                    { "key": "LRF 포함", "value": if cfg.include_lrf { "예" } else { "아니오" }, "status": "ok" },
                     { "key": "최근 백업", "value": last_backup, "status": "ok" },
                 ]
             },
             {
+                "kind": "key-value",
+                "title": "설정",
+                "items": [
+                    { "key": "로컬 백업 경로", "value": format!("{} ({})", cfg.backup_target, target_status),
+                      "status": if cfg.backup_target.is_empty() { "error" } else { "ok" } },
+                    { "key": "NAS 동기화", "value": format!("{} — {}", sync_status,
+                        if cfg.sync_target.is_empty() { "미설정".into() } else { cfg.sync_target.clone() }),
+                      "status": if cfg.sync_enabled && !cfg.sync_target.is_empty() { "ok" } else { "warn" } },
+                    { "key": "자동 백업", "value": if cfg.auto_enabled { "✓ 켜짐 (SD 꽂으면 30초 내 시작)" } else { "꺼짐" },
+                      "status": if cfg.auto_enabled { "ok" } else { "warn" } },
+                    { "key": "자동 추출", "value": if cfg.auto_eject { "✓ 백업 완료 후 SD 자동 추출" } else { "꺼짐 (수동 추출)" },
+                      "status": if cfg.auto_eject { "ok" } else { "warn" } },
+                    { "key": "LRF 포함", "value": if cfg.include_lrf { "예 (저해상도 프리뷰)" } else { "아니오 (MP4만)" },
+                      "status": "ok" },
+                ]
+            },
+            {
                 "kind": "buttons",
-                "title": "Actions",
+                "title": "실행",
                 "items": [
                     { "label": "Status", "command": "status", "key": "s" },
                     { "label": "Run (수동 백업)", "command": "run", "key": "r" },
-                    { "label": "Progress (진행률)", "command": "progress", "key": "p" },
-                    { "label": if cfg.auto_enabled { "Auto OFF" } else { "Auto ON" },
+                    { "label": "Progress", "command": "progress", "key": "p" },
+                    { "label": "History", "command": "history", "key": "h" },
+                    { "label": "Devices", "command": "devices", "key": "v" },
+                ]
+            },
+            {
+                "kind": "buttons",
+                "title": "설정 토글",
+                "items": [
+                    { "label": if cfg.auto_enabled { "자동백업 OFF" } else { "자동백업 ON" },
                       "command": if cfg.auto_enabled { "auto off" } else { "auto on" },
                       "key": "a" },
-                    { "label": "History (이력)", "command": "history", "key": "h" },
-                    { "label": "Devices (기기 목록)", "command": "devices", "key": "v" },
+                    { "label": if cfg.sync_enabled { "NAS동기화 OFF" } else { "NAS동기화 ON" },
+                      "command": if cfg.sync_enabled { "sync off" } else { "sync on" },
+                      "key": "y" },
+                    { "label": if cfg.auto_eject { "자동추출 OFF" } else { "자동추출 ON" },
+                      "command": if cfg.auto_eject { "eject off" } else { "eject on" },
+                      "key": "e" },
                 ]
             },
             {
                 "kind": "text",
-                "title": "안내",
-                "content": "  mac run sd-backup set-target ~/NAS/synology/works/백업\n  mac run sd-backup auto on       # SD 꽂으면 자동 백업\n  mac run sd-backup run            # 수동 백업\n  mac run sd-backup progress       # 진행률\n\n  기기별·날짜별 자동 분류:\n    <백업대상>/<기기명>/<YYYY-MM-DD>/파일들"
+                "title": "파이프라인",
+                "content": "  SD 꽂음 → 로컬 백업 (60MB/s) → NAS 동기화 (LAN 권장) → SD 추출\n\n  기기별·날짜별 자동 분류:\n    <로컬>/<기기명>/<YYYY-MM-DD>/파일들\n\n  설정:\n    mac run sd-backup set-target <로컬 경로>\n    mac run sd-backup set-sync <NAS 경로>\n    mac run sd-backup auto on\n    mac run sd-backup eject on"
             }
         ]
     });
