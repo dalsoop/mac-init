@@ -467,12 +467,25 @@ impl App {
 
     fn render_no_spec(&self, frame: &mut Frame, area: Rect) {
         let domain = self.domains.get(self.selected_tab.saturating_sub(1)).cloned().unwrap_or_default();
+        let spinners = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+        let tick = (std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() / 100) as usize;
+        let spinner = spinners[tick % spinners.len()];
         frame.render_widget(
             Paragraph::new(vec![
                 Line::from(""),
-                Line::from(Span::styled("  로딩 중...", Style::default().fg(Color::Cyan).bold())),
                 Line::from(""),
-                Line::from(Span::styled(format!("  {} 도메인 정보를 가져오고 있습니다.", domain), Style::default().fg(Color::DarkGray))),
+                Line::from(Span::styled(
+                    format!("  {} 로딩 중...", spinner),
+                    Style::default().fg(Color::Cyan).bold(),
+                )),
+                Line::from(""),
+                Line::from(Span::styled(
+                    format!("  {} 도메인 정보를 가져오고 있습니다.", domain),
+                    Style::default().fg(Color::DarkGray),
+                )),
             ]).block(
                 Block::default().borders(Borders::ALL)
                     .border_style(Style::default().fg(Color::DarkGray))
