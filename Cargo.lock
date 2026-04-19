@@ -891,6 +891,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "mac-domain-sd-backup"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "mac-host-core",
+ "serde_json",
+]
+
+[[package]]
 name = "mac-domain-shell"
 version = "0.1.0"
 dependencies = [
