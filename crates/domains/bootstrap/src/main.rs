@@ -234,24 +234,76 @@ fn print_tui_spec() {
         })
     }).collect();
 
+    // PATH 설정 상태
+    use std::path::PathBuf;
+    let shell_sh = PathBuf::from(home()).join(".mac-app-init/shell.sh");
+    let zshrc = std::fs::read_to_string(PathBuf::from(home()).join(".zshrc")).unwrap_or_default();
+    let path_ok = shell_sh.exists() && zshrc.contains(".mac-app-init/shell.sh");
+
+    // SD 백업 상태
+    let sd_cfg_path = PathBuf::from(home()).join(".mac-app-init/sd-backup.json");
+    let (sd_auto, sd_eject, sd_target) = if sd_cfg_path.exists() {
+        let s = std::fs::read_to_string(&sd_cfg_path).unwrap_or_default();
+        let v: serde_json::Value = serde_json::from_str(&s).unwrap_or_default();
+        (
+            v.get("auto_enabled").and_then(|v| v.as_bool()).unwrap_or(false),
+            v.get("auto_eject").and_then(|v| v.as_bool()).unwrap_or(false),
+            v.get("backup_target").and_then(|v| v.as_str()).unwrap_or("미설정").to_string(),
+        )
+    } else { (false, false, "미설정".into()) };
+
+    // TCC 상태
+    let mac_bin_path = format!("{}/.cargo/bin/mac", home());
+    let tcc_ok = Command::new("sqlite3")
+        .args([
+            &format!("{}/Library/Application Support/com.apple.TCC/TCC.db", home()),
+            &format!("SELECT auth_value FROM access WHERE client='{}' AND service='kTCCServiceSystemPolicyDocumentsFolder';", mac_bin_path),
+        ])
+        .output().ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "2")
+        .unwrap_or(false);
+
     let spec = serde_json::json!({
         "tab": { "label_ko": "의존성 설치", "label": "Bootstrap", "icon": "🚀" },
-        "group": "init",        "sections": [
+        "group": "init",
+        "sections": [
             {
                 "kind": "key-value",
-                "title": "의존성 상태",
+                "title": "의존성",
                 "items": items
             },
             {
-                "kind": "buttons",
-                "title": "Actions",
+                "kind": "key-value",
+                "title": "초기 설정",
                 "items": [
-                    { "label": "Install (전체 의존성)", "command": "install", "key": "i" },
-                    { "label": "Check (누락분만)", "command": "check", "key": "c" },
+                    { "key": "PATH (shell.sh)", "value": if path_ok { "✓ 설정됨" } else { "✗ 미설정" },
+                      "status": if path_ok { "ok" } else { "error" } },
+                    { "key": "TCC (Documents 접근)", "value": if tcc_ok { "✓ 허용" } else { "✗ 미허용" },
+                      "status": if tcc_ok { "ok" } else { "warn" } },
+                    { "key": "SD 자동 백업", "value": if sd_auto { "✓ 켜짐" } else { "꺼짐" },
+                      "status": if sd_auto { "ok" } else { "warn" } },
+                    { "key": "SD 자동 추출", "value": if sd_eject { "✓ 켜짐" } else { "꺼짐" },
+                      "status": if sd_eject { "ok" } else { "warn" } },
+                    { "key": "SD 백업 경로", "value": sd_target,
+                      "status": if sd_target == "미설정" { "error" } else { "ok" } },
+                ]
+            },
+            {
+                "kind": "buttons",
+                "title": "의존성",
+                "items": [
+                    { "label": "Install (전체)", "command": "install", "key": "i" },
+                    { "label": "Check (누락분)", "command": "check", "key": "c" },
+                    { "label": "Status", "command": "status", "key": "s" },
+                ]
+            },
+            {
+                "kind": "buttons",
+                "title": "초기 설정",
+                "items": [
                     { "label": "Setup PATH", "command": "setup-path", "key": "p" },
                     { "label": "Setup SD", "command": "setup-sd", "key": "d" },
                     { "label": "Setup All (전체)", "command": "setup-all", "key": "a" },
-                    { "label": "Status", "command": "status", "key": "s" }
                 ]
             }
         ]
