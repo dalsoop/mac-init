@@ -708,7 +708,7 @@ fn default_true() -> bool { true }
 struct MountConfig {
     #[serde(default)]
     auto_mounts: Vec<AutoMount>,
-    /// NAS 잔재 자동 격리. auto 실행 시마다 ~/NAS/ 스캔.
+    /// NAS 잔재 자동 격리. auto 실행 시마다 ~/Documents/WORK/NAS/ 스캔.
     /// false 면 sweep 안 함 (잔재 방치).
     #[serde(default = "default_true")]
     sweep_enabled: bool,
@@ -850,7 +850,7 @@ fn sweep_stale_mounts() -> usize {
     let mut swept = 0;
     for (_, mp, _) in list_all_mounts() {
         let path = PathBuf::from(&mp);
-        if !path.starts_with(format!("{}/NAS", home())) { continue; }
+        if !path.starts_with(format!("{}/Documents/WORK/NAS", home())) { continue; }
         if is_stale(&path) {
             if unmount_path(&path).is_ok() {
                 eprintln!("  🧹 stale 청소: {}", mp);
@@ -1095,7 +1095,7 @@ fn cmd_sweep(toggle: &str) {
         "on" | "true" | "1" => {
             cfg.sweep_enabled = true;
             let _ = save_mount_config(&cfg);
-            println!("✓ NAS 잔재 자동 격리 켜짐 (auto 실행 시마다 ~/NAS/ 스캔)");
+            println!("✓ NAS 잔재 자동 격리 켜짐 (auto 실행 시마다 ~/Documents/WORK/NAS/ 스캔)");
         }
         "off" | "false" | "0" => {
             cfg.sweep_enabled = false;
@@ -1124,7 +1124,7 @@ fn cmd_auto_enable() {
         } else { None })
         .unwrap_or_else(|| "mac".into());
 
-    let log_dir = format!("{}/문서/시스템/로그", home());
+    let log_dir = format!("{}/Documents/WORK/logs", home());
     fs::create_dir_all(&log_dir).ok();
 
     let plist = format!(r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -1309,7 +1309,7 @@ fn print_tui_spec() {
                     {
                         "key": "잔재 자동 정리 (sweep)",
                         "value": if cfg.sweep_enabled {
-                            "✓ 켜짐 (auto 실행 시마다 ~/NAS/ 스캔)"
+                            "✓ 켜짐 (auto 실행 시마다 ~/Documents/WORK/NAS/ 스캔)"
                         } else {
                             "✗ 꺼짐 (mac run mount sweep on 으로 활성화)"
                         },
@@ -1354,7 +1354,7 @@ fn print_tui_spec() {
             {
                 "kind": "text",
                 "title": "사용법 — 터미널",
-                "content": "  자동 마운트 설정:\n    mac run mount auto-add <conn> <share>\n    mac run mount auto-toggle <conn> <share>\n    mac run mount auto-enable      # 로그인 시 + 5분마다 자동 실행\n\n  잔재 정리:\n    mac run mount sweep on|off|status\n    → auto 실행 시마다 ~/NAS/ 스캔, 카드/마운트에 없는 항목을\n      ~/NAS/.mountless-trash/YYMMDD-HHMMSS/ 로 격리 (삭제 아님)\n\n  수동:\n    mac run mount mount <name> <share>\n    mac run mount unmount <share>"
+                "content": "  자동 마운트 설정:\n    mac run mount auto-add <conn> <share>\n    mac run mount auto-toggle <conn> <share>\n    mac run mount auto-enable      # 로그인 시 + 5분마다 자동 실행\n\n  잔재 정리:\n    mac run mount sweep on|off|status\n    → auto 실행 시마다 ~/Documents/WORK/NAS/ 스캔, 카드/마운트에 없는 항목을\n      ~/NAS/.mountless-trash/YYMMDD-HHMMSS/ 로 격리 (삭제 아님)\n\n  수동:\n    mac run mount mount <name> <share>\n    mac run mount unmount <share>"
             }
         ],
         "keybindings": [

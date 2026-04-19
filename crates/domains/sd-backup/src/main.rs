@@ -168,8 +168,15 @@ fn plist_path() -> PathBuf {
     PathBuf::from(home()).join(format!("Library/LaunchAgents/{}.plist", LAUNCH_LABEL))
 }
 
+/// 원자적 쓰기: tmp 파일 → rename (APFS 에서 atomic).
 fn save_progress(p: &ProgressState) {
-    let _ = fs::write(progress_path(), serde_json::to_string_pretty(p).unwrap_or_default());
+    let path = progress_path();
+    let tmp = path.with_extension("tmp");
+    if let Ok(json) = serde_json::to_string_pretty(p) {
+        if fs::write(&tmp, &json).is_ok() {
+            let _ = fs::rename(&tmp, &path);
+        }
+    }
 }
 
 fn load_progress() -> ProgressState {
@@ -180,6 +187,31 @@ fn load_progress() -> ProgressState {
 
 fn clear_progress() {
     let _ = fs::remove_file(progress_path());
+    let _ = fs::remove_file(progress_path().with_extension("tmp"));
+}
+
+fn lock_path() -> PathBuf { PathBuf::from(home()).join(".mac-app-init/sd-backup.lock") }
+
+/// PID 기반 잠금. 이미 다른 백업이 진행 중이면 false.
+fn acquire_lock() -> bool {
+    let lp = lock_path();
+    if lp.exists() {
+        if let Ok(pid_str) = fs::read_to_string(&lp) {
+            let pid = pid_str.trim();
+            // 프로세스 살아있는지
+            if Command::new("kill").args(["-0", pid]).status().map(|s| s.success()).unwrap_or(false) {
+                return false; // 아직 실행 중
+            }
+        }
+        // stale lock
+        let _ = fs::remove_file(&lp);
+    }
+    let _ = fs::write(&lp, std::process::id().to_string());
+    true
+}
+
+fn release_lock() {
+    let _ = fs::remove_file(lock_path());
 }
 
 fn expand(p: &str) -> String {
@@ -371,7 +403,20 @@ fn diff_analysis(dcim: &Path, cfg: &Config, device_type: &str) -> (usize, u64, u
         let ext = fname.rsplit('.').next().unwrap_or("").to_uppercase();
         if cfg.exclude_extensions.iter().any(|e| e.to_uppercase() == ext) { continue; }
 
-        let date = extract_date(&fname);
+        let date = {
+            let d = extract_date(&fname);
+            if d == "unknown" {
+                // mtime fallback (cmd_run 과 동일 로직)
+                fs::metadata(f).ok()
+                    .and_then(|m| m.modified().ok())
+                    .and_then(|t| {
+                        let secs = t.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs();
+                        Command::new("date").args(["-r", &secs.to_string(), "+%Y-%m-%d"]).output().ok()
+                            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                    })
+                    .unwrap_or_else(date_str)
+            } else { d }
+        };
         let dest = target.join(&date).join(&fname);
         if dest.exists() {
             let src_size = fs::metadata(f).map(|m| m.len()).unwrap_or(0);
@@ -394,6 +439,10 @@ fn cmd_set_target(path: &str) {
 }
 
 fn cmd_run() {
+    if !acquire_lock() {
+        eprintln!("✗ 다른 백업이 이미 진행 중입니다.");
+        return;
+    }
     let cfg = load_config();
     if cfg.backup_target.is_empty() {
         eprintln!("✗ 백업 대상 미설정. `mac run sd-backup set-target <경로>`");
@@ -523,21 +572,36 @@ fn cmd_run() {
                     started_at: String::new(),
                 });
 
+                // C3: SD 제거 감지 — src 접근 불가 시 중단
+                let file_size = match fs::metadata(src) {
+                    Ok(m) => m.len(),
+                    Err(e) => {
+                        eprintln!("  ✗ SD 접근 불가 (제거됨?): {} — 백업 중단", e);
+                        break;
+                    }
+                };
                 let status = Command::new("rsync")
                     .args(["-a", "--progress"])
                     .arg(src)
                     .arg(&dest)
                     .status();
-                let file_size = fs::metadata(src).map(|m| m.len()).unwrap_or(0);
                 match status {
                     Ok(s) if s.success() => {
-                        day_copied += 1;
-                        total_bytes += file_size;
-                        file_records.push(FileRecord {
-                            name: fname_str.clone(),
-                            size: file_size,
-                            date: date.clone(),
-                        });
+                        // C2: 복사 후 크기 검증
+                        let dst_path = dest.join(&fname);
+                        let dst_size = fs::metadata(&dst_path).map(|m| m.len()).unwrap_or(0);
+                        if dst_size != file_size {
+                            eprintln!("  ✗ 크기 불일치: {} (src={}B dst={}B) — 재시도 필요",
+                                fname_str, file_size, dst_size);
+                        } else {
+                            day_copied += 1;
+                            total_bytes += file_size;
+                            file_records.push(FileRecord {
+                                name: fname_str.clone(),
+                                size: file_size,
+                                date: date.clone(),
+                            });
+                        }
                     }
                     _ => eprintln!("  ✗ 복사 실패: {}", src.display()),
                 }
@@ -593,6 +657,7 @@ fn cmd_run() {
     let _ = Command::new("osascript")
         .args(["-e", &format!("display notification \"{}\" with title \"mac-app-init\"", msg)])
         .output();
+    release_lock();
 }
 
 fn collect_media_files(dcim: &Path) -> Vec<PathBuf> {
@@ -657,7 +722,7 @@ fn sync_to_nas(cfg: &Config, device_type: &str) {
     }
     let _ = fs::create_dir_all(&remote);
     println!("\n  NAS 동기화: {} → {}", local.display(), remote.display());
-    let status = Command::new("/opt/homebrew/bin/rsync")
+    let status = Command::new("rsync")
         .args(["-av", "--progress"])
         .arg(format!("{}/", local.display()))
         .arg(format!("{}/", remote.display()))
