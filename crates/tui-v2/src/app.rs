@@ -144,9 +144,8 @@ impl App {
                             self.focus_button = 0;
                         }
                         SidebarItem::Domain { idx, .. } => {
-                            // selected_tab만 설정. spec은 다음 프레임에서 lazy 로드.
-                            // render_content에서 spec 없으면 스피너 표시 → 다음 틱에서 로드.
                             self.selected_tab = idx + 1;
+                            self.bg_loading = None; // 이전 로딩 취소
                             self.focus = Focus::Content; self.content_section = 0;
                             self.focus_button = 0;
                         }
@@ -158,12 +157,13 @@ impl App {
         }
     }
 
-    /// 커서 이동 — 그룹 헤더 skip
+    /// 커서 이동 — 그룹 헤더 skip. 선택 가능 항목 없으면 움직이지 않음.
     fn sidebar_move(&mut self, dir: i32) {
         let len = self.sidebar_items.len();
         if len == 0 { return; }
+        let has_selectable = self.sidebar_items.iter().any(|i| !matches!(i, SidebarItem::GroupHeader(_)));
+        if !has_selectable { return; }
         let mut next = self.sidebar_cursor as i32 + dir;
-        // wrap + skip headers
         for _ in 0..len {
             if next < 0 { next = len as i32 - 1; }
             if next >= len as i32 { next = 0; }
@@ -493,10 +493,10 @@ impl App {
     fn render_no_spec(&self, frame: &mut Frame, area: Rect) {
         let domain = self.domains.get(self.selected_tab.saturating_sub(1)).cloned().unwrap_or_default();
         let spinners = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-        let tick = (std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() / 66) as usize; // ~15fps 스피너
+        // Instant 기반 (SystemTime 대신 — 클럭 점프 방지)
+        static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+        let elapsed = START.get_or_init(std::time::Instant::now).elapsed();
+        let tick = (elapsed.as_millis() / 66) as usize;
         let spinner = spinners[tick % spinners.len()];
         frame.render_widget(
             Paragraph::new(vec![
@@ -550,21 +550,20 @@ impl App {
             // 왼쪽 사이드바 클릭
             if mouse.column < 24 && mouse.row > 0 {
                 let row = (mouse.row as usize).saturating_sub(1); // border 1줄 빼기
-                if row < self.sidebar_items.len() {
-                    self.sidebar_cursor = row;
-                    if let Some(item) = self.sidebar_items.get(row).cloned() {
-                        match item {
-                            SidebarItem::Install => {
-                                self.selected_tab = 0;
-                                self.focus = Focus::Content; self.content_section = 0;
-                            }
-                            SidebarItem::Domain { idx, .. } => {
-                                self.ensure_spec(idx);
-                                self.selected_tab = idx + 1;
-                                self.focus = Focus::Content; self.content_section = 0;
-                            }
-                            SidebarItem::GroupHeader(_) => {}
+                if let Some(item) = self.sidebar_items.get(row).cloned() {
+                    match item {
+                        SidebarItem::Install => {
+                            self.sidebar_cursor = row;
+                            self.selected_tab = 0;
+                            self.focus = Focus::Content; self.content_section = 0;
                         }
+                        SidebarItem::Domain { idx, .. } => {
+                            self.sidebar_cursor = row;
+                            self.selected_tab = idx + 1;
+                            self.bg_loading = None;
+                            self.focus = Focus::Content; self.content_section = 0;
+                        }
+                        SidebarItem::GroupHeader(_) => {} // 커서 안 옮김
                     }
                 }
                 return;
