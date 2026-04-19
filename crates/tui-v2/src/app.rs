@@ -54,6 +54,8 @@ pub struct App {
     pub focus: Focus,
     /// 다음 틱에서 로드할 도메인 인덱스 (스피너 1프레임 보장)
     pub pending_load: Option<usize>,
+    /// 백그라운드 spec 로딩 채널
+    pub bg_loading: Option<std::sync::mpsc::Receiver<(usize, Option<DomainSpec>)>>,
 }
 
 #[derive(Clone)]
@@ -82,6 +84,7 @@ impl App {
             sidebar_cursor: 0,
             focus: Focus::Sidebar,
             pending_load: None,
+            bg_loading: None,
         }
     }
 

@@ -35,9 +35,24 @@ async fn main() -> Result<()> {
     while !app.should_quit {
         terminal.draw(|f| app.render(f))?;
 
-        // pending_load: 스피너 프레임 후 spec 로드
+        // pending_load: 백그라운드 스레드에서 spec 로드
         if let Some(idx) = app.pending_load.take() {
-            app.ensure_spec(idx);
+            if app.bg_loading.is_none() {
+                let domain = app.domains[idx].clone();
+                let (tx, rx) = std::sync::mpsc::channel();
+                std::thread::spawn(move || {
+                    let spec = crate::registry::fetch_spec(&domain);
+                    let _ = tx.send((idx, spec));
+                });
+                app.bg_loading = Some(rx);
+            }
+        }
+        // 백그라운드 로드 완료 체크
+        if let Some(ref rx) = app.bg_loading {
+            if let Ok((idx, spec)) = rx.try_recv() {
+                app.specs[idx] = spec;
+                app.bg_loading = None;
+            }
         }
 
         // 자동 갱신: 현재 탭의 refresh_interval 체크
