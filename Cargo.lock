@@ -895,7 +895,7 @@ name = "mac-domain-sd-backup"
 version = "0.1.0"
 dependencies = [
  "clap",
- "mac-host-core",
+ "serde",
  "serde_json",
 ]
 
