@@ -81,8 +81,8 @@ fn print_tui_spec() {
     let settings_exists = settings_path().exists();
 
     let spec = serde_json::json!({
-        "tab": { "label": "VS Code", "icon": "💻" },
-        "sections": [
+        "tab": { "label_ko": "VSCode", "label": "VS Code", "icon": "💻" },
+        "group": "dev",        "sections": [
             {
                 "kind": "key-value",
                 "title": "Status",
@@ -108,12 +108,12 @@ fn print_tui_spec() {
                 "kind": "buttons",
                 "title": "Actions",
                 "items": [
-                    { "label": "Status (상태)", "command": "status", "key": "s" },
-                    { "label": "Install (VS Code 설치)", "command": "install", "key": "i" },
-                    { "label": "Ext List (확장 목록)", "command": "ext-list", "key": "l" },
-                    { "label": "Ext Export (확장 내보내기)", "command": "ext-export", "key": "e" },
-                    { "label": "Ext Import (일괄 설치)", "command": "ext-import", "key": "m" },
-                    { "label": "Settings Path (설정 경로)", "command": "settings-path", "key": "p" }
+                    { "label_ko": "VSCode", "label": "Status (상태)", "command": "status", "key": "s" },
+                    { "label_ko": "VSCode", "label": "Install (VS Code 설치)", "command": "install", "key": "i" },
+                    { "label_ko": "VSCode", "label": "Ext List (확장 목록)", "command": "ext-list", "key": "l" },
+                    { "label_ko": "VSCode", "label": "Ext Export (확장 내보내기)", "command": "ext-export", "key": "e" },
+                    { "label_ko": "VSCode", "label": "Ext Import (일괄 설치)", "command": "ext-import", "key": "m" },
+                    { "label_ko": "VSCode", "label": "Settings Path (설정 경로)", "command": "settings-path", "key": "p" }
                 ]
             }
         ]

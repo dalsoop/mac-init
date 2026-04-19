@@ -73,8 +73,8 @@ fn print_tui_spec() {
     }
 
     let spec = serde_json::json!({
-        "tab": { "label": "Quick Actions", "icon": "⚡" },
-        "sections": [
+        "tab": { "label_ko": "빠른동작", "label": "Quick Actions", "icon": "⚡" },
+        "group": "dev",        "sections": [
             {
                 "kind": "key-value",
                 "title": "Status",
@@ -93,9 +93,9 @@ fn print_tui_spec() {
                 "kind": "buttons",
                 "title": "Actions",
                 "items": [
-                    { "label": "List (목록)", "command": "list", "key": "l" },
-                    { "label": "Install Defaults (기본 세트)", "command": "install-defaults", "key": "d" },
-                    { "label": "Reload (Finder 재시작)", "command": "reload", "key": "r" }
+                    { "label_ko": "빠른동작", "label": "List (목록)", "command": "list", "key": "l" },
+                    { "label_ko": "빠른동작", "label": "Install Defaults (기본 세트)", "command": "install-defaults", "key": "d" },
+                    { "label_ko": "빠른동작", "label": "Reload (Finder 재시작)", "command": "reload", "key": "r" }
                 ]
             }
         ]

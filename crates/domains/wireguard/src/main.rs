@@ -99,8 +99,8 @@ fn print_tui_spec() {
     }
 
     let spec = serde_json::json!({
-        "tab": { "label": "WireGuard", "icon": "🔒" },
-        "sections": [
+        "tab": { "label_ko": "WireGuard", "label": "WireGuard", "icon": "🔒" },
+        "group": "system",        "sections": [
             {
                 "kind": "key-value",
                 "title": "Status",
@@ -132,10 +132,10 @@ fn print_tui_spec() {
                 "kind": "buttons",
                 "title": "Actions",
                 "items": [
-                    { "label": "Status (상태)", "command": "status", "key": "s" },
-                    { "label": "Install (wg + GUI 설치)", "command": "install", "key": "i" },
-                    { "label": "List (설정 목록)", "command": "list", "key": "l" },
-                    { "label": "Open (GUI 열기)", "command": "open", "key": "o" }
+                    { "label_ko": "WireGuard", "label": "Status (상태)", "command": "status", "key": "s" },
+                    { "label_ko": "WireGuard", "label": "Install (wg + GUI 설치)", "command": "install", "key": "i" },
+                    { "label_ko": "WireGuard", "label": "List (설정 목록)", "command": "list", "key": "l" },
+                    { "label_ko": "WireGuard", "label": "Open (GUI 열기)", "command": "open", "key": "o" }
                 ]
             }
         ]

@@ -36,8 +36,8 @@ fn main() {
 
 fn print_tui_spec() {
     let spec = serde_json::json!({
-        "tab": { "label": "Worktree", "icon": "🌿" },
-        "sections": [
+        "tab": { "label_ko": "워크트리", "label": "Worktree", "icon": "🌿" },
+        "group": "auto",        "sections": [
             {
                 "kind": "text",
                 "title": "설명",
@@ -47,8 +47,8 @@ fn print_tui_spec() {
                 "kind": "buttons",
                 "title": "Actions",
                 "items": [
-                    { "label": "Status (worktree 상태)", "command": "status", "key": "s" },
-                    { "label": "Clean (정리)", "command": "clean", "key": "c" }
+                    { "label_ko": "워크트리", "label": "Status (worktree 상태)", "command": "status", "key": "s" },
+                    { "label_ko": "워크트리", "label": "Clean (정리)", "command": "clean", "key": "c" }
                 ]
             }
         ]

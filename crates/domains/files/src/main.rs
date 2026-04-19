@@ -54,8 +54,8 @@ fn main() {
 
 fn print_tui_spec() {
     let spec = serde_json::json!({
-        "tab": { "label": "Files", "icon": "📁" },
-        "sections": [
+        "tab": { "label_ko": "파일정리", "label": "Files", "icon": "📁" },
+        "group": "auto",        "sections": [
             {
                 "kind": "text",
                 "title": "설명",
@@ -65,12 +65,12 @@ fn print_tui_spec() {
                 "kind": "buttons",
                 "title": "Actions",
                 "items": [
-                    { "label": "Status (파일 관리 상태)", "command": "status", "key": "s" },
-                    { "label": "Organize (Downloads 자동 분류)", "command": "organize", "key": "o" },
-                    { "label": "Cleanup Temp (임시 정리)", "command": "cleanup-temp", "key": "c" },
-                    { "label": "Setup Auto (자동화 활성화)", "command": "setup-auto", "key": "a" },
-                    { "label": "SD Status (SD 백업 상태)", "command": "sd-status", "key": "d" },
-                    { "label": "Lint (파일 lint)", "command": "lint", "key": "l" }
+                    { "label_ko": "파일정리", "label": "Status (파일 관리 상태)", "command": "status", "key": "s" },
+                    { "label_ko": "파일정리", "label": "Organize (Downloads 자동 분류)", "command": "organize", "key": "o" },
+                    { "label_ko": "파일정리", "label": "Cleanup Temp (임시 정리)", "command": "cleanup-temp", "key": "c" },
+                    { "label_ko": "파일정리", "label": "Setup Auto (자동화 활성화)", "command": "setup-auto", "key": "a" },
+                    { "label_ko": "파일정리", "label": "SD Status (SD 백업 상태)", "command": "sd-status", "key": "d" },
+                    { "label_ko": "파일정리", "label": "Lint (파일 lint)", "command": "lint", "key": "l" }
                 ]
             }
         ]

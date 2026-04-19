@@ -47,8 +47,8 @@ fn main() {
 fn print_tui_spec() {
     let domains = defaults::list_domains();
     let spec = serde_json::json!({
-        "tab": { "label": "Defaults", "icon": "⚙" },
-        "sections": [
+        "tab": { "label_ko": "기본설정", "label": "Defaults", "icon": "⚙" },
+        "group": "system",        "sections": [
             {
                 "kind": "key-value",
                 "title": "Status",
@@ -65,7 +65,7 @@ fn print_tui_spec() {
                 "kind": "buttons",
                 "title": "Actions",
                 "items": [
-                    { "label": "List (도메인 목록)", "command": "list", "key": "l" }
+                    { "label_ko": "기본설정", "label": "List (도메인 목록)", "command": "list", "key": "l" }
                 ]
             }
         ]

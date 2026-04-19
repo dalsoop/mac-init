@@ -165,8 +165,8 @@ fn print_tui_spec() {
     let active_jobs = sched.jobs.iter().filter(|j| j.enabled).count();
 
     let spec = serde_json::json!({
-        "tab": { "label": "Cron", "icon": "⏰" },
-        "sections": [
+        "tab": { "label_ko": "크론(스케줄)", "label": "Cron", "icon": "⏰" },
+        "group": "auto",        "sections": [
             {
                 "kind": "key-value",
                 "title": "Status",
@@ -198,11 +198,11 @@ fn print_tui_spec() {
                 "kind": "buttons",
                 "title": "Actions",
                 "items": [
-                    { "label": "Jobs (내 jobs)", "command": "jobs", "key": "j" },
-                    { "label": "Status", "command": "status", "key": "s" },
-                    { "label": "List (시스템 agents)", "command": "list", "key": "l" },
-                    { "label": "Setup Scheduler", "command": "setup-scheduler", "key": "u" },
-                    { "label": "Remove Scheduler", "command": "remove-scheduler", "key": "x" }
+                    { "label_ko": "크론(스케줄)", "label": "Jobs (내 jobs)", "command": "jobs", "key": "j" },
+                    { "label_ko": "크론(스케줄)", "label": "Status", "command": "status", "key": "s" },
+                    { "label_ko": "크론(스케줄)", "label": "List (시스템 agents)", "command": "list", "key": "l" },
+                    { "label_ko": "크론(스케줄)", "label": "Setup Scheduler", "command": "setup-scheduler", "key": "u" },
+                    { "label_ko": "크론(스케줄)", "label": "Remove Scheduler", "command": "remove-scheduler", "key": "x" }
                 ]
             },
             {

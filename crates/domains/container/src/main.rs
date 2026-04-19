@@ -74,8 +74,8 @@ fn print_tui_spec() {
     let orb_running = orb_installed && cmd_stdout("orbctl", &["status"]).contains("Running");
 
     let spec = serde_json::json!({
-        "tab": { "label": "Container", "icon": "📦" },
-        "sections": [
+        "tab": { "label_ko": "컨테이너", "label": "Container", "icon": "📦" },
+        "group": "dev",        "sections": [
             {
                 "kind": "key-value",
                 "title": "Status",
@@ -101,12 +101,12 @@ fn print_tui_spec() {
                 "kind": "buttons",
                 "title": "Actions",
                 "items": [
-                    { "label": "Status (상태)", "command": "status", "key": "s" },
-                    { "label": "List (컨테이너 목록)", "command": "list", "key": "l" },
-                    { "label": "Vms (VM 목록)", "command": "vms", "key": "v" },
-                    { "label": "Up (OrbStack 시작)", "command": "up", "key": "u" },
-                    { "label": "Down (OrbStack 정지)", "command": "down", "key": "d" },
-                    { "label": "Install OrbStack", "command": "install-orbstack", "key": "i" }
+                    { "label_ko": "컨테이너", "label": "Status (상태)", "command": "status", "key": "s" },
+                    { "label_ko": "컨테이너", "label": "List (컨테이너 목록)", "command": "list", "key": "l" },
+                    { "label_ko": "컨테이너", "label": "Vms (VM 목록)", "command": "vms", "key": "v" },
+                    { "label_ko": "컨테이너", "label": "Up (OrbStack 시작)", "command": "up", "key": "u" },
+                    { "label_ko": "컨테이너", "label": "Down (OrbStack 정지)", "command": "down", "key": "d" },
+                    { "label_ko": "컨테이너", "label": "Install OrbStack", "command": "install-orbstack", "key": "i" }
                 ]
             }
         ]

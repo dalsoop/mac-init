@@ -49,8 +49,8 @@ fn print_tui_spec() {
     }).collect();
 
     let spec = serde_json::json!({
-        "tab": { "label": "Dotfiles", "icon": "📄" },
-        "sections": [
+        "tab": { "label_ko": "설정파일", "label": "Dotfiles", "icon": "📄" },
+        "group": "system",        "sections": [
             {
                 "kind": "key-value",
                 "title": "Status",
@@ -68,7 +68,7 @@ fn print_tui_spec() {
                 "kind": "buttons",
                 "title": "Actions",
                 "items": [
-                    { "label": "List (목록 갱신)", "command": "list", "key": "l" }
+                    { "label_ko": "설정파일", "label": "List (목록 갱신)", "command": "list", "key": "l" }
                 ]
             }
         ]

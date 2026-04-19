@@ -74,8 +74,8 @@ fn print_tui_spec() {
     let gh_authed = gh_installed && cmd_ok("gh", &["auth", "token"]);
 
     let spec = serde_json::json!({
-        "tab": { "label": "Git", "icon": "🔱" },
-        "sections": [
+        "tab": { "label_ko": "Git", "label": "Git", "icon": "🔱" },
+        "group": "dev",        "sections": [
             {
                 "kind": "key-value",
                 "title": "Status",
@@ -111,11 +111,11 @@ fn print_tui_spec() {
                 "kind": "buttons",
                 "title": "Actions",
                 "items": [
-                    { "label": "Status (상태)", "command": "status", "key": "s" },
-                    { "label": "SSH Setup (ed25519 키 생성)", "command": "ssh-setup", "key": "k" },
-                    { "label": "gh Auth (GitHub 로그인)", "command": "gh-auth", "key": "a" },
-                    { "label": "gh Install (gh CLI 설치)", "command": "gh-install", "key": "i" },
-                    { "label": "gh SSH Setup (키 등록)", "command": "gh-ssh-setup", "key": "g" }
+                    { "label_ko": "Git", "label": "Status (상태)", "command": "status", "key": "s" },
+                    { "label_ko": "Git", "label": "SSH Setup (ed25519 키 생성)", "command": "ssh-setup", "key": "k" },
+                    { "label_ko": "Git", "label": "gh Auth (GitHub 로그인)", "command": "gh-auth", "key": "a" },
+                    { "label_ko": "Git", "label": "gh Install (gh CLI 설치)", "command": "gh-install", "key": "i" },
+                    { "label_ko": "Git", "label": "gh SSH Setup (키 등록)", "command": "gh-ssh-setup", "key": "g" }
                 ]
             }
         ]

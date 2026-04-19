@@ -30,8 +30,8 @@ fn main() {
 
 fn print_tui_spec() {
     let spec = serde_json::json!({
-        "tab": { "label": "Projects", "icon": "📚" },
-        "sections": [
+        "tab": { "label_ko": "프로젝트", "label": "Projects", "icon": "📚" },
+        "group": "auto",        "sections": [
             {
                 "kind": "text",
                 "title": "설명",
@@ -41,8 +41,8 @@ fn print_tui_spec() {
                 "kind": "buttons",
                 "title": "Actions",
                 "items": [
-                    { "label": "Status (프로젝트 목록)", "command": "status", "key": "s" },
-                    { "label": "Sync (NCL 동기화)", "command": "sync", "key": "y" }
+                    { "label_ko": "프로젝트", "label": "Status (프로젝트 목록)", "command": "status", "key": "s" },
+                    { "label_ko": "프로젝트", "label": "Sync (NCL 동기화)", "command": "sync", "key": "y" }
                 ]
             }
         ]
