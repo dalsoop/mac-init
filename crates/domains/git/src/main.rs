@@ -30,8 +30,38 @@ enum Commands {
     GhInstall,
     /// GitHub SSH 키 등록
     GhSshSetup,
+    /// 프로젝트 관리
+    Project {
+        #[command(subcommand)]
+        action: ProjectAction,
+    },
+    /// Git worktree 관리
+    Worktree {
+        #[command(subcommand)]
+        action: WorktreeAction,
+    },
     /// TUI v2 스펙 (JSON)
     TuiSpec,
+}
+
+#[derive(Subcommand)]
+enum ProjectAction {
+    /// 프로젝트 목록
+    List,
+    /// NCL 동기화
+    Sync,
+}
+
+#[derive(Subcommand)]
+enum WorktreeAction {
+    /// worktree 상태
+    List,
+    /// worktree 생성
+    Add { project: String, #[arg(name = "type")] btype: String, name: String },
+    /// worktree 제거
+    Remove { project: String, #[arg(name = "type")] btype: String, name: String },
+    /// 머지 완료 + stale 자동 정리
+    Clean,
 }
 
 fn home() -> String {
@@ -61,6 +91,16 @@ fn main() {
         Commands::GhAuth => cmd_gh_auth(),
         Commands::GhInstall => cmd_gh_install(),
         Commands::GhSshSetup => cmd_gh_ssh_setup(),
+        Commands::Project { action } => match action {
+            ProjectAction::List => mac_host_core::projects::status(),
+            ProjectAction::Sync => mac_host_core::projects::sync_ncl(),
+        },
+        Commands::Worktree { action } => match action {
+            WorktreeAction::List => mac_host_core::worktree::status(),
+            WorktreeAction::Add { project, btype, name } => mac_host_core::worktree::add(&project, &btype, &name),
+            WorktreeAction::Remove { project, btype, name } => mac_host_core::worktree::remove(&project, &btype, &name),
+            WorktreeAction::Clean => mac_host_core::worktree::clean(),
+        },
         Commands::TuiSpec => print_tui_spec(),
     }
 }

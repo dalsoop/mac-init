@@ -19,7 +19,7 @@ const GROUPS: &[(&str, &str)] = &[
 fn default_group(domain: &str) -> &'static str {
     match domain {
         "mount" | "env" | "host" | "network" | "ssh" | "proxmox" | "synology" => "infra",
-        "cron" | "files" | "projects" | "worktree" => "auto",
+        "cron" | "files" => "auto",
         "git" | "vscode" | "container" => "dev",
         "quickaction" => "finder",
         "keyboard" | "shell" | "bootstrap" | "wireguard" => "system",
