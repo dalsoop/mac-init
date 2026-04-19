@@ -69,6 +69,11 @@ enum Commands {
     AutoEnable,
     /// LaunchAgent 제거
     AutoDisable,
+    /// NAS 잔재 자동 격리 켜기/끄기 (auto 실행 시마다)
+    Sweep {
+        /// on | off
+        toggle: String,
+    },
     /// TUI v2 스펙 (JSON)
     TuiSpec,
 }
@@ -436,6 +441,7 @@ fn main() {
         Commands::Auto => cmd_auto(),
         Commands::AutoStatus => cmd_auto_status(),
         Commands::AutoResume { target } => cmd_auto_resume(target.as_deref()),
+        Commands::Sweep { toggle } => cmd_sweep(&toggle),
         Commands::AutoEnable => cmd_auto_enable(),
         Commands::AutoDisable => cmd_auto_disable(),
         Commands::TuiSpec => print_tui_spec(),
@@ -698,10 +704,20 @@ struct AutoMount {
 }
 fn default_true() -> bool { true }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct MountConfig {
     #[serde(default)]
     auto_mounts: Vec<AutoMount>,
+    /// NAS 잔재 자동 격리. auto 실행 시마다 ~/NAS/ 스캔.
+    /// false 면 sweep 안 함 (잔재 방치).
+    #[serde(default = "default_true")]
+    sweep_enabled: bool,
+}
+
+impl Default for MountConfig {
+    fn default() -> Self {
+        Self { auto_mounts: Vec::new(), sweep_enabled: true }
+    }
 }
 
 fn mount_config_path() -> PathBuf {
@@ -853,7 +869,9 @@ fn cmd_auto() {
     }
     // [C] 사이클 시작 시 stale 일괄 청소 + NAS 잔재 정리.
     sweep_stale_mounts();
-    sweep_nas_orphans();
+    if cfg.sweep_enabled {
+        sweep_nas_orphans();
+    }
 
     let mut state = load_retry_state();
     let now = epoch_now();
@@ -1071,6 +1089,34 @@ fn automount_plist_path() -> PathBuf {
     PathBuf::from(home()).join(format!("Library/LaunchAgents/{}.plist", AUTOMOUNT_LABEL))
 }
 
+fn cmd_sweep(toggle: &str) {
+    let mut cfg = load_mount_config();
+    match toggle.to_lowercase().as_str() {
+        "on" | "true" | "1" => {
+            cfg.sweep_enabled = true;
+            let _ = save_mount_config(&cfg);
+            println!("✓ NAS 잔재 자동 격리 켜짐 (auto 실행 시마다 ~/NAS/ 스캔)");
+        }
+        "off" | "false" | "0" => {
+            cfg.sweep_enabled = false;
+            let _ = save_mount_config(&cfg);
+            println!("✓ NAS 잔재 자동 격리 꺼짐");
+        }
+        "status" => {
+            println!("sweep: {}", if cfg.sweep_enabled { "켜짐 (auto 실행 시마다)" } else { "꺼짐" });
+            let trash = nas_root().join(".mountless-trash");
+            if trash.exists() {
+                let count = fs::read_dir(&trash).map(|it| it.count()).unwrap_or(0);
+                println!(".mountless-trash: {}개 세션", count);
+            }
+        }
+        _ => {
+            eprintln!("사용법: mount sweep <on|off|status>");
+            std::process::exit(1);
+        }
+    }
+}
+
 fn cmd_auto_enable() {
     let mac_bin = Command::new("which").arg("mac").output()
         .ok().and_then(|o| if o.status.success() {
@@ -1258,6 +1304,15 @@ fn print_tui_spec() {
                             cfg.auto_mounts.iter().filter(|a| a.enabled).count()
                         ),
                         "status": "ok"
+                    },
+                    {
+                        "key": "잔재 자동 정리 (sweep)",
+                        "value": if cfg.sweep_enabled {
+                            "✓ 켜짐 (auto 실행 시마다 ~/NAS/ 스캔)"
+                        } else {
+                            "✗ 꺼짐 (mac run mount sweep on 으로 활성화)"
+                        },
+                        "status": if cfg.sweep_enabled { "ok" } else { "warn" }
                     }
                 ]
             },
@@ -1288,13 +1343,17 @@ fn print_tui_spec() {
                     { "label": "Auto (지금 자동 마운트)", "command": "auto", "key": "a" },
                     { "label": "Auto-list (설정 보기)", "command": "auto-list", "key": "i" },
                     { "label": "Auto-enable (LaunchAgent)", "command": "auto-enable", "key": "e" },
-                    { "label": "Auto-disable", "command": "auto-disable", "key": "d" }
+                    { "label": "Auto-disable", "command": "auto-disable", "key": "d" },
+                    { "label": if cfg.sweep_enabled { "Sweep OFF" } else { "Sweep ON" },
+                      "command": "sweep",
+                      "args": [if cfg.sweep_enabled { "off" } else { "on" }],
+                      "key": "w" }
                 ]
             },
             {
                 "kind": "text",
                 "title": "사용법 — 터미널",
-                "content": "  자동 마운트 설정:\n    mac run mount auto-add <conn> <share>\n    mac run mount auto-toggle <conn> <share>\n    mac run mount auto-enable      # 로그인 시 + 5분마다 자동 실행\n\n  수동:\n    mac run mount mount <name> <share>\n    mac run mount unmount <share>"
+                "content": "  자동 마운트 설정:\n    mac run mount auto-add <conn> <share>\n    mac run mount auto-toggle <conn> <share>\n    mac run mount auto-enable      # 로그인 시 + 5분마다 자동 실행\n\n  잔재 정리:\n    mac run mount sweep on|off|status\n    → auto 실행 시마다 ~/NAS/ 스캔, 카드/마운트에 없는 항목을\n      ~/NAS/.mountless-trash/YYMMDD-HHMMSS/ 로 격리 (삭제 아님)\n\n  수동:\n    mac run mount mount <name> <share>\n    mac run mount unmount <share>"
             }
         ],
         "keybindings": [
