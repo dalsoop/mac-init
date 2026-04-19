@@ -17,6 +17,8 @@ enum Commands {
     Install,
     /// 누락된 것만 설치
     Check,
+    /// PATH + alias.sh source 설정 (초기 셋업 or 재설정)
+    SetupPath,
     /// TUI v2 스펙 (JSON)
     TuiSpec,
 }
@@ -113,8 +115,64 @@ fn main() {
         Commands::Status => cmd_status(),
         Commands::Install => cmd_install(),
         Commands::Check => cmd_check(),
+        Commands::SetupPath => cmd_setup_path(),
         Commands::TuiSpec => print_tui_spec(),
     }
+}
+
+fn home() -> String { std::env::var("HOME").unwrap_or_else(|_| "/tmp".into()) }
+
+fn cmd_setup_path() {
+    use std::fs;
+    use std::path::PathBuf;
+
+    let domains_dir = format!("{}/.mac-app-init/domains", home());
+    let aliases_sh = format!("{}/.mac-app-init/aliases.sh", home());
+    let zshrc = PathBuf::from(home()).join(".zshrc");
+
+    println!("=== PATH + alias 셋업 ===\n");
+
+    let mut content = fs::read_to_string(&zshrc).unwrap_or_default();
+    let mut changed = false;
+
+    // 1. PATH 에 도메인 디렉터리 추가
+    let path_line = format!("export PATH=\"{}:$PATH\"", domains_dir);
+    if !content.contains(&domains_dir) {
+        if !content.ends_with('\n') { content.push('\n'); }
+        content.push_str(&format!("\n# mac-app-init PATH\n{}\n", path_line));
+        changed = true;
+        println!("✓ PATH 추가: {}", domains_dir);
+    } else {
+        println!("✓ PATH 이미 등록됨");
+    }
+
+    // 2. aliases.sh source
+    if !content.contains(".mac-app-init/aliases.sh") {
+        content.push_str(&format!("\n# mac-app-init aliases\nsource {}\n", aliases_sh));
+        changed = true;
+        println!("✓ source aliases.sh 추가");
+    } else {
+        println!("✓ source aliases.sh 이미 등록됨");
+    }
+
+    if changed {
+        if let Err(e) = fs::write(&zshrc, &content) {
+            eprintln!("✗ ~/.zshrc 쓰기 실패: {}", e);
+            return;
+        }
+    }
+
+    // 3. aliases.sh 존재 보장
+    let aliases_path = PathBuf::from(&aliases_sh);
+    if !aliases_path.exists() {
+        if let Some(parent) = aliases_path.parent() { let _ = fs::create_dir_all(parent); }
+        let default = format!("# mac-app-init aliases — mac run alias add/rm 으로 관리\nexport PATH=\"{}:$PATH\"\n", domains_dir);
+        let _ = fs::write(&aliases_path, default);
+        println!("✓ aliases.sh 초기 생성");
+    }
+
+    println!("\n새 터미널 열면 적용됩니다.");
+    println!("  mac-tui, mac-domain-* 등이 바로 실행 가능해짐.");
 }
 
 fn print_tui_spec() {
