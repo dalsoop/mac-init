@@ -4,16 +4,48 @@ use crate::widgets;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::{prelude::*, widgets::*};
 
+/// 사이드바 그룹 정의. 순서 = 화면 표시 순서.
+const GROUPS: &[(&str, &str)] = &[
+    ("infra",  "인프라"),
+    ("auto",   "자동화"),
+    ("dev",    "개발"),
+    ("system", "시스템"),
+    ("other",  "기타"),
+];
+
+/// 도메인 → 그룹 매핑. spec.group 이 없으면 여기서 fallback.
+fn default_group(domain: &str) -> &'static str {
+    match domain {
+        "mount" | "env" | "host" | "network" | "ssh" | "proxmox" | "synology" => "infra",
+        "cron" | "files" | "projects" | "worktree" => "auto",
+        "git" | "vscode" | "container" | "quickaction" => "dev",
+        "keyboard" | "shell" | "defaults" | "dotfiles" | "bootstrap" | "wireguard" => "system",
+        _ => "other",
+    }
+}
+
 pub struct App {
     pub should_quit: bool,
-    pub domains: Vec<String>,           // 설치된 도메인 이름
+    pub domains: Vec<String>,
     pub specs: Vec<Option<DomainSpec>>,
-    pub available: Vec<String>,         // 전체 도메인 목록 (mac available)
-    pub install_focus: usize,           // Install 탭에서 선택된 행
-    pub install_area_top: u16,          // Install 리스트 영역의 y 시작 (마우스 히트테스트용)
-    pub selected_tab: usize,            // 0 = Install, 1+ = 도메인
-    pub focus_button: usize,            // Buttons 섹션 내 포커스
+    pub available: Vec<String>,
+    pub install_focus: usize,
+    pub install_area_top: u16,
+    pub selected_tab: usize,            // 0 = Install, 1+ = 도메인 (flat index)
+    pub focus_button: usize,
     pub output: String,
+    /// 사이드바 렌더링용: (group_label, domain_indices) 순서대로.
+    pub sidebar_entries: Vec<SidebarEntry>,
+}
+
+#[derive(Clone)]
+pub enum SidebarEntry {
+    /// 설치 관리 (항상 첫 번째)
+    Install,
+    /// 그룹 헤더 (클릭/선택 불가)
+    GroupHeader(String),
+    /// 도메인 (domain index 참조)
+    Domain { idx: usize, label: String },
 }
 
 impl App {
@@ -28,6 +60,7 @@ impl App {
             selected_tab: 0,
             focus_button: 0,
             output: String::new(),
+            sidebar_entries: Vec::new(),
         }
     }
 
@@ -35,12 +68,47 @@ impl App {
         self.domains = installed_domains();
         self.specs = self.domains.iter().map(|d| fetch_spec(d)).collect();
         self.available = available_domains();
+        self.build_sidebar();
         if self.selected_tab > self.domains.len() {
             self.selected_tab = 0;
         }
         if self.install_focus >= self.available.len() {
             self.install_focus = self.available.len().saturating_sub(1);
         }
+    }
+
+    /// Tab/BackTab 이동. 그룹 헤더는 skip.
+    fn navigate_tab(&mut self, dir: i32) {
+        let max = self.domains.len(); // 0=install, 1..=max = domains
+        let mut next = self.selected_tab as i32 + dir;
+        // wrap
+        if next < 0 { next = max as i32; }
+        if next > max as i32 { next = 0; }
+        self.selected_tab = next as usize;
+    }
+
+    fn build_sidebar(&mut self) {
+        let mut entries = vec![SidebarEntry::Install];
+
+        for &(group_id, group_label) in GROUPS {
+            let mut group_domains: Vec<(usize, String)> = Vec::new();
+            for (i, domain) in self.domains.iter().enumerate() {
+                let spec_group = self.specs[i].as_ref()
+                    .and_then(|s| s.group.as_deref())
+                    .unwrap_or_else(|| default_group(domain));
+                if spec_group != group_id { continue; }
+                let label = self.specs[i].as_ref()
+                    .map(|s| s.tab.label_ko.as_deref().unwrap_or(&s.tab.label).to_string())
+                    .unwrap_or_else(|| domain.clone());
+                group_domains.push((i, label));
+            }
+            if group_domains.is_empty() { continue; }
+            entries.push(SidebarEntry::GroupHeader(group_label.to_string()));
+            for (idx, label) in group_domains {
+                entries.push(SidebarEntry::Domain { idx, label });
+            }
+        }
+        self.sidebar_entries = entries;
     }
 
     fn is_installed(&self, name: &str) -> bool {
@@ -67,7 +135,7 @@ impl App {
     pub fn render(&mut self, frame: &mut Frame) {
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Length(20), Constraint::Min(0)])
+            .constraints([Constraint::Length(24), Constraint::Min(0)])
             .split(frame.area());
 
         self.render_sidebar(frame, chunks[0]);
@@ -77,37 +145,42 @@ impl App {
     fn render_sidebar(&self, frame: &mut Frame, area: Rect) {
         let mut items = Vec::new();
 
-        // Install (항상 첫 번째)
-        let style = if self.selected_tab == 0 {
-            Style::default().bg(Color::Cyan).fg(Color::Black).bold()
-        } else {
-            Style::default().fg(Color::White)
-        };
-        items.push(ListItem::new(Line::from(Span::styled(" Install ", style))));
-
-        if !self.domains.is_empty() {
-            items.push(ListItem::new(Line::from(Span::styled("─────────", Style::default().fg(Color::DarkGray)))));
-        }
-
-        // Installed domains
-        for (i, domain) in self.domains.iter().enumerate() {
-            let idx = i + 1;
-            let label = match &self.specs[i] {
-                Some(spec) => spec.tab.label.clone(),
-                None => domain.clone(),
-            };
-            let style = if self.selected_tab == idx {
-                Style::default().bg(Color::Cyan).fg(Color::Black).bold()
-            } else {
-                Style::default().fg(Color::White)
-            };
-            items.push(ListItem::new(Line::from(Span::styled(format!(" {} ", label), style))));
+        for entry in &self.sidebar_entries {
+            match entry {
+                SidebarEntry::Install => {
+                    let style = if self.selected_tab == 0 {
+                        Style::default().bg(Color::Cyan).fg(Color::Black).bold()
+                    } else {
+                        Style::default().fg(Color::White)
+                    };
+                    items.push(ListItem::new(Line::from(Span::styled(" 설치 관리", style))));
+                }
+                SidebarEntry::GroupHeader(label) => {
+                    items.push(ListItem::new(Line::from(Span::styled(
+                        format!("─ {} ─", label),
+                        Style::default().fg(Color::DarkGray).bold(),
+                    ))));
+                }
+                SidebarEntry::Domain { idx, label } => {
+                    let tab_idx = idx + 1;
+                    let icon = self.specs[*idx].as_ref()
+                        .and_then(|s| s.tab.icon.as_deref()).unwrap_or("");
+                    let style = if self.selected_tab == tab_idx {
+                        Style::default().bg(Color::Cyan).fg(Color::Black).bold()
+                    } else {
+                        Style::default().fg(Color::White)
+                    };
+                    items.push(ListItem::new(Line::from(Span::styled(
+                        format!(" {} {}", icon, label), style,
+                    ))));
+                }
+            }
         }
 
         let list = List::new(items).block(
             Block::default().borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::DarkGray))
-                .title(" mac "),
+                .title(" mac-app-init "),
         );
         frame.render_widget(list, area);
     }
@@ -255,19 +328,12 @@ impl App {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => { self.should_quit = true; return; }
             KeyCode::Char('r') => { self.load(); self.output = "Refreshed.".into(); return; }
             KeyCode::Tab => {
-                if key.modifiers.contains(KeyModifiers::SHIFT) {
-                    if self.selected_tab == 0 { self.selected_tab = self.domains.len(); }
-                    else { self.selected_tab -= 1; }
-                } else {
-                    if self.selected_tab < self.domains.len() { self.selected_tab += 1; }
-                    else { self.selected_tab = 0; }
-                }
+                self.navigate_tab(1);
                 self.focus_button = 0;
                 return;
             }
             KeyCode::BackTab => {
-                if self.selected_tab == 0 { self.selected_tab = self.domains.len(); }
-                else { self.selected_tab -= 1; }
+                self.navigate_tab(-1);
                 self.focus_button = 0;
                 return;
             }

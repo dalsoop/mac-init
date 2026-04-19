@@ -7,6 +7,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DomainSpec {
     pub tab: TabInfo,
+    /// 도메인이 속하는 번들/그룹 (사이드바 2단 트리용).
+    /// 없으면 "기타" 로 분류.
+    #[serde(default)]
+    pub group: Option<String>,
     #[serde(default)]
     pub sections: Vec<Section>,
     /// 전역 키 바인딩 — TUI 가 받아서 도메인 CLI 실행.
@@ -47,8 +51,14 @@ fn default_true() -> bool { true }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TabInfo {
     pub label: String,
+    /// 한국어 라벨. 없으면 label 그대로.
+    #[serde(default)]
+    pub label_ko: Option<String>,
     #[serde(default)]
     pub icon: Option<String>,
+    /// 도메인 한 줄 설명.
+    #[serde(default)]
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

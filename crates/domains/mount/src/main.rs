@@ -1270,8 +1270,8 @@ fn print_tui_spec() {
     let connect_ok = has_connect_domain();
 
     let spec = serde_json::json!({
-        "tab": { "label": "Mount", "icon": "💾" },
-        "list_section": "자동 마운트",
+        "tab": { "label_ko": "마운트", "label": "Mount", "icon": "💾" },
+        "group": "infra",        "list_section": "자동 마운트",
         "sections": [
             {
                 "kind": "key-value",

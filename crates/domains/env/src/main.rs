@@ -929,8 +929,8 @@ fn print_tui_spec() {
     }).collect();
 
     let spec = serde_json::json!({
-        "tab": { "label": "Env", "icon": "🔑" },
-        "list_section": "Cards",
+        "tab": { "label_ko": "환경(카드)", "label": "Env", "icon": "🔑" },
+        "group": "infra",        "list_section": "Cards",
         "sections": [
             {
                 "kind": "key-value",

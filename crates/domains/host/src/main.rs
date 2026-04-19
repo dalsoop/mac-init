@@ -161,8 +161,8 @@ fn print_tui_spec() {
     }).collect();
 
     let spec = serde_json::json!({
-        "tab": { "label": "Host", "icon": "🖥" },
-        "list_section": "/etc/hosts",
+        "tab": { "label_ko": "호스트", "label": "Host", "icon": "🖥" },
+        "group": "infra",        "list_section": "/etc/hosts",
         "sections": [
             {
                 "kind": "key-value",
