@@ -62,7 +62,7 @@ async fn main() -> Result<()> {
             last_refresh = std::time::Instant::now();
         }
 
-        if event::poll(std::time::Duration::from_millis(200))? {
+        if event::poll(std::time::Duration::from_millis(50))? {
             match event::read()? {
                 Event::Key(k) => { app.handle_key(k); last_refresh = std::time::Instant::now(); },
                 Event::Mouse(m) => app.handle_mouse(m),
