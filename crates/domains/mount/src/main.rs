@@ -588,6 +588,59 @@ fn sweep_mountless_files(mp: &PathBuf, conn: &str, share: &str) {
     }
 }
 
+/// ~/NAS/ 루트에서 카드/자동마운트에 속하지 않는 잔재 항목을 .mountless-trash 로 격리.
+/// .mountless-trash 자체와 실제 카드 이름 디렉터리는 보존.
+fn sweep_nas_root() {
+    let root = nas_root();
+    if !root.exists() { return; }
+
+    let conns = load_all_connections();
+    let known: std::collections::HashSet<String> = conns.iter().map(|c| c.name.clone()).collect();
+
+    let entries: Vec<_> = match fs::read_dir(&root) {
+        Ok(it) => it.filter_map(|e| e.ok()).collect(),
+        Err(_) => return,
+    };
+
+    let mut to_move: Vec<std::fs::DirEntry> = Vec::new();
+    for entry in entries {
+        let name = entry.file_name().to_string_lossy().to_string();
+        // 보존 대상
+        if name == ".mountless-trash" { continue; }
+        if name == ".DS_Store" { to_move.push(entry); continue; }
+        if name.starts_with('.') { to_move.push(entry); continue; }
+        if known.contains(&name) { continue; }
+        to_move.push(entry);
+    }
+    if to_move.is_empty() { return; }
+
+    let ts = Command::new("date")
+        .args(["+%y%m%d-%H%M%S"])
+        .output().ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_else(|| format!("epoch-{}", epoch_now()));
+
+    let trash_dir = root.join(".mountless-trash").join(format!("{}-NAS-root", ts));
+    if let Err(e) = fs::create_dir_all(&trash_dir) {
+        eprintln!("  ⚠ mountless-trash 생성 실패: {}", e);
+        return;
+    }
+
+    let mut moved = 0;
+    for entry in to_move {
+        let name = entry.file_name();
+        let dest = trash_dir.join(&name);
+        if let Err(e) = fs::rename(entry.path(), &dest) {
+            eprintln!("  ⚠ 이동 실패: {} → {}: {}", entry.path().display(), dest.display(), e);
+        } else {
+            moved += 1;
+        }
+    }
+    if moved > 0 {
+        eprintln!("  🗂 NAS 루트 잔재 {}개 → {}", moved, trash_dir.display());
+    }
+}
+
 /// rclone 카드의 (remote, path) 메타. env show 의 rclone_remote/rclone_path 필드.
 fn card_rclone_meta(name: &str) -> (String, String) {
     let out = Command::new(env_binary()).args(["show", name]).output();
@@ -764,8 +817,9 @@ fn cmd_auto() {
         println!("자동 마운트 설정이 없습니다.");
         return;
     }
-    // [C] 사이클 시작 시 stale 일괄 청소.
+    // [C] 사이클 시작 시 stale 일괄 청소 + NAS 루트 잔재 정리.
     sweep_stale_mounts();
+    sweep_nas_root();
 
     let mut state = load_retry_state();
     let now = epoch_now();
