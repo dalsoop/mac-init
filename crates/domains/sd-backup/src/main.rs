@@ -535,8 +535,13 @@ fn cmd_auto(toggle: &str) {
 }
 
 fn install_launchagent() {
-    let bin = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("mac-domain-sd-backup"));
-    let log_dir = format!("{}/문서/시스템/로그", home());
+    // mac CLI 경유로 실행 → TCC(Documents 접근) 부모 상속
+    let mac_bin = Command::new("which").arg("mac").output()
+        .ok().and_then(|o| if o.status.success() {
+            Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+        } else { None })
+        .unwrap_or_else(|| format!("{}/.cargo/bin/mac", home()));
+    let log_dir = format!("{}/Documents/WORK/logs", home());
     let _ = fs::create_dir_all(&log_dir);
 
     let plist = format!(r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -554,10 +559,14 @@ fn install_launchagent() {
     </dict>
     <key>ProgramArguments</key>
     <array>
-        <string>{bin}</string>
+        <string>{mac_bin}</string>
+        <string>run</string>
+        <string>sd-backup</string>
         <string>watch</string>
     </array>
     <key>StartInterval</key>
+    <integer>30</integer>
+    <key>ThrottleInterval</key>
     <integer>30</integer>
     <key>StandardOutPath</key>
     <string>{log}/sd-backup.log</string>
@@ -565,7 +574,7 @@ fn install_launchagent() {
     <string>{log}/sd-backup.log</string>
 </dict>
 </plist>
-"#, label=LAUNCH_LABEL, bin=bin.display(), home=home(), log=log_dir);
+"#, label=LAUNCH_LABEL, mac_bin=mac_bin, home=home(), log=log_dir);
 
     let path = plist_path();
     if let Some(p) = path.parent() { let _ = fs::create_dir_all(p); }

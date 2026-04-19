@@ -240,6 +240,24 @@ fn cmd_status() {
     }
 
     println!("\n  {ok}개 설치됨, {missing}개 누락");
+
+    // TCC 상태 점검 — mac CLI 가 Documents 접근 허용됐는지
+    println!("\n=== 보안 (TCC) ===\n");
+    let mac_bin = std::env::var("HOME").unwrap_or_default() + "/.cargo/bin/mac";
+    let tcc_check = Command::new("sqlite3")
+        .args([
+            &format!("{}/Library/Application Support/com.apple.TCC/TCC.db", std::env::var("HOME").unwrap_or_default()),
+            &format!("SELECT auth_value FROM access WHERE client='{}' AND service='kTCCServiceSystemPolicyDocumentsFolder';", mac_bin),
+        ])
+        .output();
+    let mac_allowed = tcc_check.ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "2")
+        .unwrap_or(false);
+    println!("  {} mac CLI Documents 접근: {}",
+        if mac_allowed { "✓" } else { "✗" },
+        if mac_allowed { "허용됨" } else { "미허용 — 터미널에서 mac 실행 시 '접근 허용' 팝업에 허용 필요" }
+    );
+    println!("  ℹ 도메인 바이너리는 `mac run` 경유로 실행하면 TCC 상속됨.");
     if missing > 0 {
         println!("  → mac run bootstrap install");
     }
