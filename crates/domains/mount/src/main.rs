@@ -501,6 +501,9 @@ fn cmd_mount(name: &str, share: &str) {
     let mp = mount_point(name, share);
     let opts = card_mount_opts(name);
 
+    // 마운트 전 잔재 파일 격리
+    sweep_mountless_files(&mp, name, share);
+
     // rclone 백엔드 분기
     if conn.scheme == "rclone" {
         let (remote, path) = card_rclone_meta(name);
@@ -536,6 +539,52 @@ fn cmd_mount(name: &str, share: &str) {
     match result {
         Ok(backend_name) => println!("✓ {} ({}) [-o {}]", mp.display(), backend_name, opts_str),
         Err(e) => eprintln!("✗ {}", e),
+    }
+}
+
+/// 마운트 포인트에 마운트 전 남은 로컬 잔재 파일을 격리.
+/// ~/NAS/.mountless-trash/YYMMDD-HHMMSS-<conn>-<share>/ 로 이동.
+///
+/// **안전장치**: 이미 마운트된 경로에는 실행하지 않음 (원격 파일 이동 방지).
+/// TOCTOU 윈도우(read_dir ↔ rename 사이 새 파일 생성)는 best-effort 허용.
+fn sweep_mountless_files(mp: &PathBuf, conn: &str, share: &str) {
+    if !mp.exists() { return; }
+    // 이미 마운트된 경로면 절대 건드리지 않음
+    if is_mounted_at(mp) { return; }
+
+    let entries: Vec<_> = match fs::read_dir(mp) {
+        Ok(it) => it.filter_map(|e| e.ok()).collect(),
+        Err(_) => return,
+    };
+    if entries.is_empty() { return; }
+
+    let ts = Command::new("date")
+        .args(["+%y%m%d-%H%M%S"])
+        .output().ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_else(|| format!("epoch-{}", epoch_now()));
+
+    let safe_share = share.replace('/', "_");
+    let trash_dir = nas_root().join(".mountless-trash")
+        .join(format!("{}-{}-{}", ts, conn, safe_share));
+
+    if let Err(e) = fs::create_dir_all(&trash_dir) {
+        eprintln!("  ⚠ mountless-trash 생성 실패: {}", e);
+        return;
+    }
+
+    let mut moved = 0;
+    for entry in entries {
+        let name = entry.file_name();
+        let dest = trash_dir.join(&name);
+        if let Err(e) = fs::rename(entry.path(), &dest) {
+            eprintln!("  ⚠ 이동 실패: {} → {}: {}", entry.path().display(), dest.display(), e);
+        } else {
+            moved += 1;
+        }
+    }
+    if moved > 0 {
+        eprintln!("  🗂 마운트 전 잔재 {}개 → {}", moved, trash_dir.display());
     }
 }
 
@@ -780,6 +829,8 @@ fn cmd_auto() {
             record_failure(&mut state, &key, now, "no_password");
             continue;
         };
+
+        sweep_mountless_files(&mp, &a.connection, &a.share);
 
         let opts = card_mount_opts(&a.connection);
         let opts_str = opts.smbfs_opts_string();
