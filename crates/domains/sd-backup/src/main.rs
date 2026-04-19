@@ -45,6 +45,13 @@ enum Commands {
 }
 
 fn main() {
+    // 숨은 모드: 자식 프로세스에서 카드 감지 → JSON stdout
+    if std::env::args().any(|a| a == "--detect-cards-json") {
+        let cards = detect_cards_inner();
+        println!("{}", serde_json::to_string(&cards).unwrap_or_default());
+        return;
+    }
+
     let cli = Cli::parse();
     match cli.command {
         Commands::Status => cmd_status(),
@@ -230,7 +237,7 @@ fn date_str() -> String {
 
 // === 기기 감지 ===
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 struct DetectedCard {
     volume_path: PathBuf,
     volume_name: String,
@@ -241,24 +248,46 @@ struct DetectedCard {
 }
 
 /// /Volumes/ 스캔해서 DCIM 있는 볼륨 감지 + 기기 판별
-/// SD 카드 감지. 10초 timeout — stuck 방지.
+/// SD 카드 감지. 별도 프로세스로 격리 — D 상태 전파 차단.
+/// 자식 프로세스가 SD I/O에 stuck돼도 부모(mac-tui/watch)는 안전.
 fn detect_cards() -> Vec<DetectedCard> {
-    use std::sync::mpsc;
-    use std::thread;
     use std::time::Duration;
 
-    let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
-        let result = detect_cards_inner();
-        let _ = tx.send(result);
-    });
-    // 10초 대기. timeout이면 빈 목록 반환 (stuck 방지)
-    match rx.recv_timeout(Duration::from_secs(10)) {
-        Ok(cards) => cards,
-        Err(_) => {
-            eprintln!("⚠ SD 카드 스캔 timeout (10초). SD 카드 응답 없음.");
-            Vec::new()
+    // 자기 자신을 자식으로 spawn + 특수 인자
+    let bin = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("mac-domain-sd-backup"));
+    let child = Command::new(&bin)
+        .arg("--detect-cards-json")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+
+    let Ok(mut child) = child else { return detect_cards_inner(); };
+
+    // 10초 대기
+    let start = std::time::Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) => {
+                if start.elapsed() > Duration::from_secs(10) {
+                    let _ = child.kill();
+                    eprintln!("⚠ SD 카드 스캔 timeout (10초).");
+                    return Vec::new();
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            Err(_) => return Vec::new(),
         }
+    }
+
+    if let Some(stdout) = child.stdout.take() {
+        use std::io::Read;
+        let mut buf = String::new();
+        let mut reader = std::io::BufReader::new(stdout);
+        let _ = reader.read_to_string(&mut buf);
+        serde_json::from_str(&buf).unwrap_or_default()
+    } else {
+        Vec::new()
     }
 }
 
