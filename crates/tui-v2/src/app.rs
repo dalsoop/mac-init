@@ -6,6 +6,7 @@ use ratatui::{prelude::*, widgets::*};
 
 /// 사이드바 그룹 정의. 순서 = 화면 표시 순서.
 const GROUPS: &[(&str, &str)] = &[
+    ("init",   "인입"),
     ("infra",  "인프라"),
     ("auto",   "자동화"),
     ("dev",    "개발"),
@@ -90,9 +91,12 @@ impl App {
     }
 
     fn build_sidebar(&mut self) {
-        let mut entries = vec![SidebarEntry::Install];
+        let mut entries = Vec::new();
 
         for &(group_id, group_label) in GROUPS {
+            // init 그룹에는 "설치 관리" 를 먼저 넣음
+            let is_init = group_id == "init";
+
             let mut group_domains: Vec<(usize, String)> = Vec::new();
             for (i, domain) in self.domains.iter().enumerate() {
                 let spec_group = self.specs[i].as_ref()
@@ -104,8 +108,15 @@ impl App {
                     .unwrap_or_else(|| domain.clone());
                 group_domains.push((i, label));
             }
-            if group_domains.is_empty() { continue; }
+
+            if !is_init && group_domains.is_empty() { continue; }
+
             entries.push(SidebarEntry::GroupHeader(group_label.to_string()));
+
+            if is_init {
+                entries.push(SidebarEntry::Install);
+            }
+
             for (idx, label) in group_domains {
                 entries.push(SidebarEntry::Domain { idx, label });
             }

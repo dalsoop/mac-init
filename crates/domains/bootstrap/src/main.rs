@@ -77,6 +77,15 @@ const DEPS: &[Dep] = &[
         ],
         description: "설정 스키마 언어",
     },
+    Dep {
+        name: "WireGuard",
+        check_cmd: "wg",
+        check_args: &["--version"],
+        install_steps: &[
+            ("brew", &["install", "wireguard-tools"]),
+        ],
+        description: "VPN CLI (wireguard 도메인에 필요)",
+    },
 ];
 
 fn check_installed(dep: &Dep) -> Option<String> {
@@ -191,7 +200,7 @@ fn print_tui_spec() {
 
     let spec = serde_json::json!({
         "tab": { "label_ko": "의존성 설치", "label": "Bootstrap", "icon": "🚀" },
-        "group": "system",        "sections": [
+        "group": "init",        "sections": [
             {
                 "kind": "key-value",
                 "title": "의존성 상태",

@@ -929,7 +929,7 @@ fn print_tui_spec() {
     }).collect();
 
     let spec = serde_json::json!({
-        "tab": { "label_ko": "환경(카드)", "label": "Env", "icon": "🔑" },
+        "tab": { "label_ko": "서비스 카드", "label": "Env", "icon": "🔑" },
         "group": "infra",        "list_section": "Cards",
         "sections": [
             {
