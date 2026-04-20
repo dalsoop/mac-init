@@ -51,6 +51,11 @@ fn main() {
         println!("{}", serde_json::to_string(&cards).unwrap_or_default());
         return;
     }
+    // 숨은 모드: tui-spec용 경량 카드 감지 (D-state 격리용)
+    if std::env::args().any(|a| a == "detect-cards-light-internal") {
+        detect_cards_light_inner();
+        return;
+    }
 
     let cli = Cli::parse();
     match cli.command {
@@ -71,7 +76,9 @@ fn main() {
 
 // === 설정 ===
 
-fn home() -> String { std::env::var("HOME").unwrap_or_else(|_| "/tmp".into()) }
+use mac_common::{paths, tui_spec::{self, TuiSpec}};
+
+fn home() -> String { paths::home() }
 fn config_path() -> PathBuf { PathBuf::from(home()).join(".mac-app-init/sd-backup.json") }
 fn history_path() -> PathBuf { PathBuf::from(home()).join(".mac-app-init/sd-backup-history.json") }
 
@@ -221,9 +228,7 @@ fn release_lock() {
     let _ = fs::remove_file(lock_path());
 }
 
-fn expand(p: &str) -> String {
-    if p.starts_with('~') { p.replacen('~', &home(), 1) } else { p.to_string() }
-}
+fn expand(p: &str) -> String { paths::expand(p) }
 
 fn now_str() -> String {
     Command::new("date").args(["+%Y-%m-%d %H:%M:%S"]).output().ok()
@@ -370,20 +375,98 @@ fn detect_canon(dcim: &Path, vol_name: &str) -> String {
 
 /// tui-spec 용 초경량 감지: /Volumes/ 에 DCIM 있는지만. 파일 스캔 안 함.
 fn detect_cards_light() -> String {
+    // D-state 방어: 전체 감지를 별도 프로세스로 격리.
+    // SD 카드/NAS 볼륨이 D-state(uninterruptible sleep)에 빠지면
+    // 해당 볼륨에 접근하는 스레드는 물론 프로세스 exit까지 블로킹됨.
+    // 별도 프로세스로 실행하고, 타임아웃 시 kill하면 메인 프로세스는 안전.
+    //
+    // 주의: Rust 2024 에디션에서 Child drop 시 자동 kill+wait 호출.
+    // D-state child는 wait 블로킹 → mem::forget으로 leak 필수.
+    let bin = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("mac-domain-sd-backup"));
+    let child = Command::new(&bin)
+        .arg("detect-cards-light-internal")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+    let Ok(mut child) = child else { return "미감지".into() };
+    match wait_child_timeout(&mut child, 3) {
+        Some(status) if status.success() => {
+            let result = child.stdout.take().map(|mut o| {
+                let mut s = String::new();
+                std::io::Read::read_to_string(&mut o, &mut s).ok();
+                s.trim().to_string()
+            }).unwrap_or_else(|| "미감지".into());
+            result
+        }
+        _ => {
+            // 타임아웃: D-state child는 wait 블로킹하므로 Child를 leak.
+            std::mem::forget(child);
+            "미감지 (타임아웃)".into()
+        }
+    }
+}
+
+/// detect-cards-light-internal: 실제 볼륨 스캔 (자식 프로세스에서만 호출)
+fn detect_cards_light_inner() {
     let volumes = Path::new("/Volumes");
-    let Ok(entries) = fs::read_dir(volumes) else { return "미감지".into(); };
+    let Ok(entries) = fs::read_dir(volumes) else { println!("미감지"); return; };
     let skip = ["Macintosh HD", "Preboot", "Recovery", "VM", "Data"];
+    let net_vols = network_mounted_volumes();
+
     let mut found = Vec::new();
     for entry in entries.filter_map(|e| e.ok()) {
         let name = entry.file_name().to_string_lossy().to_string();
         if skip.iter().any(|s| name == *s) { continue; }
+        if net_vols.contains(&name) { continue; }
         let vol = entry.path();
         if vol.join("DCIM").exists() {
             let device = detect_device_type(&vol);
             found.push(format!("{} ({})", name, device));
         }
     }
-    if found.is_empty() { "미감지".into() } else { found.join(", ") }
+    if found.is_empty() { println!("미감지"); } else { println!("{}", found.join(", ")); }
+}
+
+/// Child 프로세스를 타임아웃으로 대기. 타임아웃 시 kill + None 반환.
+/// D-state child는 kill/wait 모두 블로킹되므로, wait() 호출하지 않음.
+fn wait_child_timeout(child: &mut std::process::Child, timeout_secs: u64) -> Option<std::process::ExitStatus> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Some(status),
+            Ok(None) => {
+                if std::time::Instant::now() >= deadline {
+                    let _ = child.kill();
+                    return None;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            Err(_) => return None,
+        }
+    }
+}
+
+/// /Volumes 하위 네트워크 마운트 볼륨 이름 목록.
+fn network_mounted_volumes() -> std::collections::HashSet<String> {
+    let mut set = std::collections::HashSet::new();
+    let Ok(out) = Command::new("mount").output() else { return set; };
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    for line in stdout.lines() {
+        // "//user@host/share on /Volumes/xxx (smbfs, ...)"
+        // "host:/path on /Volumes/xxx (macfuse, ...)"
+        let Some(on_idx) = line.find(" on ") else { continue; };
+        let rest = &line[on_idx + 4..];
+        let Some(paren) = rest.find(" (") else { continue; };
+        let mp = &rest[..paren];
+        let fs_type = &rest[paren + 2..].split(',').next().unwrap_or("");
+        let net_types = ["smbfs", "nfs", "macfuse", "sshfs", "afpfs", "webdav"];
+        if net_types.iter().any(|t| fs_type.contains(t)) {
+            if let Some(name) = mp.strip_prefix("/Volumes/") {
+                set.insert(name.to_string());
+            }
+        }
+    }
+    set
 }
 
 fn count_media(dcim: &Path) -> (usize, u64) {
@@ -398,6 +481,90 @@ fn count_media(dcim: &Path) -> (usize, u64) {
         }
     }
     (count, bytes)
+}
+
+/// 단일 파일의 스테이징 복사 결과.
+#[derive(Debug, PartialEq)]
+enum CopyResult {
+    /// 이미 존재하고 크기 동일 → skip
+    Skipped,
+    /// .partial → 크기 검증 → 정식 위치 이동 성공
+    Copied(u64),
+    /// 크기 불일치 — .partial/에 잔류
+    SizeMismatch { expected: u64, actual: u64 },
+    /// src 접근 불가 (SD 제거)
+    SourceGone,
+    /// rsync 실패
+    RsyncFailed,
+    /// rename 실패
+    MoveFailed,
+}
+
+/// 단일 파일을 .partial/ 스테이징 경유로 복사.
+/// src → staging_dir/파일명 → 크기 검증 → dest_dir/파일명
+fn copy_staged(src: &Path, dest_dir: &Path, staging_dir: &Path) -> CopyResult {
+    let fname = match src.file_name() {
+        Some(f) => f,
+        None => return CopyResult::RsyncFailed,
+    };
+    let dst = dest_dir.join(fname);
+
+    // 이미 존재하고 크기 동일 → skip
+    if dst.exists() {
+        let src_size = fs::metadata(src).map(|m| m.len()).unwrap_or(0);
+        let dst_size = fs::metadata(&dst).map(|m| m.len()).unwrap_or(0);
+        if src_size == dst_size {
+            return CopyResult::Skipped;
+        }
+    }
+
+    // src 접근 가능 확인
+    let file_size = match fs::metadata(src) {
+        Ok(m) => m.len(),
+        Err(_) => return CopyResult::SourceGone,
+    };
+
+    let _ = fs::create_dir_all(staging_dir);
+    let staging_file = staging_dir.join(fname);
+
+    // rsync --partial로 복사 (이어받기 지원)
+    let status = Command::new("rsync")
+        .args(["-a", "--partial", "--progress"])
+        .arg(src)
+        .arg(staging_dir)
+        .status();
+
+    match status {
+        Ok(s) if s.success() => {
+            let staged_size = fs::metadata(&staging_file).map(|m| m.len()).unwrap_or(0);
+            if staged_size != file_size {
+                return CopyResult::SizeMismatch { expected: file_size, actual: staged_size };
+            }
+            // 정식 위치로 이동
+            let _ = fs::create_dir_all(dest_dir);
+            match fs::rename(&staging_file, &dst) {
+                Ok(()) => CopyResult::Copied(file_size),
+                Err(_) => CopyResult::MoveFailed,
+            }
+        }
+        _ => CopyResult::RsyncFailed,
+    }
+}
+
+/// .partial/ 잔류 파일 수 (하위 전체 재귀).
+fn count_partial_files(partial_root: &Path) -> usize {
+    if !partial_root.exists() { return 0; }
+    let mut count = 0;
+    fn walk(dir: &Path, count: &mut usize) {
+        let Ok(entries) = fs::read_dir(dir) else { return };
+        for e in entries.flatten() {
+            let path = e.path();
+            if path.is_dir() { walk(&path, count); }
+            else { *count += 1; }
+        }
+    }
+    walk(partial_root, &mut count);
+    count
 }
 
 fn human_bytes(b: u64) -> String {
@@ -612,42 +779,27 @@ fn cmd_run() {
         let mut file_records: Vec<FileRecord> = Vec::new();
         let start_time = std::time::Instant::now();
 
+        // .partial/ 스테이징 — 복사 중단 시 불완전 파일 격리.
+        // src → .partial/<날짜>/<기기>/파일 → 크기 검증 → rename → dest/<날짜>/<기기>/파일
+        let partial_root = target_root.join(".partial");
+
         let mut dates: Vec<String> = by_date.keys().cloned().collect();
         dates.sort();
         for date in &dates {
             let files = &by_date[date];
             let dest = target_root.join(date).join(device_type);
+            let staging = partial_root.join(date).join(device_type);
             if let Err(e) = fs::create_dir_all(&dest) {
                 eprintln!("  ✗ 디렉터리 생성 실패: {}: {}", dest.display(), e);
                 continue;
             }
+            let _ = fs::create_dir_all(&staging);
 
             let mut day_copied = 0;
             for src in files {
-                let fname = src.file_name().unwrap_or_default();
-                let fname_str = fname.to_string_lossy().to_string();
+                let fname_str = src.file_name().unwrap_or_default().to_string_lossy().to_string();
                 files_processed += 1;
 
-                let dst = dest.join(&fname);
-                if dst.exists() {
-                    let src_size = fs::metadata(src).map(|m| m.len()).unwrap_or(0);
-                    let dst_size = fs::metadata(&dst).map(|m| m.len()).unwrap_or(0);
-                    if src_size == dst_size {
-                        total_bytes += src_size;
-                        total_skipped += 1;
-                        save_progress(&ProgressState {
-                            running: true,
-                            device: card.device_type.clone(),
-                            current_file: format!("(skip) {}", fname_str),
-                            files_done: files_processed, files_total,
-                            bytes_done: total_bytes, bytes_total,
-                            started_at: String::new(),
-                        });
-                        continue;
-                    }
-                }
-
-                // progress 갱신
                 save_progress(&ProgressState {
                     running: true,
                     device: card.device_type.clone(),
@@ -657,45 +809,50 @@ fn cmd_run() {
                     started_at: String::new(),
                 });
 
-                // C3: SD 제거 감지 — src 접근 불가 시 중단
-                let file_size = match fs::metadata(src) {
-                    Ok(m) => m.len(),
-                    Err(e) => {
-                        eprintln!("  ✗ SD 접근 불가 (제거됨?): {} — 백업 중단", e);
+                match copy_staged(src, &dest, &staging) {
+                    CopyResult::Skipped => {
+                        let size = fs::metadata(src).map(|m| m.len()).unwrap_or(0);
+                        total_bytes += size;
+                        total_skipped += 1;
+                    }
+                    CopyResult::Copied(size) => {
+                        day_copied += 1;
+                        total_bytes += size;
+                        file_records.push(FileRecord {
+                            name: fname_str, size, date: date.clone(),
+                        });
+                    }
+                    CopyResult::SizeMismatch { expected, actual } => {
+                        eprintln!("  ✗ 크기 불일치: {} (src={}B staged={}B) — .partial/에 잔류",
+                            fname_str, expected, actual);
+                    }
+                    CopyResult::SourceGone => {
+                        eprintln!("  ✗ SD 접근 불가 (제거됨?) — 백업 중단");
                         break;
                     }
-                };
-                let status = Command::new("rsync")
-                    .args(["-a", "--progress"])
-                    .arg(src)
-                    .arg(&dest)
-                    .status();
-                match status {
-                    Ok(s) if s.success() => {
-                        // C2: 복사 후 크기 검증
-                        let dst_path = dest.join(&fname);
-                        let dst_size = fs::metadata(&dst_path).map(|m| m.len()).unwrap_or(0);
-                        if dst_size != file_size {
-                            eprintln!("  ✗ 크기 불일치: {} (src={}B dst={}B) — 재시도 필요",
-                                fname_str, file_size, dst_size);
-                        } else {
-                            day_copied += 1;
-                            total_bytes += file_size;
-                            file_records.push(FileRecord {
-                                name: fname_str.clone(),
-                                size: file_size,
-                                date: date.clone(),
-                            });
-                        }
+                    CopyResult::RsyncFailed => {
+                        eprintln!("  ✗ 복사 실패: {}", src.display());
                     }
-                    _ => eprintln!("  ✗ 복사 실패: {}", src.display()),
+                    CopyResult::MoveFailed => {
+                        eprintln!("  ✗ 이동 실패: {}", fname_str);
+                    }
                 }
             }
             total_copied += day_copied;
             if day_copied > 0 {
                 println!("  ✓ {} → {}개 파일 → {}", date, day_copied, dest.display());
             }
+
+            // 날짜별 staging 디렉터리 정리 (비어있으면 삭제)
+            let _ = fs::remove_dir(staging.as_path());
         }
+        // .partial/ 하위 빈 디렉터리 정리
+        if let Ok(entries) = fs::read_dir(&partial_root) {
+            for e in entries.flatten() {
+                let _ = fs::remove_dir(e.path()); // 비어있을 때만 성공
+            }
+        }
+        let _ = fs::remove_dir(&partial_root); // 전체 비었으면 삭제
 
         if total_copied == 0 {
             println!("  (새로운 파일 없음 — 이미 백업됨)");
@@ -1033,7 +1190,6 @@ fn print_tui_spec() {
     // tui-spec 은 가볍게 — SD 파일 스캔 안 함 (detect_cards/diff_analysis 호출 금지).
     // 5초마다 refresh 되므로 무거운 작업은 status/run 에서만.
     let card_info = detect_cards_light();
-    let diff_info = String::new(); // 차분은 status 에서만
 
     let target_status = if cfg.backup_target.is_empty() { "미설정" }
         else if Path::new(&expand(&cfg.backup_target)).exists() { "✓ 접근 가능" }
@@ -1055,71 +1211,233 @@ fn print_tui_spec() {
         else if Path::new(&expand(&cfg.sync_target)).exists() { "✓ 켜짐 (접근 가능)" }
         else { "⚠ 켜짐 (경로 없음 — 마운트 확인)" };
 
-    let spec = serde_json::json!({
-        "tab": { "label_ko": "SD 미디어 백업", "label": "SD Backup", "icon": "📸" },
-        "group": "auto",
-        "refresh_interval": 5,
-        "sections": [
-            {
-                "kind": "key-value",
-                "title": "감지",
-                "items": [
-                    { "key": "SD 카드", "value": &card_info,
-                      "status": if card_info == "미감지" { "warn" } else { "ok" } },
-                    { "key": "진행 상태", "value": prog_info,
-                      "status": if prog.running { "ok" } else { "warn" } },
-                    { "key": "최근 백업", "value": last_backup, "status": "ok" },
-                ]
-            },
-            {
-                "kind": "key-value",
-                "title": "설정",
-                "items": [
-                    { "key": "로컬 백업 경로", "value": format!("{} ({})", cfg.backup_target, target_status),
-                      "status": if cfg.backup_target.is_empty() { "error" } else { "ok" } },
-                    { "key": "NAS 동기화", "value": format!("{} — {}", sync_status,
-                        if cfg.sync_target.is_empty() { "미설정".into() } else { cfg.sync_target.clone() }),
-                      "status": if cfg.sync_enabled && !cfg.sync_target.is_empty() { "ok" } else { "warn" } },
-                    { "key": "자동 백업", "value": if cfg.auto_enabled { "✓ 켜짐 (SD 꽂으면 30초 내 시작)" } else { "꺼짐" },
-                      "status": if cfg.auto_enabled { "ok" } else { "warn" } },
-                    { "key": "자동 추출", "value": if cfg.auto_eject { "✓ 백업 완료 후 SD 자동 추출" } else { "꺼짐 (수동 추출)" },
-                      "status": if cfg.auto_eject { "ok" } else { "warn" } },
-                    { "key": "LRF 포함", "value": if cfg.include_lrf { "예 (저해상도 프리뷰)" } else { "아니오 (MP4만)" },
-                      "status": "ok" },
-                ]
-            },
-            {
-                "kind": "buttons",
-                "title": "실행",
-                "items": [
-                    { "label": "Status", "command": "status", "key": "s" },
-                    { "label": "Run (수동 백업)", "command": "run", "key": "r" },
-                    { "label": "Progress", "command": "progress", "key": "p" },
-                    { "label": "History", "command": "history", "key": "h" },
-                    { "label": "Devices", "command": "devices", "key": "v" },
-                ]
-            },
-            {
-                "kind": "buttons",
-                "title": "설정 토글",
-                "items": [
-                    { "label": if cfg.auto_enabled { "자동백업 OFF" } else { "자동백업 ON" },
-                      "command": if cfg.auto_enabled { "auto off" } else { "auto on" },
-                      "key": "a" },
-                    { "label": if cfg.sync_enabled { "NAS동기화 OFF" } else { "NAS동기화 ON" },
-                      "command": if cfg.sync_enabled { "sync off" } else { "sync on" },
-                      "key": "y" },
-                    { "label": if cfg.auto_eject { "자동추출 OFF" } else { "자동추출 ON" },
-                      "command": if cfg.auto_eject { "eject off" } else { "eject on" },
-                      "key": "e" },
-                ]
-            },
-            {
-                "kind": "text",
-                "title": "파이프라인",
-                "content": "  SD 꽂음 → 로컬 백업 (60MB/s) → NAS 동기화 (LAN 권장) → SD 추출\n\n  기기별·날짜별 자동 분류:\n    <로컬>/<기기명>/<YYYY-MM-DD>/파일들\n\n  설정:\n    mac run sd-backup set-target <로컬 경로>\n    mac run sd-backup set-sync <NAS 경로>\n    mac run sd-backup auto on\n    mac run sd-backup eject on"
-            }
-        ]
-    });
-    println!("{}", serde_json::to_string_pretty(&spec).unwrap());
+    // .partial/ 잔류 파일 체크 (가벼운 디렉터리 존재 여부만)
+    let partial_dir = PathBuf::from(expand(&cfg.backup_target)).join(".partial");
+    let partial_count = count_partial_files(&partial_dir);
+
+    let usage_active = cfg.auto_enabled;
+    let usage_summary = if cfg.auto_enabled { "자동백업 켜짐".to_string() } else { "꺼짐".to_string() };
+
+    let mut status_items = vec![
+        tui_spec::kv_item("SD 카드", &card_info,
+            if card_info == "미감지" { "warn" } else { "ok" }),
+        tui_spec::kv_item("진행 상태", &prog_info,
+            if prog.running { "ok" } else { "warn" }),
+        tui_spec::kv_item("최근 백업", &last_backup, "ok"),
+    ];
+    if partial_count > 0 {
+        status_items.push(tui_spec::kv_item(
+            "미완료 파일",
+            &format!("⚠ {}개 (재연결 시 자동 이어받기)", partial_count),
+            "warn",
+        ));
+    }
+
+    TuiSpec::new("sd-backup")
+        .refresh(5)
+        .usage(usage_active, &usage_summary)
+        .kv("상태", status_items)
+        .kv("설정", vec![
+            tui_spec::kv_item("로컬 백업 경로",
+                &format!("{} ({})", cfg.backup_target, target_status),
+                if cfg.backup_target.is_empty() { "error" } else { "ok" }),
+            tui_spec::kv_item("NAS 동기화",
+                &format!("{} — {}", sync_status,
+                    if cfg.sync_target.is_empty() { "미설정".into() } else { cfg.sync_target.clone() }),
+                if cfg.sync_enabled && !cfg.sync_target.is_empty() { "ok" } else { "warn" }),
+            tui_spec::kv_item("자동 백업",
+                if cfg.auto_enabled { "✓ 켜짐 (SD 꽂으면 30초 내 시작)" } else { "꺼짐" },
+                if cfg.auto_enabled { "ok" } else { "warn" }),
+            tui_spec::kv_item("자동 추출",
+                if cfg.auto_eject { "✓ 백업 완료 후 SD 자동 추출" } else { "꺼짐 (수동 추출)" },
+                if cfg.auto_eject { "ok" } else { "warn" }),
+            tui_spec::kv_item("LRF 포함",
+                if cfg.include_lrf { "예 (저해상도 프리뷰)" } else { "아니오 (MP4만)" },
+                "ok"),
+        ])
+        .buttons()
+        .buttons_custom("설정 토글", vec![
+            serde_json::json!({
+                "label": if cfg.auto_enabled { "자동백업 OFF" } else { "자동백업 ON" },
+                "command": if cfg.auto_enabled { "auto off" } else { "auto on" },
+                "key": "a"
+            }),
+            serde_json::json!({
+                "label": if cfg.sync_enabled { "NAS동기화 OFF" } else { "NAS동기화 ON" },
+                "command": if cfg.sync_enabled { "sync off" } else { "sync on" },
+                "key": "y"
+            }),
+            serde_json::json!({
+                "label": if cfg.auto_eject { "자동추출 OFF" } else { "자동추출 ON" },
+                "command": if cfg.auto_eject { "eject off" } else { "eject on" },
+                "key": "e"
+            }),
+        ])
+        .text("안내", "  SD 꽂음 → 로컬 백업 (60MB/s) → NAS 동기화 (LAN 권장) → SD 추출\n\n  기기별·날짜별 자동 분류:\n    <로컬>/<기기명>/<YYYY-MM-DD>/파일들\n\n  설정:\n    mac run sd-backup set-target <로컬 경로>\n    mac run sd-backup set-sync <NAS 경로>\n    mac run sd-backup auto on\n    mac run sd-backup eject on")
+        .print();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    fn make_file(dir: &Path, name: &str, content: &[u8]) -> PathBuf {
+        let p = dir.join(name);
+        let mut f = fs::File::create(&p).unwrap();
+        f.write_all(content).unwrap();
+        p
+    }
+
+    #[test]
+    fn copy_staged_new_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src_dir = tmp.path().join("src");
+        let dest_dir = tmp.path().join("dest");
+        let staging_dir = tmp.path().join("staging");
+        fs::create_dir_all(&src_dir).unwrap();
+        fs::create_dir_all(&dest_dir).unwrap();
+
+        let src = make_file(&src_dir, "DJI_0001.MP4", b"fake video data 12345");
+
+        let result = copy_staged(&src, &dest_dir, &staging_dir);
+        assert_eq!(result, CopyResult::Copied(21));
+        // 정식 위치에 존재
+        assert!(dest_dir.join("DJI_0001.MP4").exists());
+        // staging에는 없음 (rename으로 이동됨)
+        assert!(!staging_dir.join("DJI_0001.MP4").exists());
+    }
+
+    #[test]
+    fn copy_staged_skip_existing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src_dir = tmp.path().join("src");
+        let dest_dir = tmp.path().join("dest");
+        let staging_dir = tmp.path().join("staging");
+        fs::create_dir_all(&src_dir).unwrap();
+        fs::create_dir_all(&dest_dir).unwrap();
+
+        let content = b"same content";
+        make_file(&src_dir, "IMG_001.CR3", content);
+        make_file(&dest_dir, "IMG_001.CR3", content); // 이미 있음
+
+        let result = copy_staged(&src_dir.join("IMG_001.CR3"), &dest_dir, &staging_dir);
+        assert_eq!(result, CopyResult::Skipped);
+    }
+
+    #[test]
+    fn copy_staged_overwrite_different_size() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src_dir = tmp.path().join("src");
+        let dest_dir = tmp.path().join("dest");
+        let staging_dir = tmp.path().join("staging");
+        fs::create_dir_all(&src_dir).unwrap();
+        fs::create_dir_all(&dest_dir).unwrap();
+
+        make_file(&src_dir, "VID.MP4", b"new longer content here");
+        make_file(&dest_dir, "VID.MP4", b"old short"); // 크기 다름
+
+        let result = copy_staged(&src_dir.join("VID.MP4"), &dest_dir, &staging_dir);
+        assert_eq!(result, CopyResult::Copied(23));
+        // 새 파일로 교체됨
+        let final_size = fs::metadata(dest_dir.join("VID.MP4")).unwrap().len();
+        assert_eq!(final_size, 23);
+    }
+
+    #[test]
+    fn copy_staged_source_gone() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dest_dir = tmp.path().join("dest");
+        let staging_dir = tmp.path().join("staging");
+        fs::create_dir_all(&dest_dir).unwrap();
+
+        let fake_src = tmp.path().join("nonexistent.MP4");
+        let result = copy_staged(&fake_src, &dest_dir, &staging_dir);
+        assert_eq!(result, CopyResult::SourceGone);
+    }
+
+    #[test]
+    fn count_partial_empty() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert_eq!(count_partial_files(tmp.path()), 0);
+    }
+
+    #[test]
+    fn count_partial_nonexistent() {
+        let fake = PathBuf::from("/tmp/nonexistent_partial_test_dir");
+        assert_eq!(count_partial_files(&fake), 0);
+    }
+
+    #[test]
+    fn count_partial_with_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let partial = tmp.path().join(".partial");
+        let sub = partial.join("2025-01-01").join("DJI");
+        fs::create_dir_all(&sub).unwrap();
+        make_file(&sub, "DJI_0001.MP4", b"partial1");
+        make_file(&sub, "DJI_0002.MP4", b"partial2");
+
+        let sub2 = partial.join("2025-01-02").join("Canon");
+        fs::create_dir_all(&sub2).unwrap();
+        make_file(&sub2, "IMG_001.CR3", b"partial3");
+
+        assert_eq!(count_partial_files(&partial), 3);
+    }
+
+    #[test]
+    fn copy_staged_creates_staging_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src_dir = tmp.path().join("src");
+        let dest_dir = tmp.path().join("dest");
+        let staging_dir = tmp.path().join("deep/nested/staging");
+        fs::create_dir_all(&src_dir).unwrap();
+        // dest_dir과 staging_dir은 copy_staged가 생성
+
+        let src = make_file(&src_dir, "test.dat", b"data");
+        let result = copy_staged(&src, &dest_dir, &staging_dir);
+        assert_eq!(result, CopyResult::Copied(4));
+        assert!(dest_dir.join("test.dat").exists());
+    }
+
+    #[test]
+    fn copy_staged_multiple_sequential() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src_dir = tmp.path().join("src");
+        let dest_dir = tmp.path().join("dest");
+        let staging_dir = tmp.path().join("staging");
+        fs::create_dir_all(&src_dir).unwrap();
+
+        // 3개 파일 순차 복사
+        for i in 0..3 {
+            let name = format!("file_{}.dat", i);
+            let content = format!("content {}", i);
+            make_file(&src_dir, &name, content.as_bytes());
+
+            let result = copy_staged(&src_dir.join(&name), &dest_dir, &staging_dir);
+            assert_eq!(result, CopyResult::Copied(content.len() as u64));
+        }
+        // 전부 정식 위치에 존재
+        assert!(dest_dir.join("file_0.dat").exists());
+        assert!(dest_dir.join("file_1.dat").exists());
+        assert!(dest_dir.join("file_2.dat").exists());
+    }
+
+    #[test]
+    fn copy_staged_then_skip_on_retry() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src_dir = tmp.path().join("src");
+        let dest_dir = tmp.path().join("dest");
+        let staging_dir = tmp.path().join("staging");
+        fs::create_dir_all(&src_dir).unwrap();
+
+        let src = make_file(&src_dir, "video.mp4", b"video data");
+
+        // 첫 복사
+        let r1 = copy_staged(&src, &dest_dir, &staging_dir);
+        assert_eq!(r1, CopyResult::Copied(10));
+
+        // 재시도 → skip
+        let r2 = copy_staged(&src, &dest_dir, &staging_dir);
+        assert_eq!(r2, CopyResult::Skipped);
+    }
 }

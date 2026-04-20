@@ -78,8 +78,10 @@ enum Commands {
     TuiSpec,
 }
 
+use mac_common::{paths, tui_spec::{self, TuiSpec}};
+
 fn home() -> String {
-    std::env::var("HOME").unwrap_or_else(|_| "/tmp".into())
+    paths::home()
 }
 
 /// 통합 마운트 루트 (~/Documents/WORK/NAS)
@@ -228,29 +230,24 @@ fn find_connection(name: &str) -> Option<Connection> {
 
 /// env 카드 전체 목록 + legacy connections.json 를 합친 결과 (카드 우선, 이름 중복 제거).
 fn load_all_connections() -> Vec<Connection> {
-    let out = Command::new(env_binary()).args(["list"]).output();
+    // 카드 파일 직접 읽기 — 외부 프로세스(env list) 호출 없이.
     let mut cards: Vec<Connection> = Vec::new();
-    if let Ok(o) = out {
-        if o.status.success() {
-            // parse 는 `env list` 테이블 대신 카드 파일 직접 읽기가 간결
-            let dir = PathBuf::from(home()).join(".mac-app-init/cards");
-            if let Ok(it) = std::fs::read_dir(&dir) {
-                for e in it.filter_map(|x| x.ok()) {
-                    if e.path().extension().and_then(|s| s.to_str()) != Some("json") { continue; }
-                    if let Ok(content) = std::fs::read_to_string(e.path()) {
-                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
-                            if let (Some(name), Some(host), Some(user), Some(port)) = (
-                                v.get("name").and_then(|x| x.as_str()),
-                                v.get("host").and_then(|x| x.as_str()),
-                                v.get("user").and_then(|x| x.as_str()),
-                                v.get("port").and_then(|x| x.as_u64()),
-                            ) {
-                                let scheme = v.get("scheme").and_then(|x| x.as_str()).unwrap_or("smb").to_string();
-                                cards.push(Connection {
-                                    name: name.into(), host: host.into(), user: user.into(), port: port as u16, scheme,
-                                });
-                            }
-                        }
+    let dir = PathBuf::from(home()).join(".mac-app-init/cards");
+    if let Ok(it) = std::fs::read_dir(&dir) {
+        for e in it.filter_map(|x| x.ok()) {
+            if e.path().extension().and_then(|s| s.to_str()) != Some("json") { continue; }
+            if let Ok(content) = std::fs::read_to_string(e.path()) {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
+                    if let (Some(name), Some(host), Some(user), Some(port)) = (
+                        v.get("name").and_then(|x| x.as_str()),
+                        v.get("host").and_then(|x| x.as_str()),
+                        v.get("user").and_then(|x| x.as_str()),
+                        v.get("port").and_then(|x| x.as_u64()),
+                    ) {
+                        let scheme = v.get("scheme").and_then(|x| x.as_str()).unwrap_or("smb").to_string();
+                        cards.push(Connection {
+                            name: name.into(), host: host.into(), user: user.into(), port: port as u16, scheme,
+                        });
                     }
                 }
             }
@@ -1229,25 +1226,26 @@ fn print_tui_spec() {
     let mounts = list_current_mounts();
     let cfg = load_mount_config();
     let auto_enabled = automount_plist_path().exists();
+    // tui-spec 은 가벼워야 함 — is_stale (fs::read_dir 2s 타임아웃) 호출 금지.
+    // mount 목록 기반으로만 상태 판별.
+    let mounted_set: std::collections::HashSet<String> = mounts.iter().map(|(_, m)| m.clone()).collect();
     let auto_items: Vec<serde_json::Value> = cfg.auto_mounts.iter().map(|a| {
         let mp = mount_point(&a.connection, &a.share);
+        let mp_str = mp.to_string_lossy().to_string();
         let state = if !a.enabled { "off" }
-                    else if is_mounted_at(&mp) {
-                        if is_stale(&mp) { "⚠ STALE" } else { "✓ ON" }
-                    }
+                    else if mounted_set.contains(&mp_str) { "✓ ON" }
                     else { "○ idle" };
-        serde_json::json!({
-            "key": format!("{}/{}", a.connection, a.share),
-            "value": format!("{}  →  {}", state, mp.to_string_lossy()),
-            "status": if a.enabled { "ok" } else { "warn" },
-            "data": {
+        tui_spec::kv_item_data(
+            &format!("{}/{}", a.connection, a.share),
+            &format!("{}  →  {}", state, mp.to_string_lossy()),
+            if a.enabled { "ok" } else { "warn" },
+            serde_json::json!({
                 "name": format!("{}/{}", a.connection, a.share),
                 "connection": a.connection,
                 "share": a.share,
                 "enabled": a.enabled.to_string(),
                 "mountpoint": mp.to_string_lossy().to_string(),
-            }
-        })
+            }))
     }).collect();
 
     let mount_rows: Vec<serde_json::Value> = mounts.iter()
@@ -1269,112 +1267,51 @@ fn print_tui_spec() {
 
     let connect_ok = has_connect_domain();
 
-    let spec = serde_json::json!({
-        "tab": { "label_ko": "마운트", "label": "Mount", "icon": "💾" },
-        "group": "infra",        "refresh_interval": 10,
-        "list_section": "자동 마운트",
-        "sections": [
-            {
-                "kind": "key-value",
-                "title": "Status",
-                "items": [
-                    {
-                        "key": "env 도메인",
-                        "value": if connect_ok { "✓ 설치됨" } else { "✗ 미설치 (mac install env)" },
-                        "status": if connect_ok { "ok" } else { "error" }
-                    },
-                    {
-                        "key": "등록된 연결",
-                        "value": format!("{}개", conns.len()),
-                        "status": if conns.is_empty() { "warn" } else { "ok" }
-                    },
-                    {
-                        "key": "현재 마운트",
-                        "value": format!("{}개", mounts.len()),
-                        "status": "ok"
-                    },
-                    {
-                        "key": "자동 마운트 LaunchAgent",
-                        "value": if auto_enabled { "✓ 등록됨 (5분마다)" } else { "✗ 미등록" },
-                        "status": if auto_enabled { "ok" } else { "warn" }
-                    },
-                    {
-                        "key": "자동 마운트 항목",
-                        "value": format!("{}개 (활성 {}개)",
-                            cfg.auto_mounts.len(),
-                            cfg.auto_mounts.iter().filter(|a| a.enabled).count()
-                        ),
-                        "status": "ok"
-                    },
-                    {
-                        "key": "잔재 자동 정리 (sweep)",
-                        "value": if cfg.sweep_enabled {
-                            "✓ 켜짐 (auto 실행 시마다 ~/Documents/WORK/NAS/ 스캔)"
-                        } else {
-                            "✗ 꺼짐 (mac run mount sweep on 으로 활성화)"
-                        },
-                        "status": if cfg.sweep_enabled { "ok" } else { "warn" }
-                    }
-                ]
-            },
-            {
-                "kind": "key-value",
-                "title": "자동 마운트",
-                "items": auto_items
-            },
-            {
-                "kind": "table",
-                "title": "연결 (비번)",
-                "headers": ["NAME", "ENDPOINT", "PW"],
-                "rows": conn_rows
-            },
-            {
-                "kind": "table",
-                "title": "마운트된 공유",
-                "headers": ["SOURCE", "MOUNTPOINT"],
-                "rows": mount_rows
-            },
-            {
-                "kind": "buttons",
-                "title": "Actions",
-                "items": [
-                    { "label": "Status", "command": "status", "key": "s" },
-                    { "label": "Shares (공유 스캔)", "command": "shares", "key": "h" },
-                    { "label": "List (현재 마운트)", "command": "list", "key": "l" },
-                    { "label": "Auto (지금 자동 마운트)", "command": "auto", "key": "a" },
-                    { "label": "Auto-list (설정 보기)", "command": "auto-list", "key": "i" },
-                    { "label": "Auto-enable (LaunchAgent)", "command": "auto-enable", "key": "e" },
-                    { "label": "Auto-disable", "command": "auto-disable", "key": "d" },
-                    { "label": if cfg.sweep_enabled { "Sweep OFF" } else { "Sweep ON" },
-                      "command": "sweep",
-                      "args": [if cfg.sweep_enabled { "off" } else { "on" }],
-                      "key": "w" }
-                ]
-            },
-            {
-                "kind": "text",
-                "title": "사용법 — 터미널",
-                "content": "  자동 마운트 설정:\n    mac run mount auto-add <conn> <share>\n    mac run mount auto-toggle <conn> <share>\n    mac run mount auto-enable      # 로그인 시 + 5분마다 자동 실행\n\n  잔재 정리:\n    mac run mount sweep on|off|status\n    → auto 실행 시마다 ~/Documents/WORK/NAS/ 스캔, 카드/마운트에 없는 항목을\n      ~/NAS/.mountless-trash/YYMMDD-HHMMSS/ 로 격리 (삭제 아님)\n\n  수동:\n    mac run mount mount <name> <share>\n    mac run mount unmount <share>"
-            }
-        ],
-        "keybindings": [
-            { "key": "T", "label": "토글(활성/비활성)",
-              "command": "auto-toggle",
-              "args": ["${selected.connection}", "${selected.share}"] },
-            { "key": "M", "label": "수동 마운트",
-              "command": "mount",
-              "args": ["${selected.connection}", "${selected.share}"] },
-            { "key": "U", "label": "언마운트",
-              "command": "unmount",
-              "args": ["${selected.mountpoint}"] },
-            { "key": "X", "label": "자동마운트 항목 제거",
-              "command": "auto-remove",
-              "args": ["${selected.connection}", "${selected.share}"],
-              "confirm": true },
-            { "key": "P", "label": "quarantine 해제",
-              "command": "auto-resume",
-              "args": ["${selected.name}"] }
-        ]
-    });
-    println!("{}", serde_json::to_string_pretty(&spec).unwrap());
+    let active_count = cfg.auto_mounts.iter().filter(|a| a.enabled).count();
+    let usage_active = !cfg.auto_mounts.is_empty();
+    let usage_summary = format!("마운트 {}개 (활성 {})", cfg.auto_mounts.len(), active_count);
+
+    TuiSpec::new("mount")
+        .refresh(10)
+        .list_section("자동 마운트")
+        .usage(usage_active, &usage_summary)
+        .kv("상태", vec![
+            tui_spec::kv_item("env 도메인",
+                if connect_ok { "✓ 설치됨" } else { "✗ 미설치 (mac install env)" },
+                if connect_ok { "ok" } else { "error" }),
+            tui_spec::kv_item("등록된 연결",
+                &format!("{}개", conns.len()),
+                if conns.is_empty() { "warn" } else { "ok" }),
+            tui_spec::kv_item("현재 마운트",
+                &format!("{}개", mounts.len()), "ok"),
+            tui_spec::kv_item("자동 마운트 LaunchAgent",
+                if auto_enabled { "✓ 등록됨 (5분마다)" } else { "✗ 미등록" },
+                if auto_enabled { "ok" } else { "warn" }),
+            tui_spec::kv_item("자동 마운트 항목",
+                &format!("{}개 (활성 {}개)",
+                    cfg.auto_mounts.len(),
+                    cfg.auto_mounts.iter().filter(|a| a.enabled).count()),
+                "ok"),
+            tui_spec::kv_item("잔재 자동 정리 (sweep)",
+                if cfg.sweep_enabled {
+                    "✓ 켜짐 (auto 실행 시마다 ~/Documents/WORK/NAS/ 스캔)"
+                } else {
+                    "✗ 꺼짐 (mac run mount sweep on 으로 활성화)"
+                },
+                if cfg.sweep_enabled { "ok" } else { "warn" }),
+        ])
+        .kv("자동 마운트", auto_items)
+        .table("연결", vec!["NAME", "ENDPOINT", "PW"], conn_rows)
+        .table("마운트", vec!["SOURCE", "MOUNTPOINT"], mount_rows)
+        .buttons()
+        .buttons_custom("토글", vec![
+            serde_json::json!({
+                "label": if cfg.sweep_enabled { "Sweep OFF" } else { "Sweep ON" },
+                "command": "sweep",
+                "args": [if cfg.sweep_enabled { "off" } else { "on" }],
+                "key": "w"
+            }),
+        ])
+        .text("안내", "  자동 마운트 설정:\n    mac run mount auto-add <conn> <share>\n    mac run mount auto-toggle <conn> <share>\n    mac run mount auto-enable      # 로그인 시 + 5분마다 자동 실행\n\n  잔재 정리:\n    mac run mount sweep on|off|status\n    → auto 실행 시마다 ~/Documents/WORK/NAS/ 스캔, 카드/마운트에 없는 항목을\n      ~/NAS/.mountless-trash/YYMMDD-HHMMSS/ 로 격리 (삭제 아님)\n\n  수동:\n    mac run mount mount <name> <share>\n    mac run mount unmount <share>")
+        .print();
 }

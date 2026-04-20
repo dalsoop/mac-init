@@ -110,6 +110,8 @@ fn cmd_status() {
 }
 
 fn print_tui_spec() {
+    use mac_common::tui_spec::{self, TuiSpec};
+
     let sched = cron::load_schedule();
     let scheduler_on = cron::scheduler_installed();
 
@@ -129,48 +131,22 @@ fn print_tui_spec() {
 
     let active_jobs = sched.jobs.iter().filter(|j| j.enabled).count();
 
-    let spec = serde_json::json!({
-        "tab": { "label_ko": "크론(스케줄)", "label": "Cron", "icon": "⏰" },
-        "refresh_interval": 30, "group": "auto",
-        "sections": [
-            {
-                "kind": "key-value",
-                "title": "상태",
-                "items": [
-                    {
-                        "key": "스케줄러",
-                        "value": if scheduler_on { "✓ 설치됨 (매분 tick)" } else { "✗ 미설치" },
-                        "status": if scheduler_on { "ok" } else { "error" }
-                    },
-                    {
-                        "key": "스케줄 jobs",
-                        "value": format!("{} / {} 활성", active_jobs, sched.jobs.len()),
-                        "status": if sched.jobs.is_empty() { "warn" } else { "ok" }
-                    }
-                ]
-            },
-            {
-                "kind": "table",
-                "title": "스케줄 jobs (schedule.json)",
-                "headers": ["", "NAME", "SCHEDULE", "COMMAND"],
-                "rows": job_rows
-            },
-            {
-                "kind": "buttons",
-                "title": "Actions",
-                "items": [
-                    { "label": "Jobs", "command": "jobs", "key": "j" },
-                    { "label": "Status", "command": "status", "key": "s" },
-                    { "label": "Setup Scheduler", "command": "setup-scheduler", "key": "u" },
-                    { "label": "Remove Scheduler", "command": "remove-scheduler", "key": "x" }
-                ]
-            },
-            {
-                "kind": "text",
-                "title": "안내",
-                "content": "  mac run cron add <name> \"<command>\" --cron \"*/5 * * * *\"\n  mac run cron add <name> \"<command>\" --interval 300\n  mac run cron remove/toggle <name>\n\n  시스템 LaunchAgent 조회: mac run bootstrap agent list"
-            }
-        ]
-    });
-    println!("{}", serde_json::to_string_pretty(&spec).unwrap());
+    let usage_active = active_jobs > 0;
+    let usage_summary = format!("{}개 활성", active_jobs);
+
+    TuiSpec::new("cron")
+        .refresh(30)
+        .usage(usage_active, &usage_summary)
+        .kv("상태", vec![
+            tui_spec::kv_item("스케줄러",
+                if scheduler_on { "✓ 설치됨 (매분 tick)" } else { "✗ 미설치" },
+                if scheduler_on { "ok" } else { "error" }),
+            tui_spec::kv_item("스케줄 jobs",
+                &format!("{} / {} 활성", active_jobs, sched.jobs.len()),
+                if sched.jobs.is_empty() { "warn" } else { "ok" }),
+        ])
+        .table("스케줄", vec!["", "NAME", "SCHEDULE", "COMMAND"], job_rows)
+        .buttons()
+        .text("안내", "  mac run cron add <name> \"<command>\" --cron \"*/5 * * * *\"\n  mac run cron add <name> \"<command>\" --interval 300\n  mac run cron remove/toggle <name>\n\n  시스템 LaunchAgent 조회: mac run bootstrap agent list")
+        .print();
 }

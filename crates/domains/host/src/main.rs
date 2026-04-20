@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use mac_common::{cmd, paths};
 use std::fs;
 use std::process::Command;
 
@@ -20,8 +21,46 @@ enum Commands {
     Add { ip: String, hostname: String },
     /// 호스트명/IP 검색
     Search { query: String },
-    /// TUI v2 스펙 (JSON)
+    /// DNS 관리
+    Dns {
+        #[command(subcommand)]
+        action: DnsAction,
+    },
+    /// TUI 스펙 (JSON)
     TuiSpec,
+}
+
+#[derive(Subcommand)]
+enum DnsAction {
+    /// 인터페이스별 DNS 현황
+    Status,
+    /// DNS 서버 설정 (프리셋 이름 또는 IP)
+    Set {
+        /// 네트워크 인터페이스 (Wi-Fi, Ethernet 등)
+        interface: String,
+        /// 프리셋(google/cloudflare/quad9/adguard/opendns) 또는 IP 주소
+        value: String,
+        /// 보조 DNS (IP 직접 입력 시)
+        #[arg(long)]
+        secondary: Option<String>,
+    },
+    /// DNS 서버 초기화 (DHCP 기본)
+    Reset {
+        /// 네트워크 인터페이스
+        interface: String,
+    },
+    /// DNS 캐시 플러시
+    Flush,
+    /// DNS 조회 테스트
+    Test {
+        /// 조회할 도메인
+        domain: String,
+        /// 사용할 DNS 서버 (생략 시 시스템 기본)
+        #[arg(long, short)]
+        server: Option<String>,
+    },
+    /// DNS 프리셋 목록
+    Presets,
 }
 
 fn main() {
@@ -31,6 +70,14 @@ fn main() {
         Commands::Hosts => cmd_hosts(),
         Commands::Add { ip, hostname } => cmd_add(&ip, &hostname),
         Commands::Search { query } => cmd_search(&query),
+        Commands::Dns { action } => match action {
+            DnsAction::Status => dns_status(),
+            DnsAction::Set { interface, value, secondary } => dns_set(&interface, &value, secondary.as_deref()),
+            DnsAction::Reset { interface } => dns_reset(&interface),
+            DnsAction::Flush => dns_flush(),
+            DnsAction::Test { domain, server } => dns_test(&domain, server.as_deref()),
+            DnsAction::Presets => dns_presets(),
+        },
         Commands::TuiSpec => print_tui_spec(),
     }
 }
@@ -149,50 +196,196 @@ fn cmd_search(query: &str) {
 }
 
 fn print_tui_spec() {
+    use mac_common::tui_spec::{self, TuiSpec};
+
     let entries = parse_hosts();
     let host_items: Vec<serde_json::Value> = entries.iter().map(|e| {
-        serde_json::json!({
-            "key": e.ip,
-            "value": e.hostname,
-            "status": if e.comment { "warn" } else { "ok" },
-            "data": { "ip": e.ip, "hostname": e.hostname,
-                      "commented": e.comment.to_string() }
-        })
+        tui_spec::kv_item_data(&e.ip, &e.hostname,
+            if e.comment { "warn" } else { "ok" },
+            serde_json::json!({ "ip": e.ip, "hostname": e.hostname,
+                      "commented": e.comment.to_string() }))
     }).collect();
 
-    let spec = serde_json::json!({
-        "tab": { "label_ko": "시스템 상태", "label": "Host", "icon": "🖥" },
-        "refresh_interval": 30, "group": "infra",        "list_section": "/etc/hosts",
-        "sections": [
-            {
-                "kind": "key-value",
-                "title": "System",
-                "items": [
-                    { "key": "uptime", "value": uptime(), "status": "ok" },
-                    { "key": "disk /", "value": disk_usage_root(), "status": "ok" },
-                    { "key": "memory", "value": memory_summary(), "status": "ok" }
-                ]
-            },
-            {
-                "kind": "key-value",
-                "title": "/etc/hosts",
-                "items": host_items
-            },
-            {
-                "kind": "buttons",
-                "title": "Actions",
-                "items": [
-                    { "label": "Status", "command": "status", "key": "s" },
-                    { "label": "All hosts", "command": "hosts", "key": "l" }
-                ]
-            },
-            {
-                "kind": "text",
-                "title": "안내",
-                "content": "편집은 sudo 필요. CLI:\n  mac run host add <ip> <hostname>\n  sudo nano /etc/hosts"
-            }
-        ],
-        "keybindings": []
-    });
-    println!("{}", serde_json::to_string_pretty(&spec).unwrap());
+    TuiSpec::new("host")
+        .refresh(30)
+        .list_section("/etc/hosts")
+        .usage(true, "항상 활성")
+        .kv("상태", vec![
+            tui_spec::kv_item("uptime", &uptime(), "ok"),
+            tui_spec::kv_item("disk /", &disk_usage_root(), "ok"),
+            tui_spec::kv_item("memory", &memory_summary(), "ok"),
+        ])
+        .kv("/etc/hosts", host_items)
+        .kv("DNS", dns_status_items())
+        .buttons()
+        .text("안내", "편집은 sudo 필요. CLI:\n  mac run host add <ip> <hostname>\n  mac run host dns set Wi-Fi cloudflare\n  mac run host dns flush")
+        .print();
+}
+
+// ═══════════════════════════════════════
+// DNS 관리
+// ═══════════════════════════════════════
+
+/// DNS 프리셋 조회. locale.json의 dns_presets에서 읽음.
+fn dns_preset(name: &str) -> Option<(String, String)> {
+    mac_common::locale::dns_preset(name).map(|p| (p.primary, p.secondary))
+}
+
+/// networksetup으로 인터페이스 DNS 조회.
+fn get_dns(interface: &str) -> String {
+    cmd::stdout("networksetup", &["-getdnsservers", interface])
+}
+
+/// 활성 네트워크 인터페이스 목록.
+fn list_interfaces() -> Vec<String> {
+    let out = cmd::stdout("networksetup", &["-listallnetworkservices"]);
+    out.lines()
+        .skip(1) // 첫 줄: "An asterisk (*) denotes ..."
+        .map(|l| l.trim_start_matches('*').trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+/// TUI 상태 섹션용 DNS 아이템.
+fn dns_status_items() -> Vec<serde_json::Value> {
+    use mac_common::tui_spec;
+    let interfaces = list_interfaces();
+    let mut items = Vec::new();
+    for iface in &interfaces {
+        let dns = get_dns(iface);
+        let (value, status) = if dns.contains("aren't any") || dns.contains("no DNS") {
+            ("DHCP (자동)".to_string(), "warn")
+        } else {
+            let servers: Vec<&str> = dns.lines().collect();
+            (servers.join(", "), "ok")
+        };
+        items.push(tui_spec::kv_item(&format!("DNS ({})", iface), &value, status));
+    }
+    items
+}
+
+fn dns_status() {
+    println!("=== DNS 현황 ===\n");
+
+    let interfaces = list_interfaces();
+    for iface in &interfaces {
+        let dns = get_dns(iface);
+        if dns.contains("aren't any") || dns.contains("no DNS") {
+            println!("  {:<20} DHCP (자동)", iface);
+        } else {
+            let servers: Vec<&str> = dns.lines().collect();
+            println!("  {:<20} {}", iface, servers.join(", "));
+        }
+    }
+
+    // scutil 전체 resolver 체인
+    println!("\n=== Resolver 체인 (scutil --dns) ===\n");
+    let scutil = cmd::stdout("scutil", &["--dns"]);
+    // resolver 요약만
+    for line in scutil.lines() {
+        if line.contains("nameserver") || line.contains("domain") || line.contains("search") || line.starts_with("resolver") {
+            println!("  {}", line.trim());
+        }
+    }
+}
+
+fn dns_set(interface: &str, value: &str, secondary: Option<&str>) {
+    // 프리셋 확인
+    let (primary, sec) = if let Some((p, s)) = dns_preset(value) {
+        (p.to_string(), s.to_string())
+    } else if secondary.is_some() {
+        (value.to_string(), secondary.unwrap().to_string())
+    } else {
+        // IP 하나만 입력
+        (value.to_string(), String::new())
+    };
+
+    let mut args = vec!["-setdnsservers", interface, &primary];
+    if !sec.is_empty() {
+        args.push(&sec);
+    }
+
+    println!("DNS 설정: {} → {} {}", interface, primary, sec);
+    println!("  (sudo 필요)");
+    println!();
+
+    let status = Command::new("sudo")
+        .args(["networksetup"])
+        .args(&args)
+        .status();
+
+    match status {
+        Ok(s) if s.success() => {
+            println!("✓ DNS 설정 완료");
+            println!("  적용 확인: mac run host dns status");
+            // 자동 플러시
+            let _ = Command::new("sudo").args(["dscacheutil", "-flushcache"]).status();
+            let _ = Command::new("sudo").args(["killall", "-HUP", "mDNSResponder"]).status();
+            println!("✓ DNS 캐시 플러시 완료");
+        }
+        _ => eprintln!("✗ DNS 설정 실패 (sudo 권한 확인)"),
+    }
+}
+
+fn dns_reset(interface: &str) {
+    println!("DNS 초기화: {} → DHCP 기본", interface);
+    let status = Command::new("sudo")
+        .args(["networksetup", "-setdnsservers", interface, "Empty"])
+        .status();
+    match status {
+        Ok(s) if s.success() => {
+            println!("✓ DNS 초기화 완료");
+            let _ = Command::new("sudo").args(["dscacheutil", "-flushcache"]).status();
+            let _ = Command::new("sudo").args(["killall", "-HUP", "mDNSResponder"]).status();
+            println!("✓ DNS 캐시 플러시 완료");
+        }
+        _ => eprintln!("✗ DNS 초기화 실패"),
+    }
+}
+
+fn dns_flush() {
+    println!("DNS 캐시 플러시 중...");
+    let r1 = Command::new("sudo").args(["dscacheutil", "-flushcache"]).status();
+    let r2 = Command::new("sudo").args(["killall", "-HUP", "mDNSResponder"]).status();
+    match (r1, r2) {
+        (Ok(s1), Ok(s2)) if s1.success() && s2.success() => {
+            println!("✓ DNS 캐시 플러시 완료");
+        }
+        _ => eprintln!("✗ 플러시 실패 (sudo 권한 확인)"),
+    }
+}
+
+fn dns_test(domain: &str, server: Option<&str>) {
+    println!("=== DNS 조회: {} ===\n", domain);
+
+    // nslookup
+    let args = if let Some(srv) = server {
+        println!("  서버: {}\n", srv);
+        vec![domain, srv]
+    } else {
+        vec![domain]
+    };
+    let out = cmd::output("nslookup", &args.iter().map(|s| s.as_ref()).collect::<Vec<&str>>());
+    for line in out.lines() {
+        println!("  {}", line);
+    }
+}
+
+fn dns_presets() {
+    let presets = mac_common::locale::dns_presets();
+    if presets.is_empty() {
+        println!("프리셋 없음 (locale.json 확인: nickel export ncl/domains.ncl > ~/.mac-app-init/locale.json)");
+        return;
+    }
+    println!("=== DNS 프리셋 ===\n");
+    println!("  {:<20} {:<18} {:<18} {}", "이름", "Primary", "Secondary", "설명");
+    println!("  {}", "─".repeat(75));
+    let mut names: Vec<&String> = presets.keys().collect();
+    names.sort();
+    for name in names {
+        let p = &presets[name];
+        println!("  {:<20} {:<18} {:<18} {}", name, p.primary, p.secondary, p.description);
+    }
+    println!("\n  사용법: mac run host dns set Wi-Fi cloudflare");
+    println!("  초기화: mac run host dns reset Wi-Fi");
 }

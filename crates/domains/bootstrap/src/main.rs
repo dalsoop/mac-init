@@ -164,7 +164,9 @@ fn main() {
     }
 }
 
-fn home() -> String { std::env::var("HOME").unwrap_or_else(|_| "/tmp".into()) }
+use mac_common::{paths, tui_spec::{self, TuiSpec}};
+
+fn home() -> String { paths::home() }
 
 fn cmd_setup_path() {
     use std::fs;
@@ -256,11 +258,7 @@ fn print_tui_spec() {
             Some(v) => (format!("✓ {}", v), "ok"),
             None => ("✗ 미설치".to_string(), "error"),
         };
-        serde_json::json!({
-            "key": dep.name,
-            "value": value,
-            "status": status,
-        })
+        tui_spec::kv_item(dep.name, &value, status)
     }).collect();
 
     // PATH 설정 상태
@@ -292,52 +290,33 @@ fn print_tui_spec() {
         .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "2")
         .unwrap_or(false);
 
-    let spec = serde_json::json!({
-        "tab": { "label_ko": "의존성 설치", "label": "Bootstrap", "icon": "🚀" },
-        "refresh_interval": 60, "group": "init",
-        "sections": [
-            {
-                "kind": "key-value",
-                "title": "의존성",
-                "items": items
-            },
-            {
-                "kind": "key-value",
-                "title": "초기 설정",
-                "items": [
-                    { "key": "PATH (shell.sh)", "value": if path_ok { "✓ 설정됨" } else { "✗ 미설정" },
-                      "status": if path_ok { "ok" } else { "error" } },
-                    { "key": "TCC (Documents 접근)", "value": if tcc_ok { "✓ 허용" } else { "✗ 미허용" },
-                      "status": if tcc_ok { "ok" } else { "warn" } },
-                    { "key": "SD 자동 백업", "value": if sd_auto { "✓ 켜짐" } else { "꺼짐" },
-                      "status": if sd_auto { "ok" } else { "warn" } },
-                    { "key": "SD 자동 추출", "value": if sd_eject { "✓ 켜짐" } else { "꺼짐" },
-                      "status": if sd_eject { "ok" } else { "warn" } },
-                    { "key": "SD 백업 경로", "value": sd_target,
-                      "status": if sd_target == "미설정" { "error" } else { "ok" } },
-                ]
-            },
-            {
-                "kind": "buttons",
-                "title": "의존성",
-                "items": [
-                    { "label": "Install (전체)", "command": "install", "key": "i" },
-                    { "label": "Check (누락분)", "command": "check", "key": "c" },
-                    { "label": "Status", "command": "status", "key": "s" },
-                ]
-            },
-            {
-                "kind": "buttons",
-                "title": "초기 설정",
-                "items": [
-                    { "label": "Setup PATH", "command": "setup-path", "key": "p" },
-                    { "label": "Setup SD", "command": "setup-sd", "key": "d" },
-                    { "label": "Setup All (전체)", "command": "setup-all", "key": "a" },
-                ]
-            }
-        ]
-    });
-    println!("{}", serde_json::to_string_pretty(&spec).unwrap());
+    let installed_count = items.iter().filter(|i| i.get("status").and_then(|s| s.as_str()) == Some("ok")).count();
+    let total_count = DEPS.len();
+    let usage_active = installed_count == total_count;
+    let usage_summary = format!("{}/{} 설치됨", installed_count, total_count);
+
+    TuiSpec::new("bootstrap")
+        .refresh(60)
+        .usage(usage_active, &usage_summary)
+        .kv("상태", items)
+        .kv("초기 설정", vec![
+            tui_spec::kv_item("PATH (shell.sh)",
+                if path_ok { "✓ 설정됨" } else { "✗ 미설정" },
+                if path_ok { "ok" } else { "error" }),
+            tui_spec::kv_item("TCC (Documents 접근)",
+                if tcc_ok { "✓ 허용" } else { "✗ 미허용" },
+                if tcc_ok { "ok" } else { "warn" }),
+            tui_spec::kv_item("SD 자동 백업",
+                if sd_auto { "✓ 켜짐" } else { "꺼짐" },
+                if sd_auto { "ok" } else { "warn" }),
+            tui_spec::kv_item("SD 자동 추출",
+                if sd_eject { "✓ 켜짐" } else { "꺼짐" },
+                if sd_eject { "ok" } else { "warn" }),
+            tui_spec::kv_item("SD 백업 경로", &sd_target,
+                if sd_target == "미설정" { "error" } else { "ok" }),
+        ])
+        .buttons()
+        .print();
 }
 
 fn cmd_status() {

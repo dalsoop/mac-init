@@ -25,6 +25,35 @@ pub struct DomainSpec {
     /// SD 백업 같이 상태가 실시간으로 바뀌는 도메인에서 사용.
     #[serde(default)]
     pub refresh_interval: u32,
+    /// 도메인 사용 여부. true = "✓ 사용", false = "○ 미사용".
+    /// 각 도메인이 자체 기준으로 판별 (카드 1+, 마운트 1+, job 1+ 등).
+    #[serde(default)]
+    pub usage: Option<UsageInfo>,
+    /// 편집 가능 필드 정의 (locale.json → tui-spec으로 전달).
+    #[serde(default)]
+    pub editables: Vec<EditableField>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EditableField {
+    /// KV 상태 항목의 key (매칭용)
+    pub field: String,
+    /// 입력 모달에 표시할 라벨
+    pub label: String,
+    /// 도메인 CLI 서브커맨드
+    pub command: String,
+    /// 명령 인자. ${value}가 사용자 입력으로 치환됨
+    #[serde(default)]
+    pub args: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UsageInfo {
+    /// 사용 중이면 true.
+    pub active: bool,
+    /// 한 줄 요약 (예: "카드 3개", "비활성", "Docker 실행 중").
+    #[serde(default)]
+    pub summary: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

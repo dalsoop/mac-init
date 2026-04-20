@@ -35,10 +35,8 @@ enum Commands {
     TuiSpec,
 }
 
-fn home() -> String { std::env::var("HOME").unwrap_or_default() }
-
 fn services_dir() -> PathBuf {
-    PathBuf::from(home()).join("Library/Services")
+    PathBuf::from(mac_common::paths::home()).join("Library/Services")
 }
 
 fn workflow_path(name: &str) -> PathBuf {
@@ -58,6 +56,8 @@ fn main() {
 }
 
 fn print_tui_spec() {
+    use mac_common::tui_spec::{self, TuiSpec};
+
     let dir = services_dir();
     let mut rows: Vec<serde_json::Value> = Vec::new();
     if let Ok(entries) = fs::read_dir(&dir) {
@@ -72,35 +72,18 @@ fn print_tui_spec() {
         }
     }
 
-    let spec = serde_json::json!({
-        "tab": { "label_ko": "빠른동작", "label": "Quick Actions", "icon": "⚡" },
-        "group": "finder",        "sections": [
-            {
-                "kind": "key-value",
-                "title": "Status",
-                "items": [
-                    { "key": "설치된 Workflow", "value": format!("{} 개", rows.len()), "status": "ok" },
-                    { "key": "Services 경로", "value": dir.display().to_string(), "status": "ok" }
-                ]
-            },
-            {
-                "kind": "table",
-                "title": "Workflows",
-                "headers": ["NAME", "PATH"],
-                "rows": rows
-            },
-            {
-                "kind": "buttons",
-                "title": "Actions",
-                "items": [
-                    { "label_ko": "빠른동작", "label": "List (목록)", "command": "list", "key": "l" },
-                    { "label_ko": "빠른동작", "label": "Install Defaults (기본 세트)", "command": "install-defaults", "key": "d" },
-                    { "label_ko": "빠른동작", "label": "Reload (Finder 재시작)", "command": "reload", "key": "r" }
-                ]
-            }
-        ]
-    });
-    println!("{}", serde_json::to_string_pretty(&spec).unwrap());
+    let usage_active = !rows.is_empty();
+    let usage_summary = format!("{}개 설치", rows.len());
+
+    TuiSpec::new("quickaction")
+        .usage(usage_active, &usage_summary)
+        .kv("상태", vec![
+            tui_spec::kv_item("설치된 Workflow", &format!("{} 개", rows.len()), "ok"),
+            tui_spec::kv_item("Services 경로", &dir.display().to_string(), "ok"),
+        ])
+        .table("워크플로우", vec!["NAME", "PATH"], rows)
+        .buttons()
+        .print();
 }
 
 fn cmd_list() {

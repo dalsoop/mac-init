@@ -1,8 +1,10 @@
-use crate::registry::{available_domains, fetch_spec, install_domain, installed_domains, remove_domain, run_action};
-use crate::spec::{DomainSpec, Section};
+use crate::registry::{Registry, SystemRegistry};
+use crate::spec::{DomainSpec, EditableField, Section};
 use crate::widgets;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::{prelude::*, widgets::*};
+use std::sync::Arc;
+use tui_input::Input;
 
 /// 사이드바 그룹 정의. 순서 = 화면 표시 순서.
 const GROUPS: &[(&str, &str)] = &[
@@ -27,11 +29,13 @@ fn default_group(domain: &str) -> &'static str {
     }
 }
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Focus {
     /// 1열: 도메인 목록
     Sidebar,
-    /// 2열: 선택 도메인 콘텐츠
+    /// 2열: 섹션 메뉴 (↑↓로 섹션 이동)
+    SectionMenu,
+    /// 3열: 선택 섹션 콘텐츠 (↑↓로 아이템 이동)
     Content,
 }
 
@@ -58,6 +62,28 @@ pub struct App {
     pub bg_loading: Option<std::sync::mpsc::Receiver<(usize, Option<DomainSpec>)>>,
     /// 전체 프리로드 채널
     pub preload_rx: Option<std::sync::mpsc::Receiver<(usize, Option<DomainSpec>)>>,
+    /// 백그라운드 액션 실행 결과 수신 (domain_idx, reload, result)
+    pub action_rx: Option<std::sync::mpsc::Receiver<(usize, bool, String)>>,
+    /// 액션 실행 중 표시
+    pub action_running: bool,
+    /// 외부 의존 추상화 (프로세스, 파일시스템)
+    reg: Arc<dyn Registry>,
+    /// 텍스트 입력 모달
+    pub input_modal: Option<InputModal>,
+}
+
+/// 텍스트 입력 모달 상태.
+pub struct InputModal {
+    /// 모달 상단 라벨 (예: "Git 사용자 이름")
+    pub label: String,
+    /// 입력 버퍼
+    pub input: Input,
+    /// 확인 시 실행할 도메인
+    pub domain: String,
+    /// 확인 시 실행할 명령
+    pub command: String,
+    /// 인자 템플릿 (${value} → 사용자 입력으로 치환)
+    pub args_template: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -70,6 +96,10 @@ pub enum SidebarItem {
 
 impl App {
     pub fn new() -> Self {
+        Self::with_registry(Arc::new(SystemRegistry))
+    }
+
+    pub fn with_registry(reg: Arc<dyn Registry>) -> Self {
         Self {
             should_quit: false,
             confirm_quit: false,
@@ -88,20 +118,24 @@ impl App {
             pending_load: None,
             bg_loading: None,
             preload_rx: None,
+            action_rx: None,
+            action_running: false,
+            reg,
+            input_modal: None,
         }
     }
 
     pub fn load_fast(&mut self) {
-        self.domains = installed_domains();
+        self.domains = self.reg.installed_domains();
         self.specs = vec![None; self.domains.len()];
-        self.available = available_domains();
+        self.available = self.reg.available_domains();
         self.build_sidebar();
     }
 
     pub fn load(&mut self) {
-        self.domains = installed_domains();
-        self.specs = self.domains.iter().map(|d| fetch_spec(d)).collect();
-        self.available = available_domains();
+        self.domains = self.reg.installed_domains();
+        self.specs = self.domains.iter().map(|d| self.reg.fetch_spec(d)).collect();
+        self.available = self.reg.available_domains();
         self.build_sidebar();
         if self.selected_tab > self.domains.len() { self.selected_tab = 0; }
     }
@@ -110,7 +144,7 @@ impl App {
     /// 한 번 로드하면 refresh 전까지 재호출 안 함.
     pub fn ensure_spec(&mut self, idx: usize) {
         if self.specs[idx].is_none() {
-            self.specs[idx] = fetch_spec(&self.domains[idx]);
+            self.specs[idx] = self.reg.fetch_spec(&self.domains[idx]);
         }
     }
 
@@ -126,10 +160,11 @@ impl App {
         let domains: Vec<(usize, String)> = self.domains.iter().enumerate()
             .map(|(i, d)| (i, d.clone())).collect();
         let (tx, rx) = mpsc::channel();
+        let reg = Arc::clone(&self.reg);
 
         thread::spawn(move || {
             for (idx, domain) in domains {
-                let spec = crate::registry::fetch_spec(&domain);
+                let spec = reg.fetch_spec(&domain);
                 let _ = tx.send((idx, spec));
             }
         });
@@ -151,8 +186,8 @@ impl App {
     pub fn refresh_current_tab(&mut self) {
         if self.selected_tab == 0 { return; }
         let idx = self.selected_tab - 1;
-        if let Some(domain) = self.domains.get(idx) {
-            self.specs[idx] = crate::registry::fetch_spec(domain);
+        if let Some(domain) = self.domains.get(idx).cloned() {
+            self.specs[idx] = self.reg.fetch_spec(&domain);
         }
     }
 
@@ -162,7 +197,7 @@ impl App {
             KeyCode::Up | KeyCode::Char('k') => { self.sidebar_move(-1); }
             KeyCode::Down | KeyCode::Char('j') => { self.sidebar_move(1); }
             KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
-                // 선택 → 콘텐츠로
+                // 선택 → 섹션 메뉴 또는 콘텐츠로
                 if let Some(item) = self.sidebar_items.get(self.sidebar_cursor).cloned() {
                     match item {
                         SidebarItem::Install => {
@@ -175,12 +210,7 @@ impl App {
                             self.bg_loading = None;
                             self.content_section = 0;
                             self.focus_button = 0;
-                            // 캐시 있으면 즉시 전환, 없으면 스피너
-                            if self.has_spec(idx) {
-                                self.focus = Focus::Content; self.content_section = 0;
-                            } else {
-                                self.focus = Focus::Content; self.content_section = 0;
-                            }
+                            self.focus = Focus::SectionMenu;
                         }
                         SidebarItem::GroupHeader(_) => {} // 선택 불가
                     }
@@ -208,14 +238,55 @@ impl App {
         self.sidebar_cursor = next.clamp(0, len as i32 - 1) as usize;
     }
 
-    fn handle_content_key(&mut self, key: KeyEvent) {
+    /// 2열: 섹션 메뉴 키 처리. ↑↓로 섹션 이동, Enter/→로 콘텐츠 진입.
+    fn handle_section_menu_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Esc | KeyCode::Left | KeyCode::Char('h') => {
                 self.focus = Focus::Sidebar;
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                let max = self.current_section_count();
+                if max > 0 {
+                    self.content_section = (self.content_section + max - 1) % max;
+                    self.focus_button = 0;
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                let max = self.current_section_count();
+                if max > 0 {
+                    self.content_section = (self.content_section + 1) % max;
+                    self.focus_button = 0;
+                }
+            }
+            KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
+                self.focus = Focus::Content;
+                self.focus_button = 0;
+            }
+            KeyCode::Tab => {
+                let max = self.current_section_count();
+                if max > 0 {
+                    self.content_section = (self.content_section + 1) % max;
+                    self.focus_button = 0;
+                }
+            }
+            KeyCode::BackTab => {
+                let max = self.current_section_count();
+                if max > 0 {
+                    self.content_section = (self.content_section + max - 1) % max;
+                    self.focus_button = 0;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_content_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc | KeyCode::Left | KeyCode::Char('h') => {
+                self.focus = Focus::SectionMenu;
                 return;
             }
             KeyCode::Tab => {
-                // 콘텐츠 내 섹션 이동 (다음)
                 let max = self.current_section_count();
                 if max > 0 {
                     self.content_section = (self.content_section + 1) % max;
@@ -253,9 +324,13 @@ impl App {
                     self.focus_button = self.focus_button.saturating_sub(1);
                 }
                 KeyCode::Down | KeyCode::Char('j') => {
-                    self.focus_button = self.focus_button.saturating_add(1);
+                    let max = self.current_section_item_count();
+                    if max > 0 {
+                        self.focus_button = (self.focus_button + 1).min(max - 1);
+                    }
                 }
                 KeyCode::Enter => self.activate_button(),
+                KeyCode::Char('e') => self.open_edit_modal(),
                 KeyCode::Char(c) => self.activate_by_key(c),
                 _ => {}
             }
@@ -269,6 +344,21 @@ impl App {
             .and_then(|s| s.as_ref())
             .map(|s| s.sections.len())
             .unwrap_or(1)
+    }
+
+    /// 현재 선택된 섹션의 아이템 수 (KV items, Table rows, Buttons, Text lines).
+    fn current_section_item_count(&self) -> usize {
+        if self.selected_tab == 0 { return 0; }
+        let idx = self.selected_tab - 1;
+        let Some(Some(spec)) = self.specs.get(idx) else { return 0; };
+        let section_idx = self.content_section.min(spec.sections.len().saturating_sub(1));
+        match spec.sections.get(section_idx) {
+            Some(Section::KeyValue { items, .. }) => items.len(),
+            Some(Section::Table { rows, .. }) => rows.len(),
+            Some(Section::Buttons { items, .. }) => items.len(),
+            Some(Section::Text { content, .. }) => content.lines().count(),
+            None => 0,
+        }
     }
 
     fn build_sidebar(&mut self) {
@@ -317,9 +407,9 @@ impl App {
         };
         self.output = msg;
         let result = if self.is_installed(&name) {
-            remove_domain(&name)
+            self.reg.remove_domain(&name)
         } else {
-            install_domain(&name)
+            self.reg.install_domain(&name)
         };
         self.output.push_str(&result);
         self.load();
@@ -340,14 +430,22 @@ impl App {
         self.render_content(frame, main[1]);
 
         // 하단 키 안내
-        let hints = match self.focus {
-            Focus::Sidebar => "↑↓ 이동 │ Enter/→ 선택 │ r 새로고침 │ Esc 종료",
-            Focus::Content => "↑↓ 항목 │ Tab 섹션 │ ←/Esc 뒤로 │ Enter 실행 │ r 새로고침",
+        let hints = if self.input_modal.is_some() {
+            "Enter 확인 │ Esc 취소"
+        } else {
+            match self.focus {
+                Focus::Sidebar => "↑↓ 이동 │ Enter/→ 선택 │ r 새로고침 │ Esc 종료",
+                Focus::SectionMenu => "↑↓ 섹션 │ Enter/→ 콘텐츠 │ ←/Esc 뒤로 │ r 새로고침",
+                Focus::Content => "↑↓ 항목 │ e 수정 │ Tab 섹션 │ ←/Esc 뒤로 │ Enter 실행",
+            }
         };
         frame.render_widget(
             Paragraph::new(Span::styled(hints, Style::default().fg(Color::DarkGray))),
             outer[1],
         );
+
+        // 입력 모달 오버레이
+        self.render_modal(frame);
     }
 
     fn render_sidebar(&self, frame: &mut Frame, area: Rect) {
@@ -366,18 +464,18 @@ impl App {
                 SidebarItem::Install => {
                     let selected = self.selected_tab == 0;
                     let style = if is_cursor {
-                        Style::default().bg(Color::Yellow).fg(Color::Black).bold()
-                    } else if selected {
                         Style::default().bg(Color::Cyan).fg(Color::Black).bold()
+                    } else if selected {
+                        Style::default().fg(Color::Cyan).bold()
                     } else { Style::default().fg(Color::White) };
-                    items.push(ListItem::new(Line::from(Span::styled("   📥 설치 관리", style))));
+                    items.push(ListItem::new(Line::from(Span::styled("   📋 도메인 현황", style))));
                 }
                 SidebarItem::Domain { idx, label, icon } => {
                     let selected = self.selected_tab == idx + 1;
                     let style = if is_cursor {
-                        Style::default().bg(Color::Yellow).fg(Color::Black).bold()
-                    } else if selected {
                         Style::default().bg(Color::Cyan).fg(Color::Black).bold()
+                    } else if selected {
+                        Style::default().fg(Color::Cyan).bold()
                     } else { Style::default().fg(Color::White) };
                     items.push(ListItem::new(Line::from(Span::styled(
                         format!("   {} {}", icon, label), style,
@@ -430,7 +528,8 @@ impl App {
     fn render_section_menu(&self, frame: &mut Frame, area: Rect) {
         let domain_idx = self.selected_tab - 1;
         let Some(Some(spec)) = self.specs.get(domain_idx) else { return; };
-        let in_content = self.focus == Focus::Content;
+        let menu_focused = self.focus == Focus::SectionMenu;
+        let content_focused = self.focus == Focus::Content;
 
         let mut items = Vec::new();
         for (i, section) in spec.sections.iter().enumerate() {
@@ -441,7 +540,7 @@ impl App {
                 Section::Text { title, .. } => title,
             };
             let is_selected = i == self.content_section;
-            let style = if in_content && is_selected {
+            let style = if (menu_focused || content_focused) && is_selected {
                 Style::default().bg(Color::Cyan).fg(Color::Black).bold()
             } else {
                 Style::default().fg(Color::White)
@@ -451,7 +550,7 @@ impl App {
             ))));
         }
 
-        let border = if in_content { Color::Cyan } else { Color::DarkGray };
+        let border = if menu_focused { Color::Cyan } else { Color::DarkGray };
         let domain_label = spec.tab.label_ko.as_deref().unwrap_or(&spec.tab.label);
         let list = List::new(items).block(
             Block::default().borders(Borders::ALL)
@@ -477,16 +576,25 @@ impl App {
             .split(area);
 
         // 섹션 렌더
-        widgets::render_section(frame, chunks[0], section, self.focus_button);
+        let content_focused = self.focus == Focus::Content;
+        widgets::render_section(frame, chunks[0], section, self.focus_button, content_focused);
 
         // output
         if !self.output.is_empty() {
+            let title = if self.action_running {
+                let spinners = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+                static ACTION_START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+                let tick = (ACTION_START.get_or_init(std::time::Instant::now).elapsed().as_millis() / 66) as usize;
+                format!(" {} 실행 중… ", spinners[tick % spinners.len()])
+            } else {
+                " Output ".to_string()
+            };
             frame.render_widget(
                 Paragraph::new(self.output.as_str())
                     .wrap(ratatui::widgets::Wrap { trim: false })
                     .block(Block::default().borders(Borders::ALL)
-                        .border_style(Style::default().fg(Color::DarkGray))
-                        .title(" Output ")),
+                        .border_style(Style::default().fg(if self.action_running { Color::Yellow } else { Color::DarkGray }))
+                        .title(title)),
                 chunks[1],
             );
         } else {
@@ -524,25 +632,58 @@ impl App {
         } else {
             let items: Vec<ListItem> = self.available.iter().enumerate().map(|(i, name)| {
                 let installed = self.is_installed(name);
-                let marker = if installed { "[✓]" } else { "[ ]" };
-                let status = if installed { "installed" } else { "available" };
-                let (marker_style, name_style, status_style) = if installed {
-                    (Style::default().fg(Color::Green).bold(), Style::default().fg(Color::White), Style::default().fg(Color::Green))
+                // 설치된 도메인은 usage 정보로 사용 상태 표시
+                let (marker, status, marker_style, name_style, status_style) = if installed {
+                    let domain_idx = self.domains.iter().position(|d| d == name);
+                    let usage = domain_idx.and_then(|idx| {
+                        self.specs.get(idx).and_then(|s| s.as_ref()).and_then(|s| s.usage.as_ref())
+                    });
+                    match usage {
+                        Some(u) if u.active => (
+                            "✓ 사용",
+                            u.summary.clone().unwrap_or_default(),
+                            Style::default().fg(Color::Green).bold(),
+                            Style::default().fg(Color::White),
+                            Style::default().fg(Color::Green),
+                        ),
+                        Some(u) => (
+                            "○ 미사용",
+                            u.summary.clone().unwrap_or_default(),
+                            Style::default().fg(Color::Yellow),
+                            Style::default().fg(Color::White),
+                            Style::default().fg(Color::Yellow),
+                        ),
+                        None => (
+                            "✓ 설치됨",
+                            "확인 중…".to_string(),
+                            Style::default().fg(Color::Cyan),
+                            Style::default().fg(Color::White),
+                            Style::default().fg(Color::DarkGray),
+                        ),
+                    }
                 } else {
-                    (Style::default().fg(Color::DarkGray), Style::default().fg(Color::Gray), Style::default().fg(Color::DarkGray))
+                    (
+                        "  미설치",
+                        String::new(),
+                        Style::default().fg(Color::DarkGray),
+                        Style::default().fg(Color::Gray),
+                        Style::default().fg(Color::DarkGray),
+                    )
                 };
                 let row_style = if i == self.install_focus {
                     Style::default().bg(Color::DarkGray)
                 } else {
                     Style::default()
                 };
-                ListItem::new(Line::from(vec![
+                let mut spans = vec![
                     Span::raw(" "),
-                    Span::styled(marker, marker_style),
-                    Span::raw(" "),
-                    Span::styled(format!("{:<16}", name), name_style),
-                    Span::styled(status, status_style),
-                ])).style(row_style)
+                    Span::styled(format!("{:<10}", marker), marker_style),
+                    Span::styled(format!("{:<14}", name), name_style),
+                ];
+                if !status.is_empty() {
+                    spans.push(Span::styled(status, status_style));
+                }
+                ListItem::new(Line::from(spans)).style(row_style)
             }).collect();
 
             self.install_area_top = chunks[0].y + 1; // 박스 테두리 다음 줄부터 리스트
@@ -551,7 +692,7 @@ impl App {
                 List::new(items).block(
                     Block::default().borders(Borders::ALL)
                         .border_style(Style::default().fg(Color::DarkGray))
-                        .title(format!(" Install — {}/{} 설치됨 ", self.domains.len(), self.available.len())),
+                        .title(format!(" 도메인 현황 — {}/{} 설치됨 ", self.domains.len(), self.available.len())),
                 ),
                 chunks[0],
             );
@@ -586,7 +727,7 @@ impl App {
                 button_section_offset = i;
                 self.focus_button
             } else { 0 };
-            widgets::render_section(frame, chunks[i], section, focus);
+            widgets::render_section(frame, chunks[i], section, focus, self.focus == Focus::Content);
         }
         let _ = button_section_offset;
 
@@ -637,6 +778,12 @@ impl App {
     pub fn handle_key(&mut self, key: KeyEvent) {
         if key.kind != KeyEventKind::Press { return; }
 
+        // 입력 모달이 활성화되어 있으면 모든 키를 모달로
+        if self.input_modal.is_some() {
+            self.handle_modal_key(key);
+            return;
+        }
+
         // 공통 키
         match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => { self.should_quit = true; return; }
@@ -655,6 +802,7 @@ impl App {
 
         match self.focus {
             Focus::Sidebar => self.handle_sidebar_key(key),
+            Focus::SectionMenu => self.handle_section_menu_key(key),
             Focus::Content => self.handle_content_key(key),
         }
     }
@@ -675,7 +823,7 @@ impl App {
                             self.sidebar_cursor = row;
                             self.selected_tab = idx + 1;
                             self.bg_loading = None;
-                            self.focus = Focus::Content; self.content_section = 0;
+                            self.focus = Focus::SectionMenu; self.content_section = 0;
                         }
                         SidebarItem::GroupHeader(_) => {} // 커서 안 옮김
                     }
@@ -710,21 +858,20 @@ impl App {
     }
 
     fn activate_button(&mut self) {
+        if self.action_running { return; }
         let (domain, command, args) = {
             let Some((domain, buttons)) = self.current_buttons() else { return; };
             let idx = self.focus_button.min(buttons.len().saturating_sub(1));
             let Some(b) = buttons.get(idx) else { return; };
             (domain.to_string(), b.command.clone(), b.args.clone())
         };
-        self.output = format!("실행: {} {} {}\n", domain, command, args.join(" "));
-        let result = run_action(&domain, &command, &args);
-        self.output.push_str(&result);
-        // 실행 후 spec 새로고침
         let domain_idx = self.selected_tab - 1;
-        self.specs[domain_idx] = fetch_spec(&domain);
+        self.output = format!("실행 중: {} {} {} …\n", domain, command, args.join(" "));
+        self.run_action_bg(domain_idx, &domain, &command, &args, true);
     }
 
     fn activate_by_key(&mut self, ch: char) {
+        if self.action_running { return; }
         // 1) keybindings 우선 매치 (대소문자 구분)
         if self.activate_keybinding(ch) { return; }
         // 2) 버튼 key 매치 (legacy)
@@ -733,16 +880,15 @@ impl App {
             let Some(b) = buttons.iter().find(|b| b.key.as_deref() == Some(&ch.to_string())) else { return; };
             (domain.to_string(), b.command.clone(), b.args.clone())
         };
-        self.output = format!("실행: {} {}\n", domain, command);
-        let result = run_action(&domain, &command, &args);
-        self.output.push_str(&result);
         let domain_idx = self.selected_tab - 1;
-        self.specs[domain_idx] = fetch_spec(&domain);
+        self.output = format!("실행 중: {} {} …\n", domain, command);
+        self.run_action_bg(domain_idx, &domain, &command, &args, true);
     }
 
     /// keybindings 섹션에서 ch 와 일치하는 항목 실행. 성공 시 true.
     fn activate_keybinding(&mut self, ch: char) -> bool {
         if self.selected_tab == 0 { return false; }
+        if self.action_running { return false; }
         let domain_idx = self.selected_tab - 1;
         let Some(spec) = self.specs[domain_idx].as_ref() else { return false; };
         let key_str = ch.to_string();
@@ -756,14 +902,8 @@ impl App {
         let selected_data = self.selected_item_data();
         let args: Vec<String> = kb.args.iter().map(|a| self.resolve_template(a, &selected_data)).collect();
 
-        // TODO: confirm modal (Step 2 예정). 현재는 바로 실행.
-        self.output = format!("[{}] {} {}\n", kb.label, kb.command, args.join(" "));
-        let result = run_action(&domain, &kb.command, &args);
-        self.output.push_str(&result);
-
-        if kb.reload {
-            self.specs[domain_idx] = fetch_spec(&domain);
-        }
+        self.output = format!("[{}] 실행 중: {} {} …\n", kb.label, kb.command, args.join(" "));
+        self.run_action_bg(domain_idx, &domain, &kb.command, &args, kb.reload);
         true
     }
 
@@ -793,14 +933,16 @@ impl App {
     }
 
     /// ${selected.<field>} 와 ${toggle:<field>} 치환.
-    fn resolve_template(&self, template: &str, data: &std::collections::HashMap<String, String>) -> String {
+    pub fn resolve_template(&self, template: &str, data: &std::collections::HashMap<String, String>) -> String {
         let mut out = String::new();
         let mut rest = template;
         while let Some(start) = rest.find("${") {
             out.push_str(&rest[..start]);
             let after = &rest[start + 2..];
             let Some(end) = after.find('}') else {
-                out.push_str("${"); out.push_str(after); break;
+                out.push_str("${"); out.push_str(after);
+                rest = "";
+                break;
             };
             let expr = &after[..end];
             rest = &after[end + 1..];
@@ -815,5 +957,181 @@ impl App {
         }
         out.push_str(rest);
         out
+    }
+
+    /// 액션을 백그라운드 스레드에서 실행. TUI는 멈추지 않음.
+    fn run_action_bg(&mut self, domain_idx: usize, domain: &str, command: &str, args: &[String], reload: bool) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let domain = domain.to_string();
+        let command = command.to_string();
+        let args = args.to_vec();
+        let reg = Arc::clone(&self.reg);
+        std::thread::spawn(move || {
+            let result = reg.run_action(&domain, &command, &args);
+            let _ = tx.send((domain_idx, reload, result));
+        });
+        self.action_rx = Some(rx);
+        self.action_running = true;
+    }
+
+    /// 메인 루프에서 호출 — pending_load/bg_loading/preload 처리.
+    pub fn poll_bg_loading(&mut self) {
+        // pending_load: 백그라운드 스레드에서 spec 로드
+        if let Some(idx) = self.pending_load.take() {
+            if self.bg_loading.is_none() {
+                let domain = self.domains[idx].clone();
+                let (tx, rx) = std::sync::mpsc::channel();
+                let reg = Arc::clone(&self.reg);
+                std::thread::spawn(move || {
+                    let spec = reg.fetch_spec(&domain);
+                    let _ = tx.send((idx, spec));
+                });
+                self.bg_loading = Some(rx);
+            }
+        }
+        // 백그라운드 로드 완료 체크
+        if let Some(ref rx) = self.bg_loading {
+            if let Ok((idx, spec)) = rx.try_recv() {
+                self.specs[idx] = spec;
+                self.bg_loading = None;
+            }
+        }
+        // 프리로드 결과 수신 (논블로킹, 하나씩)
+        if let Some(ref rx) = self.preload_rx {
+            while let Ok((idx, spec)) = rx.try_recv() {
+                if self.specs[idx].is_none() {
+                    self.specs[idx] = spec;
+                }
+            }
+        }
+    }
+
+    /// 메인 루프에서 호출 — 백그라운드 액션 완료 확인.
+    pub fn poll_action(&mut self) {
+        let Some(ref rx) = self.action_rx else { return; };
+        if let Ok((domain_idx, reload, result)) = rx.try_recv() {
+            self.output.push_str(&result);
+            if reload {
+                if let Some(domain) = self.domains.get(domain_idx).cloned() {
+                    self.specs[domain_idx] = self.reg.fetch_spec(&domain);
+                }
+            }
+            self.action_rx = None;
+            self.action_running = false;
+        }
+    }
+
+    // ── 입력 모달 ──
+
+    /// 현재 포커스된 KV 항목에 대해 편집 가능 필드가 있으면 모달을 연다.
+    fn open_edit_modal(&mut self) {
+        if self.selected_tab == 0 { return; }
+        let domain_idx = self.selected_tab - 1;
+        let Some(spec) = self.specs[domain_idx].as_ref() else { return; };
+        if spec.editables.is_empty() { return; }
+
+        // 현재 섹션의 현재 포커스 항목의 key를 가져옴
+        let section_idx = self.content_section.min(spec.sections.len().saturating_sub(1));
+        let field_key = match spec.sections.get(section_idx) {
+            Some(Section::KeyValue { items, .. }) if !items.is_empty() => {
+                let idx = self.focus_button.min(items.len() - 1);
+                items[idx].key.clone()
+            }
+            _ => return,
+        };
+
+        // editables에서 이 field에 매칭되는 정의 찾기
+        let Some(editable) = spec.editables.iter().find(|e| e.field == field_key) else { return; };
+
+        // 현재 값을 pre-fill
+        let current_value = match spec.sections.get(section_idx) {
+            Some(Section::KeyValue { items, .. }) => {
+                let idx = self.focus_button.min(items.len() - 1);
+                let v = &items[idx].value;
+                // "✓ value" 형태면 "value" 부분만 추출
+                v.strip_prefix("✓ ").or(v.strip_prefix("✗ ")).unwrap_or(v).to_string()
+            }
+            _ => String::new(),
+        };
+
+        self.input_modal = Some(InputModal {
+            label: editable.label.clone(),
+            input: Input::new(current_value),
+            domain: self.domains[domain_idx].clone(),
+            command: editable.command.clone(),
+            args_template: editable.args.clone(),
+        });
+    }
+
+    fn handle_modal_key(&mut self, key: KeyEvent) {
+        let Some(modal) = &mut self.input_modal else { return; };
+        match key.code {
+            KeyCode::Enter => {
+                let value = modal.input.value().to_string();
+                let domain = modal.domain.clone();
+                let command = modal.command.clone();
+                let args: Vec<String> = modal.args_template.iter()
+                    .map(|a| a.replace("${value}", &value))
+                    .collect();
+                self.input_modal = None;
+
+                let domain_idx = self.selected_tab.saturating_sub(1);
+                self.output = format!("실행 중: {} {} {} …\n", domain, command, args.join(" "));
+                self.run_action_bg(domain_idx, &domain, &command, &args, true);
+            }
+            KeyCode::Esc => {
+                self.input_modal = None;
+            }
+            KeyCode::Char(c) => {
+                modal.input = modal.input.clone().with_value(
+                    format!("{}{}", modal.input.value(), c)
+                );
+            }
+            KeyCode::Backspace => {
+                let v = modal.input.value().to_string();
+                if !v.is_empty() {
+                    let new_v: String = v.chars().take(v.chars().count() - 1).collect();
+                    modal.input = modal.input.clone().with_value(new_v);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// 입력 모달 렌더링 (오버레이).
+    pub fn render_modal(&self, frame: &mut Frame) {
+        let Some(modal) = &self.input_modal else { return; };
+        let area = frame.area();
+        let w = 60.min(area.width.saturating_sub(4));
+        let h = 3;
+        let modal_area = Rect {
+            x: (area.width.saturating_sub(w)) / 2,
+            y: (area.height.saturating_sub(h)) / 2,
+            width: w,
+            height: h,
+        };
+
+        // 배경 지우기
+        frame.render_widget(Clear, modal_area);
+
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan))
+            .title(format!(" {} ", modal.label));
+
+        let inner = block.inner(modal_area);
+        frame.render_widget(block, modal_area);
+
+        let scroll = modal.input.visual_scroll(inner.width as usize);
+        let input_widget = Paragraph::new(modal.input.value())
+            .scroll((0, scroll as u16))
+            .style(Style::default().fg(Color::White));
+        frame.render_widget(input_widget, inner);
+
+        // 커서 위치
+        frame.set_cursor_position((
+            inner.x + (modal.input.visual_cursor().saturating_sub(scroll)) as u16,
+            inner.y,
+        ));
     }
 }

@@ -35,17 +35,7 @@ enum Commands {
     TuiSpec,
 }
 
-fn home() -> String { std::env::var("HOME").unwrap_or_default() }
-
-fn cmd_ok(cmd: &str, args: &[&str]) -> bool {
-    Command::new(cmd).args(args).output().map(|o| o.status.success()).unwrap_or(false)
-}
-
-fn cmd_stdout(cmd: &str, args: &[&str]) -> String {
-    Command::new(cmd).args(args).output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_default()
-}
+use mac_common::{cmd, tui_spec::{self, TuiSpec}};
 
 fn config_dir() -> PathBuf {
     // Try multiple locations
@@ -76,12 +66,12 @@ fn main() {
 }
 
 fn print_tui_spec() {
-    let wg_cli = cmd_ok("which", &["wg"]);
+    let wg_cli = cmd::ok("which", &["wg"]);
     let gui = std::path::Path::new("/Applications/WireGuard.app").exists();
     let cfg_dir = config_dir();
 
     let mut rows: Vec<serde_json::Value> = Vec::new();
-    let active = if wg_cli { cmd_stdout("wg", &["show", "interfaces"]) } else { String::new() };
+    let active = if wg_cli { cmd::stdout("wg", &["show", "interfaces"]) } else { String::new() };
     let active_list: Vec<&str> = active.split_whitespace().collect();
 
     if let Ok(entries) = fs::read_dir(&cfg_dir) {
@@ -98,58 +88,36 @@ fn print_tui_spec() {
         }
     }
 
-    let spec = serde_json::json!({
-        "tab": { "label_ko": "VPN", "label": "WireGuard", "icon": "🔒" },
-        "group": "system",        "sections": [
-            {
-                "kind": "key-value",
-                "title": "Status",
-                "items": [
-                    {
-                        "key": "wg CLI",
-                        "value": if wg_cli { "✓ 설치됨" } else { "✗ 미설치" },
-                        "status": if wg_cli { "ok" } else { "error" }
-                    },
-                    {
-                        "key": "WireGuard.app",
-                        "value": if gui { "✓ 설치됨" } else { "✗ 미설치" },
-                        "status": if gui { "ok" } else { "warn" }
-                    },
-                    {
-                        "key": "설정 디렉토리",
-                        "value": cfg_dir.display().to_string(),
-                        "status": "ok"
-                    }
-                ]
-            },
-            {
-                "kind": "table",
-                "title": "Configs",
-                "headers": ["", "NAME", "PATH"],
-                "rows": rows
-            },
-            {
-                "kind": "buttons",
-                "title": "Actions",
-                "items": [
-                    { "label_ko": "VPN", "label": "Status (상태)", "command": "status", "key": "s" },
-                    { "label_ko": "VPN", "label": "Install (wg + GUI 설치)", "command": "install", "key": "i" },
-                    { "label_ko": "VPN", "label": "List (설정 목록)", "command": "list", "key": "l" },
-                    { "label_ko": "VPN", "label": "Open (GUI 열기)", "command": "open", "key": "o" }
-                ]
-            }
-        ]
-    });
-    println!("{}", serde_json::to_string_pretty(&spec).unwrap());
+    let config_count = rows.len();
+    let active_tunnels = active_list.len();
+    let usage_active = config_count > 0;
+    let usage_summary = if active_tunnels > 0 { format!("{}개 활성", active_tunnels) }
+        else if config_count > 0 { format!("{}개 설정", config_count) }
+        else { "미설정".to_string() };
+
+    TuiSpec::new("wireguard")
+        .usage(usage_active, &usage_summary)
+        .kv("상태", vec![
+            tui_spec::kv_item("wg CLI",
+                if wg_cli { "✓ 설치됨" } else { "✗ 미설치" },
+                if wg_cli { "ok" } else { "error" }),
+            tui_spec::kv_item("WireGuard.app",
+                if gui { "✓ 설치됨" } else { "✗ 미설치" },
+                if gui { "ok" } else { "warn" }),
+            tui_spec::kv_item("설정 디렉토리", &cfg_dir.display().to_string(), "ok"),
+        ])
+        .table("설정", vec!["", "NAME", "PATH"], rows)
+        .buttons()
+        .print();
 }
 
 fn cmd_status() {
     println!("=== WireGuard 상태 ===\n");
 
     // wg CLI
-    let wg_cli = cmd_ok("which", &["wg"]);
+    let wg_cli = cmd::ok("which", &["wg"]);
     if wg_cli {
-        let ver = cmd_stdout("wg", &["--version"]);
+        let ver = cmd::stdout("wg", &["--version"]);
         println!("[wg CLI] ✓ {}", ver);
     } else {
         println!("[wg CLI] ✗ 미설치");
@@ -180,7 +148,7 @@ fn cmd_status() {
 
     // Active interfaces
     if wg_cli {
-        let active = cmd_stdout("wg", &["show"]);
+        let active = cmd::stdout("wg", &["show"]);
         println!("\n[활성 연결]");
         if active.is_empty() {
             println!("  없음");
@@ -195,7 +163,7 @@ fn cmd_status() {
 fn cmd_install() {
     let mut installed_any = false;
 
-    if !cmd_ok("which", &["wg"]) {
+    if !cmd::ok("which", &["wg"]) {
         println!("[wg CLI 설치 중...]");
         let ok = Command::new("brew").args(["install", "wireguard-tools"]).status()
             .map(|s| s.success()).unwrap_or(false);
@@ -246,7 +214,7 @@ fn cmd_list() {
         }
 
         // Check which are active
-        let active = cmd_stdout("wg", &["show", "interfaces"]);
+        let active = cmd::stdout("wg", &["show", "interfaces"]);
         let active_list: Vec<&str> = active.split_whitespace().collect();
 
         for c in &confs {

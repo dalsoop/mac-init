@@ -83,7 +83,9 @@ fn main() {
 
 // === 데이터 모델 ===
 
-fn home() -> String { std::env::var("HOME").unwrap_or_else(|_| "/tmp".into()) }
+use mac_common::{paths, tui_spec::{self, TuiSpec}};
+
+fn home() -> String { paths::home() }
 fn store_path() -> PathBuf { PathBuf::from(home()).join(".mac-app-init/shell.json") }
 fn shell_sh() -> PathBuf { PathBuf::from(home()).join(".mac-app-init/shell.sh") }
 
@@ -117,11 +119,7 @@ fn save(s: &ShellStore) {
     let _ = fs::write(&p, serde_json::to_string_pretty(s).unwrap_or_default());
 }
 
-fn expand(p: &str) -> String {
-    if p.starts_with('~') { p.replacen('~', &home(), 1) } else { p.to_string() }
-}
-
-fn dir_exists(p: &str) -> bool { PathBuf::from(expand(p)).is_dir() }
+fn dir_exists(p: &str) -> bool { PathBuf::from(paths::expand(p)).is_dir() }
 
 fn now_str() -> String {
     std::process::Command::new("date").args(["+%Y-%m-%d %H:%M:%S"]).output().ok()
@@ -139,7 +137,7 @@ fn generate_sh(s: &ShellStore) {
     for e in &s.paths {
         if e.enabled {
             let c = if e.label.is_empty() { String::new() } else { format!("  # {}", e.label) };
-            lines.push(format!("export PATH=\"{}:$PATH\"{}", expand(&e.path), c));
+            lines.push(format!("export PATH=\"{}:$PATH\"{}", paths::expand(&e.path), c));
         } else {
             let c = if e.label.is_empty() { String::new() } else { format!(" # {}", e.label) };
             lines.push(format!("# [OFF] {}{}", e.path, c));
@@ -224,7 +222,7 @@ fn cmd_path_list() {
 fn cmd_path_scan() {
     let current = std::env::var("PATH").unwrap_or_default();
     let s = load();
-    let registered: std::collections::HashSet<String> = s.paths.iter().map(|e| expand(&e.path)).collect();
+    let registered: std::collections::HashSet<String> = s.paths.iter().map(|e| paths::expand(&e.path)).collect();
     let skip = ["/usr/bin", "/bin", "/usr/sbin", "/sbin"];
     let mut seen = std::collections::HashSet::new();
     println!("시스템 PATH 미등록 항목:\n");
@@ -292,57 +290,38 @@ fn print_tui_spec() {
     let path_items: Vec<serde_json::Value> = s.paths.iter().map(|e| {
         let exists = dir_exists(&e.path);
         let status = if !e.enabled { "warn" } else if exists { "ok" } else { "error" };
-        serde_json::json!({
-            "key": e.path, "value": format!("{} {}", if e.enabled {"ON"} else {"OFF"}, e.label),
-            "status": status,
-            "data": { "name": e.path, "path": e.path, "enabled": e.enabled.to_string(), "label": e.label }
-        })
+        tui_spec::kv_item_data(&e.path,
+            &format!("{} {}", if e.enabled {"ON"} else {"OFF"}, e.label),
+            status,
+            serde_json::json!({ "name": e.path, "path": e.path, "enabled": e.enabled.to_string(), "label": e.label }))
     }).collect();
 
-    let alias_items: Vec<serde_json::Value> = s.aliases.iter().map(|(name, cmd)| {
-        serde_json::json!({
-            "key": name, "value": cmd, "status": "ok",
-            "data": { "name": name, "alias_name": name, "command": cmd }
-        })
+    let alias_items: Vec<serde_json::Value> = s.aliases.iter().map(|(name, cmd_str)| {
+        tui_spec::kv_item_data(name, cmd_str, "ok",
+            serde_json::json!({ "name": name, "alias_name": name, "command": cmd_str }))
     }).collect();
 
-    let spec = serde_json::json!({
-        "tab": { "label_ko": "PATH+Alias", "label": "Shell", "icon": "🐚" },
-        "group": "system",        "list_section": "PATH",
-        "sections": [
-            {
-                "kind": "key-value",
-                "title": "Status",
-                "items": [
-                    { "key": "PATH", "value": format!("{}개 (활성 {})", s.paths.len(), s.paths.iter().filter(|e|e.enabled).count()), "status": "ok" },
-                    { "key": "alias", "value": format!("{}개", s.aliases.len()), "status": "ok" },
-                    { "key": "shell.sh", "value": if shell_sh().exists() {"✓"} else {"✗"}, "status": if shell_sh().exists() {"ok"} else {"warn"} },
-                    { "key": "~/.zshrc", "value": if is_sourced() {"✓ source"} else {"✗"}, "status": if is_sourced() {"ok"} else {"warn"} },
-                ]
-            },
-            { "kind": "key-value", "title": "PATH", "items": path_items },
-            { "kind": "key-value", "title": "Aliases", "items": alias_items },
-            {
-                "kind": "buttons",
-                "title": "Actions",
-                "items": [
-                    { "label": "Path list", "command": "path list", "key": "l" },
-                    { "label": "Alias list", "command": "alias list", "key": "a" },
-                    { "label": "Scan", "command": "path scan", "key": "c" },
-                    { "label": "Sync", "command": "sync", "key": "y" },
-                    { "label": "Status", "command": "status", "key": "s" }
-                ]
-            },
-            {
-                "kind": "text",
-                "title": "안내",
-                "content": "  mac run shell path add <경로> --label '설명'\n  mac run shell path toggle <경로>\n  mac run shell alias add <name> <command>\n  mac run shell sync"
-            }
-        ],
-        "keybindings": [
-            { "key": "T", "label": "PATH on/off", "command": "path toggle", "args": ["${selected.path}"] },
-            { "key": "d", "label": "제거", "command": "path rm", "args": ["${selected.path}"], "confirm": true }
-        ]
-    });
-    println!("{}", serde_json::to_string_pretty(&spec).unwrap());
+    let active_paths = s.paths.iter().filter(|e| e.enabled).count();
+    let usage_active = active_paths > 0 || !s.aliases.is_empty();
+    let usage_summary = format!("PATH {}개, alias {}개", active_paths, s.aliases.len());
+
+    TuiSpec::new("shell")
+        .list_section("PATH")
+        .usage(usage_active, &usage_summary)
+        .kv("상태", vec![
+            tui_spec::kv_item("PATH",
+                &format!("{}개 (활성 {})", s.paths.len(), s.paths.iter().filter(|e|e.enabled).count()), "ok"),
+            tui_spec::kv_item("alias", &format!("{}개", s.aliases.len()), "ok"),
+            tui_spec::kv_item("shell.sh",
+                if shell_sh().exists() {"✓"} else {"✗"},
+                if shell_sh().exists() {"ok"} else {"warn"}),
+            tui_spec::kv_item("~/.zshrc",
+                if is_sourced() {"✓ source"} else {"✗"},
+                if is_sourced() {"ok"} else {"warn"}),
+        ])
+        .kv("PATH", path_items)
+        .kv("별칭", alias_items)
+        .buttons()
+        .text("안내", "  mac run shell path add <경로> --label '설명'\n  mac run shell path toggle <경로>\n  mac run shell alias add <name> <command>\n  mac run shell sync")
+        .print();
 }

@@ -198,12 +198,14 @@ impl MountOptions {
     fn default_for_scheme(_scheme: &str) -> Self { Self::default() }
 }
 
+use mac_common::{paths, tui_spec::{self, TuiSpec}};
+
 fn home() -> String {
-    std::env::var("HOME").unwrap_or_else(|_| "/tmp".into())
+    paths::home()
 }
 
 fn cards_dir() -> PathBuf {
-    PathBuf::from(home()).join(".mac-app-init/cards")
+    paths::cards_dir()
 }
 
 fn card_path(name: &str) -> PathBuf {
@@ -914,69 +916,27 @@ fn print_tui_spec() {
     let items: Vec<serde_json::Value> = cards.iter().map(|c| {
         let has_pw = dotenvx_key_for(c).is_some_and(|k| dotenvx_get(&k).is_some());
         let mo = &c.mount_options;
-        serde_json::json!({
-            "key": c.name,
-            "value": format!("{}://{}@{}:{}", c.scheme, c.user, c.host, c.port),
-            "status": if has_pw { "ok" } else { "warn" },
-            "data": {
+        tui_spec::kv_item_data(&c.name,
+            &format!("{}://{}@{}:{}", c.scheme, c.user, c.host, c.port),
+            if has_pw { "ok" } else { "warn" },
+            serde_json::json!({
                 "name": c.name,
                 "readonly": mo.readonly.to_string(),
                 "noappledouble": mo.noappledouble.to_string(),
                 "soft": mo.soft.to_string(),
                 "nobrowse": mo.nobrowse.to_string(),
-            }
-        })
+            }))
     }).collect();
 
-    let spec = serde_json::json!({
-        "tab": { "label_ko": "서비스 카드", "label": "Env", "icon": "🔑" },
-        "refresh_interval": 30, "group": "infra",        "list_section": "Cards",
-        "sections": [
-            {
-                "kind": "key-value",
-                "title": "Cards",
-                "items": items
-            },
-            {
-                "kind": "buttons",
-                "title": "Actions",
-                "items": [
-                    { "label": "List", "command": "list", "key": "l" },
-                    { "label": "Import legacy", "command": "import", "key": "i" },
-                    { "label": "Status", "command": "status", "key": "s" },
-                    { "label": "Test all", "command": "test-all", "key": "T" },
-                    { "label": "Cleanup", "command": "cleanup", "key": "c" },
-                    { "label": "Fix perms", "command": "fix-perms", "key": "f" }
-                ]
-            },
-            {
-                "kind": "text",
-                "title": "안내",
-                "content": "j/k 로 카드 선택. R/N/S/B 로 선택 카드의 mount 옵션 토글. d 로 삭제."
-            }
-        ],
-        "keybindings": [
-            { "key": "R", "label": "readonly 토글",
-              "command": "set-option",
-              "args": ["${selected.name}", "readonly", "${toggle:readonly}"] },
-            { "key": "N", "label": "noappledouble 토글",
-              "command": "set-option",
-              "args": ["${selected.name}", "noappledouble", "${toggle:noappledouble}"] },
-            { "key": "S", "label": "soft 토글",
-              "command": "set-option",
-              "args": ["${selected.name}", "soft", "${toggle:soft}"] },
-            { "key": "B", "label": "nobrowse 토글",
-              "command": "set-option",
-              "args": ["${selected.name}", "nobrowse", "${toggle:nobrowse}"] },
-            { "key": "d", "label": "카드 삭제",
-              "command": "rm",
-              "args": ["${selected.name}"],
-              "confirm": true },
-            { "key": "t", "label": "연결 테스트",
-              "command": "test",
-              "args": ["${selected.name}"],
-              "reload": false }
-        ]
-    });
-    println!("{}", serde_json::to_string_pretty(&spec).unwrap());
+    let usage_active = !cards.is_empty();
+    let usage_summary = format!("카드 {}개", cards.len());
+
+    TuiSpec::new("env")
+        .refresh(30)
+        .list_section("상태")
+        .usage(usage_active, &usage_summary)
+        .kv("상태", items)
+        .buttons()
+        .text("안내", "j/k 로 카드 선택. R/N/S/B 로 선택 카드의 mount 옵션 토글. d 로 삭제.")
+        .print();
 }

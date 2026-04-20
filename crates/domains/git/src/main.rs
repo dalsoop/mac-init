@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use mac_common::{cmd, paths, tui_spec::{self, TuiSpec}};
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
@@ -64,22 +65,8 @@ enum WorktreeAction {
     Clean,
 }
 
-fn home() -> String {
-    std::env::var("HOME").unwrap_or_default()
-}
-
-fn cmd_ok(cmd: &str, args: &[&str]) -> bool {
-    Command::new(cmd).args(args).output().map(|o| o.status.success()).unwrap_or(false)
-}
-
-fn cmd_stdout(cmd: &str, args: &[&str]) -> String {
-    Command::new(cmd).args(args).output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_default()
-}
-
 fn git_config(key: &str) -> String {
-    cmd_stdout("git", &["config", "--global", key])
+    cmd::stdout("git", &["config", "--global", key])
 }
 
 fn main() {
@@ -108,66 +95,42 @@ fn main() {
 fn print_tui_spec() {
     let name = git_config("user.name");
     let email = git_config("user.email");
-    let ssh_key = PathBuf::from(home()).join(".ssh/id_ed25519");
+    let ssh_key = PathBuf::from(paths::home()).join(".ssh/id_ed25519");
     let ssh_key_exists = ssh_key.exists();
-    let gh_installed = cmd_ok("gh", &["--version"]);
-    let gh_authed = gh_installed && cmd_ok("gh", &["auth", "token"]);
+    let gh_installed = cmd::ok("gh", &["--version"]);
+    let gh_authed = gh_installed && cmd::ok("gh", &["auth", "token"]);
 
-    let spec = serde_json::json!({
-        "tab": { "label_ko": "Git 설정", "label": "Git", "icon": "🔱" },
-        "refresh_interval": 30, "group": "dev",        "sections": [
-            {
-                "kind": "key-value",
-                "title": "Status",
-                "items": [
-                    {
-                        "key": "user.name",
-                        "value": if name.is_empty() { "✗ 미설정".to_string() } else { format!("✓ {}", name) },
-                        "status": if name.is_empty() { "error" } else { "ok" }
-                    },
-                    {
-                        "key": "user.email",
-                        "value": if email.is_empty() { "✗ 미설정".to_string() } else { format!("✓ {}", email) },
-                        "status": if email.is_empty() { "error" } else { "ok" }
-                    },
-                    {
-                        "key": "SSH 키 (id_ed25519)",
-                        "value": if ssh_key_exists { "✓ 존재" } else { "✗ 없음" },
-                        "status": if ssh_key_exists { "ok" } else { "error" }
-                    },
-                    {
-                        "key": "GitHub CLI",
-                        "value": if gh_installed { "✓ 설치됨" } else { "✗ 미설치" },
-                        "status": if gh_installed { "ok" } else { "error" }
-                    },
-                    {
-                        "key": "gh auth",
-                        "value": if gh_authed { "✓ 인증됨" } else { "✗ 미인증" },
-                        "status": if gh_authed { "ok" } else { "warn" }
-                    }
-                ]
-            },
-            {
-                "kind": "buttons",
-                "title": "Actions",
-                "items": [
-                    { "label_ko": "Git 설정", "label": "Status (상태)", "command": "status", "key": "s" },
-                    { "label_ko": "Git 설정", "label": "SSH Setup (ed25519 키 생성)", "command": "ssh-setup", "key": "k" },
-                    { "label_ko": "Git 설정", "label": "gh Auth (GitHub 로그인)", "command": "gh-auth", "key": "a" },
-                    { "label_ko": "Git 설정", "label": "gh Install (gh CLI 설치)", "command": "gh-install", "key": "i" },
-                    { "label_ko": "Git 설정", "label": "gh SSH Setup (키 등록)", "command": "gh-ssh-setup", "key": "g" }
-                ]
-            }
-        ]
-    });
-    println!("{}", serde_json::to_string_pretty(&spec).unwrap());
+    let usage_summary = if !name.is_empty() { format!("프로필: {}", name) } else { "미설정".into() };
+
+    TuiSpec::new("git")
+        .refresh(30)
+        .usage(!name.is_empty(), &usage_summary)
+        .kv("상태", vec![
+            tui_spec::kv_item("user.name",
+                &if name.is_empty() { "✗ 미설정".into() } else { format!("✓ {}", name) },
+                if name.is_empty() { "error" } else { "ok" }),
+            tui_spec::kv_item("user.email",
+                &if email.is_empty() { "✗ 미설정".into() } else { format!("✓ {}", email) },
+                if email.is_empty() { "error" } else { "ok" }),
+            tui_spec::kv_item("SSH 키 (id_ed25519)",
+                if ssh_key_exists { "✓ 존재" } else { "✗ 없음" },
+                if ssh_key_exists { "ok" } else { "error" }),
+            tui_spec::kv_item("GitHub CLI",
+                if gh_installed { "✓ 설치됨" } else { "✗ 미설치" },
+                if gh_installed { "ok" } else { "error" }),
+            tui_spec::kv_item("gh auth",
+                if gh_authed { "✓ 인증됨" } else { "✗ 미인증" },
+                if gh_authed { "ok" } else { "warn" }),
+        ])
+        .buttons()
+        .print();
 }
 
 fn cmd_status() {
     println!("=== Git 상태 ===\n");
 
     // Git version
-    let git_ver = cmd_stdout("git", &["--version"]);
+    let git_ver = cmd::stdout("git", &["--version"]);
     println!("[git] {}", if git_ver.is_empty() { "✗ 미설치".into() } else { format!("✓ {}", git_ver) });
 
     // Profile
@@ -179,7 +142,7 @@ fn cmd_status() {
 
     // SSH keys
     println!("\n[SSH 키]");
-    let ssh_dir = PathBuf::from(home()).join(".ssh");
+    let ssh_dir = PathBuf::from(paths::home()).join(".ssh");
     let key_types = ["id_ed25519", "id_rsa", "id_ecdsa"];
     let mut has_key = false;
     for kt in &key_types {
@@ -187,7 +150,7 @@ fn cmd_status() {
         let pub_key = ssh_dir.join(format!("{}.pub", kt));
         if key.exists() {
             has_key = true;
-            let fingerprint = cmd_stdout("ssh-keygen", &["-lf", &pub_key.to_string_lossy()]);
+            let fingerprint = cmd::stdout("ssh-keygen", &["-lf", &pub_key.to_string_lossy()]);
             let fp_short = fingerprint.split_whitespace().nth(1).unwrap_or("?");
             println!("  ✓ {} ({})", kt, fp_short);
         }
@@ -219,15 +182,15 @@ fn cmd_status() {
 
     // GitHub CLI
     println!("\n[GitHub CLI]");
-    let gh_ver = cmd_stdout("gh", &["--version"]);
+    let gh_ver = cmd::stdout("gh", &["--version"]);
     if gh_ver.is_empty() {
         println!("  ✗ gh 미설치");
         println!("    → mac run git gh-install");
     } else {
         println!("  ✓ {}", gh_ver.lines().next().unwrap_or(""));
-        let auth = cmd_stdout("gh", &["auth", "status"]);
-        if auth.contains("Logged in") || cmd_ok("gh", &["auth", "token"]) {
-            let user = cmd_stdout("gh", &["api", "user", "-q", ".login"]);
+        let auth = cmd::stdout("gh", &["auth", "status"]);
+        if auth.contains("Logged in") || cmd::ok("gh", &["auth", "token"]) {
+            let user = cmd::stdout("gh", &["api", "user", "-q", ".login"]);
             println!("  ✓ 인증됨 ({})", if user.is_empty() { "?" } else { &user });
         } else {
             println!("  ✗ 미인증");
@@ -237,8 +200,8 @@ fn cmd_status() {
 
     // git-lfs
     println!("\n[Git LFS]");
-    if cmd_ok("git", &["lfs", "version"]) {
-        println!("  ✓ {}", cmd_stdout("git", &["lfs", "version"]));
+    if cmd::ok("git", &["lfs", "version"]) {
+        println!("  ✓ {}", cmd::stdout("git", &["lfs", "version"]));
     } else {
         println!("  ✗ 미설치 (brew install git-lfs)");
     }
@@ -266,12 +229,12 @@ fn cmd_profile(name: Option<String>, email: Option<String>) {
 }
 
 fn cmd_ssh_setup() {
-    let ssh_dir = PathBuf::from(home()).join(".ssh");
+    let ssh_dir = PathBuf::from(paths::home()).join(".ssh");
     let key_path = ssh_dir.join("id_ed25519");
 
     if key_path.exists() {
         println!("✓ SSH 키 이미 존재: {}", key_path.display());
-        let fp = cmd_stdout("ssh-keygen", &["-lf", &format!("{}.pub", key_path.display())]);
+        let fp = cmd::stdout("ssh-keygen", &["-lf", &format!("{}.pub", key_path.display())]);
         println!("  {}", fp);
         return;
     }
@@ -296,7 +259,7 @@ fn cmd_ssh_setup() {
 }
 
 fn cmd_gh_install() {
-    if cmd_ok("gh", &["--version"]) {
+    if cmd::ok("gh", &["--version"]) {
         println!("✓ gh 이미 설치됨");
         return;
     }
@@ -309,7 +272,7 @@ fn cmd_gh_install() {
 }
 
 fn cmd_gh_auth() {
-    if !cmd_ok("gh", &["--version"]) {
+    if !cmd::ok("gh", &["--version"]) {
         println!("✗ gh CLI가 없습니다. 먼저: mac run git gh-install");
         return;
     }
@@ -318,7 +281,7 @@ fn cmd_gh_auth() {
 }
 
 fn cmd_gh_ssh_setup() {
-    let ssh_dir = PathBuf::from(home()).join(".ssh");
+    let ssh_dir = PathBuf::from(paths::home()).join(".ssh");
     let pub_key = ssh_dir.join("id_ed25519.pub");
 
     if !pub_key.exists() {
@@ -326,13 +289,13 @@ fn cmd_gh_ssh_setup() {
         return;
     }
 
-    if !cmd_ok("gh", &["auth", "token"]) {
+    if !cmd::ok("gh", &["auth", "token"]) {
         println!("✗ GitHub 인증이 필요합니다. 먼저: mac run git gh-auth");
         return;
     }
 
     println!("GitHub에 SSH 키 등록 중...");
-    let hostname = cmd_stdout("hostname", &["-s"]);
+    let hostname = cmd::stdout("hostname", &["-s"]);
     let title = format!("mac-app-init ({})", if hostname.is_empty() { "mac" } else { &hostname });
 
     let status = Command::new("gh")

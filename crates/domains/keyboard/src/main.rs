@@ -32,45 +32,26 @@ fn main() {
 }
 
 fn print_tui_spec() {
+    use mac_common::tui_spec::{self, TuiSpec};
+
     let s = keyboard::get_status();
-    let spec = serde_json::json!({
-        "tab": { "label_ko": "키보드 재매핑", "label": "Keyboard", "icon": "⌨" },
-        "group": "system",        "sections": [
-            {
-                "kind": "key-value",
-                "title": "Status",
-                "items": [
-                    {
-                        "key": "Caps Lock → F18",
-                        "value": if s.mapping_active { "✓ 적용됨" } else { "✗ 미적용" },
-                        "status": if s.mapping_active { "ok" } else { "error" }
-                    },
-                    {
-                        "key": "부팅 시 자동 적용",
-                        "value": if s.launch_agent_exists { "✓ 등록됨" } else { "✗ 미등록" },
-                        "status": if s.launch_agent_exists { "ok" } else { "error" }
-                    },
-                    {
-                        "key": "Karabiner",
-                        "value": if s.karabiner_installed { "⚠ 설치됨 (제거 권장)" } else { "✓ 미설치" },
-                        "status": if s.karabiner_installed { "warn" } else { "ok" }
-                    }
-                ]
-            },
-            {
-                "kind": "buttons",
-                "title": "Actions",
-                "items": [
-                    { "label_ko": "키보드 재매핑", "label": "Setup (매핑 + LaunchAgent 등록)", "command": "setup", "key": "s" },
-                    { "label_ko": "키보드 재매핑", "label": "Remove (매핑 + LaunchAgent 삭제)", "command": "remove", "key": "x" }
-                ]
-            },
-            {
-                "kind": "text",
-                "title": "안내",
-                "content": "시스템 설정 → 키보드 → 키보드 단축키 → 입력 소스\n'이전 입력 소스 선택' = F18 로 설정 필요"
-            }
-        ]
-    });
-    println!("{}", serde_json::to_string_pretty(&spec).unwrap());
+    let usage_active = s.mapping_active;
+    let usage_summary = if s.mapping_active { "F18 적용됨".to_string() } else { "미적용".to_string() };
+
+    TuiSpec::new("keyboard")
+        .usage(usage_active, &usage_summary)
+        .kv("상태", vec![
+            tui_spec::kv_item("Caps Lock → F18",
+                if s.mapping_active { "✓ 적용됨" } else { "✗ 미적용" },
+                if s.mapping_active { "ok" } else { "error" }),
+            tui_spec::kv_item("부팅 시 자동 적용",
+                if s.launch_agent_exists { "✓ 등록됨" } else { "✗ 미등록" },
+                if s.launch_agent_exists { "ok" } else { "error" }),
+            tui_spec::kv_item("Karabiner",
+                if s.karabiner_installed { "⚠ 설치됨 (제거 권장)" } else { "✓ 미설치" },
+                if s.karabiner_installed { "warn" } else { "ok" }),
+        ])
+        .buttons()
+        .text("안내", "시스템 설정 → 키보드 → 키보드 단축키 → 입력 소스\n'이전 입력 소스 선택' = F18 로 설정 필요")
+        .print();
 }

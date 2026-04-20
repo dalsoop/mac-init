@@ -1,8 +1,12 @@
 [package]
-name = "mac-host-tui-v2"
+name = "mac-host-tui"
 version = "0.2.0"
 edition = "2024"
 license = "BUSL-1.1"
+
+[lib]
+name = "mac_host_tui"
+path = "src/lib.rs"
 
 [[bin]]
 name = "mac-tui"
@@ -16,3 +20,7 @@ color-eyre = "0.6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tui-tree-widget = "0.24.0"
+tui-input = "0.11"
+
+[dev-dependencies]
+insta = "1"
