@@ -21,7 +21,7 @@ fn default_group(domain: &str) -> &'static str {
         "cron" | "files" | "sd-backup" => "auto",
         "git" | "vscode" | "container" => "dev",
         "quickaction" => "finder",
-        "keyboard" | "shell" | "bootstrap" | "wireguard" => "system",
+        "keyboard" | "shell" | "bootstrap" | "wireguard" | "tmux" => "system",
         _ => "other",
     }
 }

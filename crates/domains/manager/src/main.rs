@@ -119,7 +119,7 @@ fn known_domains() -> Vec<String> {
         "bootstrap", "env", "mount", "host",
         "cron", "files", "sd-backup",
         "git", "vscode", "container",
-        "quickaction", "keyboard", "shell", "wireguard",
+        "quickaction", "keyboard", "shell", "wireguard", "tmux",
     ].into_iter().map(String::from).collect()
 }
 
@@ -232,6 +232,7 @@ fn cmd_install(name: &str) {
             });
             save_registry(&reg);
             println!("✓ {} 설치 완료", name);
+            run_post_install(name);
         }
         Err(e) => eprintln!("✗ 설치 실패: {}", e),
     }
@@ -268,6 +269,7 @@ fn cmd_update(name: &str) {
                     d.version = version;
                     save_registry(&reg);
                     println!("✓ {} 업데이트 완료", name);
+                    run_post_update(name);
                 }
                 Err(e) => eprintln!("✗ 업데이트 실패: {}", e),
             }
@@ -388,6 +390,51 @@ fn cmd_run(name: &str, args: &[String]) {
             std::process::exit(1);
         });
     std::process::exit(status.code().unwrap_or(1));
+}
+
+fn run_domain_post_action(name: &str, args: &[&str], title: &str) {
+    let bin = domain_bin_path(name);
+    if !bin.exists() {
+        return;
+    }
+
+    println!("→ {}: mac run {} {}", title, name, args.join(" "));
+    let status = Command::new(&bin).args(args).status();
+    match status {
+        Ok(s) if s.success() => {}
+        Ok(s) => {
+            eprintln!(
+                "⚠ {} 후속 작업 실패 (exit {}): mac run {} {}",
+                name,
+                s.code().unwrap_or(1),
+                name,
+                args.join(" ")
+            );
+        }
+        Err(e) => {
+            eprintln!(
+                "⚠ {} 후속 작업 실행 실패 ({}): mac run {} {}",
+                name,
+                e,
+                name,
+                args.join(" ")
+            );
+        }
+    }
+}
+
+fn run_post_install(name: &str) {
+    match name {
+        "tmux" => run_domain_post_action(name, &["setup"], "tmux 설치/초기화"),
+        _ => {}
+    }
+}
+
+fn run_post_update(name: &str) {
+    match name {
+        "tmux" => run_domain_post_action(name, &["install"], "tmux 도구 갱신"),
+        _ => {}
+    }
 }
 
 fn download_domain(name: &str) -> Result<String, String> {

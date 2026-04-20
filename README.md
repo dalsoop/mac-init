@@ -13,6 +13,7 @@ curl -fsSL https://raw.githubusercontent.com/dalsoop/mac-app-init/main/install.s
 ```bash
 mac setup                  # 자동 업데이트 등록
 mac install bootstrap      # 의존성 확인 (brew, gh, dotenvx, nickel, rust)
+mac install tmux           # tmux topbar 도메인 설치
 mac install keyboard       # 도메인 설치
 mac doctor                 # 상태 확인
 ```
@@ -28,6 +29,8 @@ mac update <domain>        # 업데이트
 mac upgrade                # 전체 업그레이드
 
 # 도메인 실행
+mac run tmux setup
+mac run tmux topbar
 mac run keyboard status
 mac run cron list
 mac run connect add proxmox
@@ -41,6 +44,7 @@ mac-host-tui               # 시각적 관리
 | 도메인 | 설명 |
 |--------|------|
 | bootstrap | 의존성 설치 (brew, gh, dotenvx, rust, nickel) |
+| tmux | tmux + TPM + dalsoop-tmux-tools 설치/초기화/TUI |
 | keyboard | Caps Lock → F18 한영 전환 (hidutil) |
 | connect | 외부 서비스 연결 관리 (.env + dotenvx) |
 | scheduler | 통합 스케줄러 (cron/interval/watch) |
@@ -77,6 +81,7 @@ mac-app-init/
 │   └── domains/           # 독립 바이너리
 │       ├── manager/       # mac (패키지 매니저)
 │       ├── bootstrap/
+│       ├── tmux/
 │       ├── keyboard/
 │       ├── connect/
 │       ├── scheduler/

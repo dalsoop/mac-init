@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use serde::{Deserialize, Serialize};
 use std::process::Command;
 
 #[derive(Parser)]
@@ -17,7 +18,7 @@ enum Commands {
     Install,
     /// 누락된 것만 설치
     Check,
-    /// PATH + alias.sh source 설정 (초기 셋업 or 재설정)
+    /// PATH + shell.sh source 설정 (초기 셋업 or 재설정)
     SetupPath,
     /// SD 백업 초기 설정 (경로 + 자동백업 + 자동추출)
     SetupSd,
@@ -168,37 +169,105 @@ use mac_common::{paths, tui_spec::{self, TuiSpec}};
 
 fn home() -> String { paths::home() }
 
+fn shell_store_path() -> std::path::PathBuf {
+    std::path::PathBuf::from(home()).join(".mac-app-init/shell.json")
+}
+
+fn shell_sh_path() -> std::path::PathBuf {
+    std::path::PathBuf::from(home()).join(".mac-app-init/shell.sh")
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ShellPathEntry {
+    path: String,
+    #[serde(default = "default_true")]
+    enabled: bool,
+    #[serde(default)]
+    label: String,
+}
+
+fn default_true() -> bool { true }
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct ShellStore {
+    #[serde(default)]
+    paths: Vec<ShellPathEntry>,
+    #[serde(default)]
+    aliases: std::collections::BTreeMap<String, String>,
+}
+
+fn load_shell_store() -> ShellStore {
+    let p = shell_store_path();
+    if !p.exists() { return ShellStore::default(); }
+    serde_json::from_str(&std::fs::read_to_string(&p).unwrap_or_default()).unwrap_or_default()
+}
+
+fn save_shell_store(s: &ShellStore) {
+    let p = shell_store_path();
+    if let Some(parent) = p.parent() { let _ = std::fs::create_dir_all(parent); }
+    let _ = std::fs::write(&p, serde_json::to_string_pretty(s).unwrap_or_default());
+}
+
+fn generate_shell_sh(s: &ShellStore) {
+    let mut lines = vec![
+        "#!/bin/sh".into(),
+        "# mac-app-init shell — 자동 생성. 직접 수정 금지.".into(),
+        "# mac run shell path/alias 로 관리.".into(),
+        String::new(),
+        "# === PATH ===".into(),
+    ];
+
+    for e in &s.paths {
+        if e.enabled {
+            let c = if e.label.is_empty() { String::new() } else { format!("  # {}", e.label) };
+            lines.push(format!("export PATH=\"{}:$PATH\"{}", paths::expand(&e.path), c));
+        }
+    }
+
+    lines.push(String::new());
+    lines.push("# === Aliases ===".into());
+    for (name, cmd) in &s.aliases {
+        lines.push(format!("alias {}='{}'", name, cmd.replace('\'', "'\\''")));
+    }
+
+    let sh = shell_sh_path();
+    if let Some(parent) = sh.parent() { let _ = std::fs::create_dir_all(parent); }
+    let _ = std::fs::write(&sh, lines.join("\n") + "\n");
+}
+
 fn cmd_setup_path() {
     use std::fs;
     use std::path::PathBuf;
 
     let domains_dir = format!("{}/.mac-app-init/domains", home());
-    let aliases_sh = format!("{}/.mac-app-init/aliases.sh", home());
+    let local_bin_dir = format!("{}/.local/bin", home());
+    let shell_sh = shell_sh_path();
     let zshrc = PathBuf::from(home()).join(".zshrc");
 
-    println!("=== PATH + alias 셋업 ===\n");
+    println!("=== PATH + shell 셋업 ===\n");
 
     let mut content = fs::read_to_string(&zshrc).unwrap_or_default();
     let mut changed = false;
 
-    // 1. PATH 에 도메인 디렉터리 추가
-    let path_line = format!("export PATH=\"{}:$PATH\"", domains_dir);
-    if !content.contains(&domains_dir) {
+    let filtered_lines: Vec<&str> = content
+        .lines()
+        .filter(|line| !line.contains(".mac-app-init/aliases.sh"))
+        .collect();
+    let filtered = filtered_lines.join("\n");
+    if filtered != content {
+        content = filtered;
         if !content.ends_with('\n') { content.push('\n'); }
-        content.push_str(&format!("\n# mac-app-init PATH\n{}\n", path_line));
         changed = true;
-        println!("✓ PATH 추가: {}", domains_dir);
-    } else {
-        println!("✓ PATH 이미 등록됨");
+        println!("✓ legacy aliases.sh source 제거");
     }
 
-    // 2. aliases.sh source
-    if !content.contains(".mac-app-init/aliases.sh") {
-        content.push_str(&format!("\n# mac-app-init aliases\nsource {}\n", aliases_sh));
+    if !content.contains(".mac-app-init/shell.sh") {
+        if !content.ends_with('\n') { content.push('\n'); }
+        content.push_str(&format!("\n# mac-app-init shell\nsource {}\n", shell_sh.display()));
         changed = true;
-        println!("✓ source aliases.sh 추가");
+        println!("✓ source shell.sh 추가");
     } else {
-        println!("✓ source aliases.sh 이미 등록됨");
+        println!("✓ source shell.sh 이미 등록됨");
     }
 
     if changed {
@@ -208,17 +277,31 @@ fn cmd_setup_path() {
         }
     }
 
-    // 3. aliases.sh 존재 보장
-    let aliases_path = PathBuf::from(&aliases_sh);
-    if !aliases_path.exists() {
-        if let Some(parent) = aliases_path.parent() { let _ = fs::create_dir_all(parent); }
-        let default = format!("# mac-app-init aliases — mac run alias add/rm 으로 관리\nexport PATH=\"{}:$PATH\"\n", domains_dir);
-        let _ = fs::write(&aliases_path, default);
-        println!("✓ aliases.sh 초기 생성");
+    let mut store = load_shell_store();
+    let wanted_paths = [
+        (domains_dir.as_str(), "mac domains"),
+        (local_bin_dir.as_str(), "local user bin"),
+    ];
+    for (path, label) in wanted_paths {
+        if let Some(entry) = store.paths.iter_mut().find(|e| e.path == path) {
+            entry.enabled = true;
+            if entry.label.is_empty() {
+                entry.label = label.into();
+            }
+        } else {
+            store.paths.push(ShellPathEntry {
+                path: path.into(),
+                enabled: true,
+                label: label.into(),
+            });
+        }
     }
+    save_shell_store(&store);
+    generate_shell_sh(&store);
+    println!("✓ shell.json / shell.sh 동기화");
 
     println!("\n새 터미널 열면 적용됩니다.");
-    println!("  mac-tui, mac-domain-* 등이 바로 실행 가능해짐.");
+    println!("  mac, mac-domain-*, ~/.local/bin 도구가 바로 실행 가능해집니다.");
 }
 
 fn cmd_setup_sd() {

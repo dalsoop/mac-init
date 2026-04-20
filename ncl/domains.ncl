@@ -356,6 +356,30 @@ in
       },
     } | Domain,
 
+    tmux = {
+      name = "tmux",
+      description = "tmux, TPM, dalsoop-tmux-tools 설치/초기화/상태 관리",
+      tags = { product = 'system, layer = 'tool },
+      provides = ["tmux status", "tmux setup", "tmux install", "tmux init",
+                  "tmux apply", "tmux topbar", "tmux sync"],
+      i18n = {
+        label = "tmux Topbar", icon = "🧩", group = "system",
+        sections = { setup = "설치/초기화" },
+        buttons = [
+          { command = "setup", label = "전체 설치", key = "s" },
+          { command = "status", label = "상태 확인", key = "t" },
+          { command = "install", label = "바이너리 설치", key = "i" },
+          { command = "init", label = "초기화", key = "n" },
+          { command = "apply", label = "설정 반영", key = "a" },
+          { command = "topbar", label = "TUI 열기", key = "o" },
+          { command = "sync", label = "계정 동기화", key = "y" },
+        ],
+        keybindings = [
+          { key = "o", label = "topbar 실행", command = "topbar", reload = false },
+        ],
+      },
+    } | Domain,
+
     wireguard = {
       name = "wireguard",
       description = "WireGuard VPN 설정 관리",
@@ -392,8 +416,8 @@ in
     auto = ["cron", "files", "sd-backup"],
     dev = ["git", "vscode", "container", "obsidian"],
     finder = ["quickaction"],
-    system = ["keyboard", "shell", "wireguard"],
+    system = ["keyboard", "shell", "tmux", "wireguard"],
     full = ["bootstrap", "mount", "env", "host", "cron", "files", "sd-backup",
-            "git", "vscode", "container", "quickaction", "keyboard", "shell", "wireguard", "obsidian"],
+            "git", "vscode", "container", "quickaction", "keyboard", "shell", "tmux", "wireguard", "obsidian"],
   },
 }
