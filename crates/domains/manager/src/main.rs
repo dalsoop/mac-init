@@ -220,6 +220,19 @@ fn domain_deps(name: &str) -> &'static [&'static str] {
     }
 }
 
+fn record_installed_domain(name: &str, version: &str) {
+    let mut reg = load_registry();
+    if let Some(existing) = reg.installed.iter_mut().find(|d| d.name == name) {
+        existing.version = version.to_string();
+    } else {
+        reg.installed.push(InstalledDomain {
+            name: name.to_string(),
+            version: version.to_string(),
+        });
+    }
+    save_registry(&reg);
+}
+
 fn cmd_install(name: &str) {
     let mut reg = load_registry();
     if reg.installed.iter().any(|d| d.name == name) {
@@ -546,14 +559,18 @@ fn cmd_setup() {
         println!("[2] ✓ TUI 이미 설치됨");
     }
 
-    // 3. 핵심 도메인 설치
+    // 3. 핵심 도메인 설치 + registry 반영
     println!("[3] 핵심 도메인 확인...");
     let core = ["bootstrap", "env", "mount", "host", "cron", "shell", "keyboard", "git"];
     for name in &core {
-        if !domain_bin_path(name).exists() {
+        let already_installed = load_registry().installed.iter().any(|d| d.name == *name);
+        if !domain_bin_path(name).exists() || !already_installed {
             print!("    {} 설치 중... ", name);
             match download_domain(name) {
-                Ok(_) => println!("✓"),
+                Ok(version) => {
+                    record_installed_domain(name, &version);
+                    println!("✓");
+                }
                 Err(e) => println!("⚠ {}", e),
             }
         }

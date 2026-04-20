@@ -1037,6 +1037,7 @@ dependencies = [
  "mac-common",
  "serde",
  "serde_json",
+ "toml",
 ]
 
 [[package]]
