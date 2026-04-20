@@ -257,7 +257,7 @@ in
           { command = "gh-ssh-setup", label = "SSH 키 등록", key = "g" },
         ],
         keybindings = [
-          { key = "n", label = "사용자 이름 변경", command = "profile",
+          { key = "n", label = "이름 변경", command = "profile",
             args = ["--name", "${prompt:Git 사용자 이름}"] },
           { key = "m", label = "이메일 변경", command = "profile",
             args = ["--email", "${prompt:Git 이메일}"] },
