@@ -259,7 +259,10 @@ fn dns_status_items() -> Vec<serde_json::Value> {
             let servers: Vec<&str> = dns.lines().collect();
             (servers.join(", "), "ok")
         };
-        items.push(tui_spec::kv_item(&format!("DNS ({})", iface), &value, status));
+        items.push(tui_spec::kv_item_data(
+            &format!("DNS ({})", iface), &value, status,
+            serde_json::json!({ "name": iface, "interface": iface }),
+        ));
     }
     items
 }

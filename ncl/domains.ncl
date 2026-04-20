@@ -176,9 +176,11 @@ in
           { command = "dns flush", label = "DNS 캐시 플러시", key = "f" },
           { command = "dns test", label = "DNS 조회 테스트", key = "t" },
         ],
-        editables = [
-          { field = "DNS (Wi-Fi)", label = "Wi-Fi DNS 서버", command = "dns set",
-            args = ["Wi-Fi", "${value}"] },
+        keybindings = [
+          { key = "e", label = "DNS 변경 (프리셋/IP)", command = "dns set",
+            args = ["${selected.interface}", "${prompt:프리셋 또는 IP}"] },
+          { key = "x", label = "DNS 초기화 (DHCP)", command = "dns reset",
+            args = ["${selected.interface}"], confirm = true },
         ],
       },
     } | Domain,

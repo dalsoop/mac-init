@@ -902,31 +902,68 @@ impl App {
         let selected_data = self.selected_item_data();
         let args: Vec<String> = kb.args.iter().map(|a| self.resolve_template(a, &selected_data)).collect();
 
+        // ${prompt:라벨}이 있으면 → InputModal로 사용자 입력 받기
+        if let Some(prompt_idx) = args.iter().position(|a| a.starts_with("${prompt:")) {
+            let prompt_label = args[prompt_idx]
+                .trim_start_matches("${prompt:")
+                .trim_end_matches('}')
+                .to_string();
+            // prompt 자리를 ${value}로 대체할 args 템플릿
+            let mut args_template = args.clone();
+            args_template[prompt_idx] = "${value}".to_string();
+
+            self.input_modal = Some(InputModal {
+                label: prompt_label,
+                input: Input::default(),
+                domain,
+                command: kb.command,
+                args_template,
+            });
+            return true;
+        }
+
         self.output = format!("[{}] 실행 중: {} {} …\n", kb.label, kb.command, args.join(" "));
         self.run_action_bg(domain_idx, &domain, &kb.command, &args, kb.reload);
         true
     }
 
-    /// list_section 에서 현재 포커스된 항목의 data 맵 반환.
-    /// v2 1단계: focus_button 을 리스트 인덱스로도 재활용 (단순화).
+    /// 현재 포커스된 KV 섹션의 선택 항목 data 맵 반환.
+    /// list_section이 있으면 그 섹션, 없으면 현재 content_section의 KV.
     fn selected_item_data(&self) -> std::collections::HashMap<String, String> {
         use std::collections::HashMap;
         let mut empty = HashMap::new();
         if self.selected_tab == 0 { return empty; }
         let domain_idx = self.selected_tab - 1;
         let Some(spec) = self.specs[domain_idx].as_ref() else { return empty; };
-        let Some(list_title) = spec.list_section.as_ref() else { return empty; };
-        for section in &spec.sections {
-            if let crate::spec::Section::KeyValue { title, items } = section {
-                if title != list_title { continue; }
-                if items.is_empty() { return empty; }
+
+        // 1) 현재 포커스된 섹션에서 KV 데이터 시도
+        let section_idx = self.content_section.min(spec.sections.len().saturating_sub(1));
+        if let Some(crate::spec::Section::KeyValue { items, .. }) = spec.sections.get(section_idx) {
+            if !items.is_empty() {
                 let idx = self.focus_button.min(items.len() - 1);
                 let item = &items[idx];
-                empty = item.data.clone();
-                empty.entry("key".into()).or_insert(item.key.clone());
-                empty.entry("value".into()).or_insert(item.value.clone());
-                empty.entry("name".into()).or_insert(item.key.clone());
-                return empty;
+                let mut data = item.data.clone();
+                data.entry("key".into()).or_insert(item.key.clone());
+                data.entry("value".into()).or_insert(item.value.clone());
+                data.entry("name".into()).or_insert(item.key.clone());
+                return data;
+            }
+        }
+
+        // 2) fallback: list_section 지정된 섹션에서
+        if let Some(list_title) = spec.list_section.as_ref() {
+            for section in &spec.sections {
+                if let crate::spec::Section::KeyValue { title, items } = section {
+                    if title != list_title { continue; }
+                    if items.is_empty() { return empty; }
+                    let idx = self.focus_button.min(items.len() - 1);
+                    let item = &items[idx];
+                    empty = item.data.clone();
+                    empty.entry("key".into()).or_insert(item.key.clone());
+                    empty.entry("value".into()).or_insert(item.value.clone());
+                    empty.entry("name".into()).or_insert(item.key.clone());
+                    return empty;
+                }
             }
         }
         empty
