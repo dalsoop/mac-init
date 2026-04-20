@@ -80,7 +80,7 @@ fn cmd_jobs() {
     let s = cron::load_schedule();
     if s.jobs.is_empty() {
         println!("등록된 작업이 없습니다.");
-        println!("  mac run cron add <name> <command> --cron \"0 9 * * *\"");
+        println!("  mai run cron add <name> <command> --cron \"0 9 * * *\"");
         return;
     }
     println!("{:<20} {:<8} {:<25} {}", "NAME", "STATUS", "SCHEDULE", "COMMAND");
@@ -101,12 +101,12 @@ fn cmd_status() {
     let scheduler_on = cron::scheduler_installed();
 
     println!("=== Cron 상태 (mac-app-init 스케줄) ===\n");
-    println!("스케줄러 LaunchAgent: {}", if scheduler_on { "✓ 설치됨" } else { "✗ 미설치 (mac run cron setup-scheduler)" });
+    println!("스케줄러 LaunchAgent: {}", if scheduler_on { "✓ 설치됨" } else { "✗ 미설치 (mai run cron setup-scheduler)" });
     println!("스케줄 jobs: {}개 (활성 {}개)",
         sched.jobs.len(),
         sched.jobs.iter().filter(|j| j.enabled).count(),
     );
-    println!("\n시스템 LaunchAgent 조회는: mac run bootstrap agent list");
+    println!("\n시스템 LaunchAgent 조회는: mai run bootstrap agent list");
 }
 
 fn print_tui_spec() {
@@ -147,6 +147,6 @@ fn print_tui_spec() {
         ])
         .table("스케줄", vec!["", "NAME", "SCHEDULE", "COMMAND"], job_rows)
         .buttons()
-        .text("안내", "  mac run cron add <name> \"<command>\" --cron \"*/5 * * * *\"\n  mac run cron add <name> \"<command>\" --interval 300\n  mac run cron remove/toggle <name>\n\n  시스템 LaunchAgent 조회: mac run bootstrap agent list")
+        .text("안내", "  mai run cron add <name> \"<command>\" --cron \"*/5 * * * *\"\n  mai run cron add <name> \"<command>\" --interval 300\n  mai run cron remove/toggle <name>\n\n  시스템 LaunchAgent 조회: mai run bootstrap agent list")
         .print();
 }

@@ -27,7 +27,7 @@ async fn main() -> Result<()> {
             let answer = input.trim().to_lowercase();
             if answer.is_empty() || answer == "y" || answer == "yes" {
                 println!("\n업데이트 실행 중...");
-                let status = Command::new("mac").arg("upgrade").status();
+                let status = Command::new("mai").arg("upgrade").status();
                 match status {
                     Ok(s) if s.success() => {
                         println!("✓ 업데이트 완료. TUI를 재시작합니다.\n");

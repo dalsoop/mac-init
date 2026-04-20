@@ -8,7 +8,7 @@ const GITHUB_REPO: &str = "dalsoop/mac-app-init";
 const DOMAINS_DIR: &str = ".mac-app-init/domains";
 
 #[derive(Parser)]
-#[command(name = "mac")]
+#[command(name = "mai")]
 #[command(about = "macOS 도메인 패키지 매니저")]
 struct Cli {
     #[command(subcommand)]
@@ -29,7 +29,7 @@ enum Commands {
     Update { name: String },
     /// 전체 도메인 업데이트
     UpdateAll,
-    /// mac 매니저 자체 업데이트
+    /// mai 매니저 자체 업데이트
     SelfUpdate,
     /// 전체 업그레이드 (매니저 + 모든 도메인)
     Upgrade,
@@ -37,7 +37,7 @@ enum Commands {
     Setup,
     /// 설정 상태 확인
     Doctor,
-    /// 도메인 실행 (mac run keyboard status)
+    /// 도메인 실행 (mai run keyboard status)
     Run { name: String, args: Vec<String> },
     /// 스케줄 tick (LaunchAgent에서 매분 호출 — 내부용)
     Tick,
@@ -142,7 +142,7 @@ fn main() {
         _ => {
             if !is_setup_done() {
                 eprintln!("⚠ mac-app-init 초기 설정이 필요합니다.");
-                eprintln!("  mac setup  — 자동 업데이트 등록");
+                eprintln!("  mai setup  — 자동 업데이트 등록");
                 eprintln!();
             }
         }
@@ -172,7 +172,7 @@ fn cmd_list() {
     let reg = load_registry();
     if reg.installed.is_empty() {
         println!("설치된 도메인이 없습니다.");
-        println!("  mac install keyboard  — 도메인 설치");
+        println!("  mai install keyboard  — 도메인 설치");
         return;
     }
     println!("{:<20} {:<10} {}", "DOMAIN", "VERSION", "PATH");
@@ -206,7 +206,7 @@ fn domain_deps(name: &str) -> &'static [&'static str] {
 fn cmd_install(name: &str) {
     let mut reg = load_registry();
     if reg.installed.iter().any(|d| d.name == name) {
-        println!("'{}' 이미 설치되어 있습니다. 업데이트: mac update {}", name, name);
+        println!("'{}' 이미 설치되어 있습니다. 업데이트: mai update {}", name, name);
         return;
     }
 
@@ -218,7 +218,7 @@ fn cmd_install(name: &str) {
     if !missing.is_empty() {
         eprintln!("✗ '{}' 은 다음 도메인이 먼저 필요합니다:", name);
         for d in &missing {
-            eprintln!("    mac install {}", d);
+            eprintln!("    mai install {}", d);
         }
         return;
     }
@@ -274,7 +274,7 @@ fn cmd_update(name: &str) {
                 Err(e) => eprintln!("✗ 업데이트 실패: {}", e),
             }
         }
-        None => println!("'{}' 설치되어 있지 않습니다. 먼저: mac install {}", name, name),
+        None => println!("'{}' 설치되어 있지 않습니다. 먼저: mai install {}", name, name),
     }
 }
 
@@ -293,7 +293,7 @@ fn cmd_update_all() {
 fn cmd_self_update() {
     println!("Updating mac manager...");
 
-    let asset = format!("mac-{}-apple-darwin.tar.gz", arch());
+    let asset = format!("mai-{}-apple-darwin.tar.gz", arch());
     let dest_dir = std::env::temp_dir();
 
     // Get latest release tag
@@ -345,7 +345,7 @@ fn cmd_self_update() {
     }
 
     // Replace current binary
-    let new_bin = dest_dir.join("mac");
+    let new_bin = dest_dir.join("mai");
     let current_bin = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("/usr/local/bin/mac"));
 
     if let Err(e) = fs::copy(&new_bin, &current_bin) {
@@ -358,14 +358,14 @@ fn cmd_self_update() {
     fs::remove_file(&tar_path).ok();
     fs::remove_file(&new_bin).ok();
 
-    println!("✓ mac 매니저 업데이트 완료 ({})", tag);
+    println!("✓ mai 매니저 업데이트 완료 ({})", tag);
 }
 
 fn cmd_upgrade() {
     println!("=== 전체 업그레이드 ===\n");
 
     // 1. Self update
-    println!("[1] mac 매니저 업데이트");
+    println!("[1] mai 매니저 업데이트");
     cmd_self_update();
 
     // 2. Update all domains
@@ -379,7 +379,7 @@ fn cmd_run(name: &str, args: &[String]) {
     let bin = domain_bin_path(name);
     if !bin.exists() {
         eprintln!("'{}' 도메인이 설치되어 있지 않습니다.", name);
-        eprintln!("  mac install {}", name);
+        eprintln!("  mai install {}", name);
         return;
     }
     let status = Command::new(&bin)
@@ -398,13 +398,13 @@ fn run_domain_post_action(name: &str, args: &[&str], title: &str) {
         return;
     }
 
-    println!("→ {}: mac run {} {}", title, name, args.join(" "));
+    println!("→ {}: mai run {} {}", title, name, args.join(" "));
     let status = Command::new(&bin).args(args).status();
     match status {
         Ok(s) if s.success() => {}
         Ok(s) => {
             eprintln!(
-                "⚠ {} 후속 작업 실패 (exit {}): mac run {} {}",
+                "⚠ {} 후속 작업 실패 (exit {}): mai run {} {}",
                 name,
                 s.code().unwrap_or(1),
                 name,
@@ -413,7 +413,7 @@ fn run_domain_post_action(name: &str, args: &[&str], title: &str) {
         }
         Err(e) => {
             eprintln!(
-                "⚠ {} 후속 작업 실행 실패 ({}): mac run {} {}",
+                "⚠ {} 후속 작업 실행 실패 ({}): mai run {} {}",
                 name,
                 e,
                 name,
@@ -524,7 +524,7 @@ fn cmd_setup() {
         if status.map(|s| s.success()).unwrap_or(false) {
             println!("    ✓ mac-tui 설치 완료");
         } else {
-            println!("    ⚠ mac-tui 설치 실패 (mac upgrade 로 재시도)");
+            println!("    ⚠ mac-tui 설치 실패 (mai upgrade 로 재시도)");
         }
     } else {
         println!("[2] ✓ mac-tui 이미 설치됨");
@@ -571,7 +571,7 @@ fn cmd_setup() {
                 watch_path: None,
             },
             enabled: true,
-            description: "매일 10시 mac + 도메인 자동 업데이트".into(),
+            description: "매일 10시 mai + 도메인 자동 업데이트".into(),
         });
         let _ = mac_host_core::cron::save_schedule(&sched);
         println!("    ✓ mac-upgrade 작업 추가");
@@ -607,9 +607,9 @@ fn cmd_setup() {
     println!("\n=== ✓ 셋업 완료 ===");
     println!("");
     println!("  mac-tui              TUI 실행");
-    println!("  mac available        도메인 목록");
-    println!("  mac install <name>   추가 도메인 설치");
-    println!("  mac upgrade          전체 업그레이드");
+    println!("  mai available        도메인 목록");
+    println!("  mai install <name>   추가 도메인 설치");
+    println!("  mai upgrade          전체 업그레이드");
 }
 
 fn cmd_doctor() {
@@ -638,7 +638,7 @@ fn cmd_doctor() {
         println!("[자동 업데이트] ✓ 등록됨 (매일 10:00)");
     } else {
         println!("[자동 업데이트] ✗ 미등록");
-        println!("  → mac setup");
+        println!("  → mai setup");
     }
 
     // 5. Dependencies
@@ -660,7 +660,7 @@ fn cmd_doctor() {
         println!("\n[.env] ✓ 존재 ({})", if encrypted { "암호화됨" } else { "평문" });
     } else {
         println!("\n[.env] ✗ 없음");
-        println!("  → mac run bootstrap install");
+        println!("  → mai run bootstrap install");
     }
 }
 
@@ -671,7 +671,7 @@ fn cmd_tick() {
 }
 
 fn deprecated_notice(old: &str, new: &str) {
-    eprintln!("⚠ `mac {}` 는 deprecated 입니다. `mac run cron {}` 를 사용하세요.", old, new);
+    eprintln!("⚠ `mac {}` 는 deprecated 입니다. `mai run cron {}` 를 사용하세요.", old, new);
 }
 
 fn cmd_schedule_list() {

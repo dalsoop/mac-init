@@ -218,7 +218,7 @@ fn print_tui_spec() {
         .kv("/etc/hosts", host_items)
         .kv("DNS", dns_status_items())
         .buttons()
-        .text("안내", "편집은 sudo 필요. CLI:\n  mac run host add <ip> <hostname>\n  mac run host dns set Wi-Fi cloudflare\n  mac run host dns flush")
+        .text("안내", "편집은 sudo 필요. CLI:\n  mai run host add <ip> <hostname>\n  mai run host dns set Wi-Fi cloudflare\n  mai run host dns flush")
         .print();
 }
 
@@ -320,7 +320,7 @@ fn dns_set(interface: &str, value: &str, secondary: Option<&str>) {
     match status {
         Ok(s) if s.success() => {
             println!("✓ DNS 설정 완료");
-            println!("  적용 확인: mac run host dns status");
+            println!("  적용 확인: mai run host dns status");
             // 자동 플러시
             let _ = Command::new("sudo").args(["dscacheutil", "-flushcache"]).status();
             let _ = Command::new("sudo").args(["killall", "-HUP", "mDNSResponder"]).status();
@@ -389,6 +389,6 @@ fn dns_presets() {
         let p = &presets[name];
         println!("  {:<20} {:<18} {:<18} {}", name, p.primary, p.secondary, p.description);
     }
-    println!("\n  사용법: mac run host dns set Wi-Fi cloudflare");
-    println!("  초기화: mac run host dns reset Wi-Fi");
+    println!("\n  사용법: mai run host dns set Wi-Fi cloudflare");
+    println!("  초기화: mai run host dns reset Wi-Fi");
 }

@@ -112,7 +112,7 @@ fn cmd_status() {
     }
 
     if !app_installed {
-        println!("\n  → mac run vscode install");
+        println!("\n  → mai run vscode install");
     }
 
     // Settings
@@ -168,7 +168,7 @@ fn cmd_install() {
 
 fn cmd_ext_list() {
     if !cmd::ok("which", &["code"]) {
-        println!("✗ code CLI가 없습니다. mac run vscode install");
+        println!("✗ code CLI가 없습니다. mai run vscode install");
         return;
     }
     let exts = cmd::stdout("code", &["--list-extensions", "--show-versions"]);
@@ -184,7 +184,7 @@ fn cmd_ext_list() {
 
 fn cmd_ext_install(id: &str) {
     if !cmd::ok("which", &["code"]) {
-        println!("✗ code CLI가 없습니다. mac run vscode install");
+        println!("✗ code CLI가 없습니다. mai run vscode install");
         return;
     }
     println!("Installing {}...", id);
@@ -224,7 +224,7 @@ fn cmd_ext_import() {
     let path = extensions_export_path();
     if !path.exists() {
         println!("✗ export 파일이 없습니다: {}", path.display());
-        println!("  먼저: mac run vscode ext-export");
+        println!("  먼저: mai run vscode ext-export");
         return;
     }
     let content = fs::read_to_string(&path).unwrap_or_default();

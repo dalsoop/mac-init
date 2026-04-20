@@ -1,5 +1,5 @@
 ---
-source: crates/tui-v2/tests/tui_e2e.rs
+source: crates/tui/tests/tui_e2e.rs
 expression: output
 ---
 "┌ mac-app-init ────────┐┌ 의존성 설치 ─────┐┌ Status ──────────────────────────────────────────────────────────────────┐" Hidden by multi-width symbols: [(27, " "), (29, " "), (31, " "), (34, " "), (36, " ")]
@@ -26,7 +26,7 @@ expression: output
 "│   🔒 VPN             ││                  ││                                                                          │" Hidden by multi-width symbols: [(5, " ")]
 "│                      ││                  │└──────────────────────────────────────────────────────────────────────────┘"
 "│                      ││                  │┌──────────────────────────────────────────────────────────────────────────┐"
-"│                      ││                  ││  mac run bootstrap --help                                                │"
+"│                      ││                  ││  mai run bootstrap --help                                                │"
 "│                      ││                  ││                                                                          │"
 "│                      ││                  ││                                                                          │"
 "│                      ││                  ││                                                                          │"

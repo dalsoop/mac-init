@@ -52,7 +52,7 @@ enum PathAction {
 
 #[derive(Subcommand)]
 enum AliasAction {
-    /// alias 추가 (예: shell alias add mst "mac run mount status")
+    /// alias 추가 (예: shell alias add mst "mai run mount status")
     Add { name: String, command: String },
     /// alias 제거
     Rm { name: String },
@@ -130,7 +130,7 @@ fn generate_sh(s: &ShellStore) {
     let mut lines = vec![
         "#!/bin/sh".into(),
         format!("# mac-app-init shell — 자동 생성 ({}). 직접 수정 금지.", now_str()),
-        "# mac run shell path/alias 로 관리.".into(),
+        "# mai run shell path/alias 로 관리.".into(),
         String::new(),
         "# === PATH ===".into(),
     ];
@@ -234,7 +234,7 @@ fn cmd_path_scan() {
         count += 1;
     }
     if count == 0 { println!("  (없음)"); }
-    else { println!("\n등록: mac run shell path add <경로> --label '설명'"); }
+    else { println!("\n등록: mai run shell path add <경로> --label '설명'"); }
 }
 
 // === Alias 커맨드 ===
@@ -322,6 +322,6 @@ fn print_tui_spec() {
         .kv("PATH", path_items)
         .kv("별칭", alias_items)
         .buttons()
-        .text("안내", "  mac run shell path add <경로> --label '설명'\n  mac run shell path toggle <경로>\n  mac run shell alias add <name> <command>\n  mac run shell sync")
+        .text("안내", "  mai run shell path add <경로> --label '설명'\n  mai run shell path toggle <경로>\n  mai run shell alias add <name> <command>\n  mai run shell sync")
         .print();
 }

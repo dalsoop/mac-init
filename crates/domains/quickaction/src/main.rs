@@ -345,7 +345,7 @@ done"#, command)
     match create_workflow(name, &shell_script, input_type) {
         Ok(_) => {
             println!("✓ '{}' 추가됨", name);
-            println!("  Finder 재시작: mac run quickaction reload");
+            println!("  Finder 재시작: mai run quickaction reload");
         }
         Err(e) => println!("✗ 생성 실패: {}", e),
     }
@@ -360,7 +360,7 @@ fn cmd_remove(name: &str) {
     match fs::remove_dir_all(&path) {
         Ok(_) => {
             println!("✓ '{}' 제거됨", name);
-            println!("  Finder 재시작: mac run quickaction reload");
+            println!("  Finder 재시작: mai run quickaction reload");
         }
         Err(e) => println!("✗ 제거 실패: {}", e),
     }
@@ -373,7 +373,7 @@ fn cmd_install_defaults() {
         ("mac-init: Open in Terminal", r#"open -a Terminal "$f""#, "files"),
         ("mac-init: Copy Path", r#"echo -n "$f" | pbcopy"#, "files"),
         ("mac-init: Encrypt .env", r#"dotenvx encrypt -f "$f""#, "files"),
-        ("mac-init: Run Scheduler", r#"~/.cargo/bin/mac run scheduler run "$(basename "$f" .sh)""#, "files"),
+        ("mac-init: Run Scheduler", r#"~/.cargo/bin/mai run scheduler run "$(basename "$f" .sh)""#, "files"),
     ];
 
     for (name, cmd, input) in &defaults {
@@ -392,7 +392,7 @@ done"#, cmd);
     }
 
     println!("\n=== 완료 ===");
-    println!("  Finder 재시작: mac run quickaction reload");
+    println!("  Finder 재시작: mai run quickaction reload");
     println!("  사용: Finder에서 파일 우클릭 → Quick Actions 또는 Services");
 }
 

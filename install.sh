@@ -19,8 +19,8 @@ LATEST=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" | grep '"t
 mkdir -p "$BIN_DIR"
 echo "mac-app-init $LATEST 설치 중..."
 
-curl -sfL "https://github.com/$REPO/releases/download/$LATEST/mac-${TARGET}.tar.gz" | tar xz -C "$BIN_DIR"
-chmod +x "$BIN_DIR/mac"
+curl -sfL "https://github.com/$REPO/releases/download/$LATEST/mai-${TARGET}.tar.gz" | tar xz -C "$BIN_DIR"
+chmod +x "$BIN_DIR/mai"
 
 # PATH
 if ! grep -q "mac-app-init" "$HOME/.zshrc" 2>/dev/null; then
@@ -30,4 +30,4 @@ export PATH="$BIN_DIR:$PATH"
 
 echo "✓ 설치 완료"
 echo ""
-echo "  source ~/.zshrc && mac setup"
+echo "  source ~/.zshrc && mai setup"

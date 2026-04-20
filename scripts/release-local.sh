@@ -56,7 +56,7 @@ build_target() {
   done
 
   # manager (bin: mac) + tui (bin: mac-tui)
-  for spec in "mac-domain-manager:mac" "mac-host-tui:mac-tui"; do
+  for spec in "mac-domain-manager:mai" "mac-host-tui:mac-tui"; do
     local pkg="${spec%%:*}"
     local bin="${spec##*:}"
     echo "  ▶ $pkg (bin: $bin)"

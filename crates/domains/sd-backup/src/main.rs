@@ -596,7 +596,7 @@ fn cmd_status() {
 
     // 백업 대상
     if cfg.backup_target.is_empty() {
-        println!("⚠ 백업 대상 미설정. `mac run sd-backup set-target <경로>` 필요");
+        println!("⚠ 백업 대상 미설정. `mai run sd-backup set-target <경로>` 필요");
     } else {
         let expanded = expand(&cfg.backup_target);
         let exists = Path::new(&expanded).exists();
@@ -695,7 +695,7 @@ fn cmd_run() {
     }
     let cfg = load_config();
     if cfg.backup_target.is_empty() {
-        eprintln!("✗ 백업 대상 미설정. `mac run sd-backup set-target <경로>`");
+        eprintln!("✗ 백업 대상 미설정. `mai run sd-backup set-target <경로>`");
         std::process::exit(1);
     }
     let target_root = PathBuf::from(expand(&cfg.backup_target));
@@ -1145,7 +1145,7 @@ fn cmd_devices() {
         *devices.entry(e.device.clone()).or_default() += 1;
     }
     if devices.is_empty() {
-        println!("백업 이력 없음. SD 카드를 꽂고 `mac run sd-backup run` 실행.");
+        println!("백업 이력 없음. SD 카드를 꽂고 `mai run sd-backup run` 실행.");
         return;
     }
     println!("{:<25} {}", "DEVICE", "BACKUPS");
@@ -1273,7 +1273,7 @@ fn print_tui_spec() {
                 "key": "e"
             }),
         ])
-        .text("안내", "  SD 꽂음 → 로컬 백업 (60MB/s) → NAS 동기화 (LAN 권장) → SD 추출\n\n  기기별·날짜별 자동 분류:\n    <로컬>/<기기명>/<YYYY-MM-DD>/파일들\n\n  설정:\n    mac run sd-backup set-target <로컬 경로>\n    mac run sd-backup set-sync <NAS 경로>\n    mac run sd-backup auto on\n    mac run sd-backup eject on")
+        .text("안내", "  SD 꽂음 → 로컬 백업 (60MB/s) → NAS 동기화 (LAN 권장) → SD 추출\n\n  기기별·날짜별 자동 분류:\n    <로컬>/<기기명>/<YYYY-MM-DD>/파일들\n\n  설정:\n    mai run sd-backup set-target <로컬 경로>\n    mai run sd-backup set-sync <NAS 경로>\n    mai run sd-backup auto on\n    mai run sd-backup eject on")
         .print();
 }
 

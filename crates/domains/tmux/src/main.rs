@@ -111,10 +111,10 @@ fn ensure_shell_integration() {
 
     // alias 등록
     let aliases = [
-        ("mts", "mac run tmux status"),
-        ("mti", "mac run tmux init"),
-        ("mta", "mac run tmux apply"),
-        ("mtt", "mac run tmux topbar"),
+        ("mts", "mai run tmux status"),
+        ("mti", "mai run tmux init"),
+        ("mta", "mai run tmux apply"),
+        ("mtt", "mai run tmux topbar"),
     ];
     for (name, command) in aliases {
         let _ = Command::new(&shell_bin)
@@ -164,7 +164,7 @@ fn ensure_brew() -> bool {
     if cmd::ok("brew", &["--version"]) {
         true
     } else {
-        eprintln!("✗ Homebrew가 필요합니다. 먼저 `mac run bootstrap install` 또는 brew 설치를 진행하세요.");
+        eprintln!("✗ Homebrew가 필요합니다. 먼저 `mai run bootstrap install` 또는 brew 설치를 진행하세요.");
         false
     }
 }
@@ -172,7 +172,7 @@ fn ensure_brew() -> bool {
 fn ensure_rust() -> bool {
     let ok = cmd::ok("cargo", &["--version"]) && cmd::ok("rustc", &["--version"]);
     if !ok {
-        eprintln!("✗ Rust/Cargo가 필요합니다. 먼저 `mac run bootstrap install`을 실행하세요.");
+        eprintln!("✗ Rust/Cargo가 필요합니다. 먼저 `mai run bootstrap install`을 실행하세요.");
     }
     ok
 }
@@ -337,7 +337,7 @@ fn cmd_install_inner() -> bool {
     println!("\n=== 완료 ===");
     println!("  설치 위치: {}", local_bin_dir().display());
     println!("  shell 연동: ~/.local/bin + mts/mti/mta/mtt alias 등록");
-    println!("  다음 단계: mac run tmux init");
+    println!("  다음 단계: mai run tmux init");
     true
 }
 
@@ -349,7 +349,7 @@ fn cmd_init() {
 
 fn cmd_init_inner() -> bool {
     if !ensure_installed() {
-        eprintln!("✗ tmux-tools가 아직 설치되지 않았습니다. 먼저 `mac run tmux install`을 실행하세요.");
+        eprintln!("✗ tmux-tools가 아직 설치되지 않았습니다. 먼저 `mai run tmux install`을 실행하세요.");
         return false;
     }
     println!("=== tmux 초기화 ===\n");
@@ -364,7 +364,7 @@ fn cmd_init_inner() -> bool {
 
 fn cmd_apply() {
     if !ensure_installed() {
-        eprintln!("✗ tmux-tools가 아직 설치되지 않았습니다. 먼저 `mac run tmux install`을 실행하세요.");
+        eprintln!("✗ tmux-tools가 아직 설치되지 않았습니다. 먼저 `mai run tmux install`을 실행하세요.");
         std::process::exit(1);
     }
     if !run_with_local_bin(&sessionbar_bin(), &["apply"]) {
@@ -375,7 +375,7 @@ fn cmd_apply() {
 
 fn cmd_topbar() {
     if !ensure_installed() {
-        eprintln!("✗ tmux-tools가 아직 설치되지 않았습니다. 먼저 `mac run tmux install`을 실행하세요.");
+        eprintln!("✗ tmux-tools가 아직 설치되지 않았습니다. 먼저 `mai run tmux install`을 실행하세요.");
         std::process::exit(1);
     }
     if !run_with_local_bin(&topbar_bin(), &[]) {
@@ -386,7 +386,7 @@ fn cmd_topbar() {
 
 fn cmd_sync() {
     if !ensure_installed() {
-        eprintln!("✗ tmux-tools가 아직 설치되지 않았습니다. 먼저 `mac run tmux install`을 실행하세요.");
+        eprintln!("✗ tmux-tools가 아직 설치되지 않았습니다. 먼저 `mai run tmux install`을 실행하세요.");
         std::process::exit(1);
     }
     if !run_with_local_bin(&sessionbar_bin(), &["sync"]) {
@@ -431,11 +431,11 @@ fn cmd_status() {
     println!("  {} tmux server {}", mark(tmux_running), if tmux_running { "실행 중" } else { "미실행" });
 
     if !(has_tmux && has_sessionbar && has_windowbar && has_topbar) {
-        println!("\n→ 설치: mac run tmux setup");
+        println!("\n→ 설치: mai run tmux setup");
     } else if !(has_session_cfg && has_window_cfg && has_tmux_conf) {
-        println!("\n→ 초기화: mac run tmux init");
+        println!("\n→ 초기화: mai run tmux init");
     } else {
-        println!("\n→ topbar 실행: mac run tmux topbar");
+        println!("\n→ topbar 실행: mai run tmux topbar");
     }
 }
 
@@ -540,7 +540,7 @@ fn print_tui_spec() {
         .buttons()
         .text(
             "안내",
-            "권장 순서:\n  mac run tmux setup\n  mac run tmux topbar\n\n소스 빌드가 필요하므로 Rust/Cargo가 없으면 먼저 `mac run bootstrap install`을 실행하세요.",
+            "권장 순서:\n  mai run tmux setup\n  mai run tmux topbar\n\n소스 빌드가 필요하므로 Rust/Cargo가 없으면 먼저 `mai run bootstrap install`을 실행하세요.",
         )
         .print();
 }

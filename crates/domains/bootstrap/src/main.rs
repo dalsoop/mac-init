@@ -212,7 +212,7 @@ fn generate_shell_sh(s: &ShellStore) {
     let mut lines = vec![
         "#!/bin/sh".into(),
         "# mac-app-init shell — 자동 생성. 직접 수정 금지.".into(),
-        "# mac run shell path/alias 로 관리.".into(),
+        "# mai run shell path/alias 로 관리.".into(),
         String::new(),
         "# === PATH ===".into(),
     ];
@@ -312,7 +312,7 @@ fn cmd_setup_sd() {
 
     let sd_bin = PathBuf::from(home()).join(".mac-app-init/domains/mac-domain-sd-backup");
     if !sd_bin.exists() {
-        eprintln!("✗ sd-backup 도메인 미설치. `mac install sd-backup` 먼저.");
+        eprintln!("✗ sd-backup 도메인 미설치. `mai install sd-backup` 먼저.");
         return;
     }
 
@@ -331,7 +331,7 @@ fn cmd_setup_sd() {
     println!("  로컬 경로: {}", backup_dir);
     println!("  자동 백업: ✓ (30초마다 스캔)");
     println!("  자동 추출: ✓ (백업 후 SD 안전 추출)");
-    println!("  NAS 동기화: 꺼짐 (LAN 환경에서 `mac run sd-backup sync on`)");
+    println!("  NAS 동기화: 꺼짐 (LAN 환경에서 `mai run sd-backup sync on`)");
 }
 
 fn print_tui_spec() {
@@ -441,7 +441,7 @@ fn cmd_status() {
     );
     println!("  ℹ 도메인 바이너리는 `mac run` 경유로 실행하면 TCC 상속됨.");
     if missing > 0 {
-        println!("  → mac run bootstrap install");
+        println!("  → mai run bootstrap install");
     }
 }
 
@@ -499,6 +499,6 @@ fn cmd_install() {
     }
 
     println!("\n=== 완료 ===");
-    println!("  mac available     — 사용 가능한 도메인");
-    println!("  mac install cron  — 도메인 설치");
+    println!("  mai available     — 사용 가능한 도메인");
+    println!("  mai install cron  — 도메인 설치");
 }

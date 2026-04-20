@@ -108,7 +108,7 @@ fn cmd_status() {
         }
     } else {
         println!("[OrbStack] ✗ 미설치");
-        println!("  → mac run container install-orbstack");
+        println!("  → mai run container install-orbstack");
     }
 
     // Docker CLI
@@ -122,7 +122,7 @@ fn cmd_status() {
 
 fn cmd_list() {
     if !cmd::ok("orbctl", &["status"]) || !cmd::stdout("orbctl", &["status"]).contains("Running") {
-        println!("OrbStack이 실행 중이 아닙니다. mac run container up");
+        println!("OrbStack이 실행 중이 아닙니다. mai run container up");
         return;
     }
 

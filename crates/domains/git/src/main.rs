@@ -157,7 +157,7 @@ fn cmd_status() {
     }
     if !has_key {
         println!("  ✗ SSH 키 없음");
-        println!("    → mac run git ssh-setup");
+        println!("    → mai run git ssh-setup");
     }
 
     // SSH config
@@ -185,7 +185,7 @@ fn cmd_status() {
     let gh_ver = cmd::stdout("gh", &["--version"]);
     if gh_ver.is_empty() {
         println!("  ✗ gh 미설치");
-        println!("    → mac run git gh-install");
+        println!("    → mai run git gh-install");
     } else {
         println!("  ✓ {}", gh_ver.lines().next().unwrap_or(""));
         let auth = cmd::stdout("gh", &["auth", "status"]);
@@ -194,7 +194,7 @@ fn cmd_status() {
             println!("  ✓ 인증됨 ({})", if user.is_empty() { "?" } else { &user });
         } else {
             println!("  ✗ 미인증");
-            println!("    → mac run git gh-auth");
+            println!("    → mai run git gh-auth");
         }
     }
 
@@ -215,7 +215,7 @@ fn cmd_profile(name: Option<String>, email: Option<String>) {
         println!("현재 프로필:");
         println!("  name:  {}", if n.is_empty() { "(없음)" } else { &n });
         println!("  email: {}", if e.is_empty() { "(없음)" } else { &e });
-        println!("\n설정: mac run git profile --name \"이름\" --email \"이메일\"");
+        println!("\n설정: mai run git profile --name \"이름\" --email \"이메일\"");
         return;
     }
     if let Some(n) = &name {
@@ -273,7 +273,7 @@ fn cmd_gh_install() {
 
 fn cmd_gh_auth() {
     if !cmd::ok("gh", &["--version"]) {
-        println!("✗ gh CLI가 없습니다. 먼저: mac run git gh-install");
+        println!("✗ gh CLI가 없습니다. 먼저: mai run git gh-install");
         return;
     }
     println!("GitHub 인증 시작 (브라우저가 열립니다)...");
@@ -285,12 +285,12 @@ fn cmd_gh_ssh_setup() {
     let pub_key = ssh_dir.join("id_ed25519.pub");
 
     if !pub_key.exists() {
-        println!("✗ SSH 키가 없습니다. 먼저: mac run git ssh-setup");
+        println!("✗ SSH 키가 없습니다. 먼저: mai run git ssh-setup");
         return;
     }
 
     if !cmd::ok("gh", &["auth", "token"]) {
-        println!("✗ GitHub 인증이 필요합니다. 먼저: mac run git gh-auth");
+        println!("✗ GitHub 인증이 필요합니다. 먼저: mai run git gh-auth");
         return;
     }
 

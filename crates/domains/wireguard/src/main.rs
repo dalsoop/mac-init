@@ -121,7 +121,7 @@ fn cmd_status() {
         println!("[wg CLI] ✓ {}", ver);
     } else {
         println!("[wg CLI] ✗ 미설치");
-        println!("  → mac run wireguard install");
+        println!("  → mai run wireguard install");
     }
 
     // GUI app
@@ -190,8 +190,8 @@ fn cmd_install() {
     if installed_any {
         println!("\n=== 설치 완료 ===");
     }
-    println!("  설정 추가: mac run wireguard add <name> <path/to/conf>");
-    println!("  연결: mac run wireguard up <name>");
+    println!("  설정 추가: mai run wireguard add <name> <path/to/conf>");
+    println!("  연결: mai run wireguard up <name>");
 }
 
 fn cmd_list() {
@@ -209,7 +209,7 @@ fn cmd_list() {
 
         if confs.is_empty() {
             println!("등록된 설정이 없습니다.");
-            println!("  mac run wireguard add <name> <path/to/conf>");
+            println!("  mai run wireguard add <name> <path/to/conf>");
             return;
         }
 
@@ -269,7 +269,7 @@ fn cmd_add(name: &str, conf: &str) {
             // Set permissions 600
             let _ = Command::new("chmod").args(["600", &dest.to_string_lossy()]).output();
             println!("✓ {} 추가 완료 → {}", name, dest.display());
-            println!("  연결: mac run wireguard up {}", name);
+            println!("  연결: mai run wireguard up {}", name);
         }
         Err(e) => println!("✗ 복사 실패: {}", e),
     }

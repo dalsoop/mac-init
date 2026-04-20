@@ -213,7 +213,7 @@ fn load_connections() -> Vec<Connection> {
         .unwrap_or_default();
     if !result.is_empty() {
         eprintln!(
-            "⚠ legacy {} 를 읽는 중. `mac run env import` 로 카드로 이관 후 파일을 삭제하세요.",
+            "⚠ legacy {} 를 읽는 중. `mai run env import` 로 카드로 이관 후 파일을 삭제하세요.",
             path.display()
         );
     }
@@ -422,7 +422,7 @@ fn is_mounted_at(mp: &PathBuf) -> bool {
 
 fn main() {
     if !has_connect_domain() {
-        eprintln!("⚠ env 도메인이 필요합니다: mac install env");
+        eprintln!("⚠ env 도메인이 필요합니다: mai install env");
     }
     let cli = Cli::parse();
     match cli.command {
@@ -462,7 +462,7 @@ fn cmd_status() {
 fn cmd_shares() {
     let conns = load_all_connections();
     if conns.is_empty() {
-        println!("등록된 연결이 없습니다. mac run env add");
+        println!("등록된 연결이 없습니다. mai run env add");
         return;
     }
     for c in &conns {
@@ -498,7 +498,7 @@ fn cmd_list() {
 
 fn cmd_mount(name: &str, share: &str) {
     let Some(conn) = find_connection(name) else {
-        eprintln!("✗ 연결 '{}' 이(가) 없습니다. mac run env list", name);
+        eprintln!("✗ 연결 '{}' 이(가) 없습니다. mai run env list", name);
         return;
     };
     let mp = mount_point(name, share);
@@ -803,7 +803,7 @@ fn cmd_auto_list() {
     let cfg = load_mount_config();
     if cfg.auto_mounts.is_empty() {
         println!("자동 마운트 설정이 없습니다.");
-        println!("  mac run mount auto-add <connection> <share>");
+        println!("  mai run mount auto-add <connection> <share>");
         return;
     }
     println!("{:<10} {:<12} {:<20} {}", "STATE", "CONN", "SHARE", "MOUNTPOINT");
@@ -969,7 +969,7 @@ fn cmd_auto() {
     // 실패가 있으면 macOS 알림.
     if failed_count > 0 || quarantined_count > 0 {
         let msg = format!(
-            "마운트 실패 {}개, quarantine {}개. `mac-tui` 또는 `mac run mount auto-status` 로 확인.",
+            "마운트 실패 {}개, quarantine {}개. `mac-tui` 또는 `mai run mount auto-status` 로 확인.",
             failed_count, quarantined_count
         );
         notify("mac-app-init: Mount", &msg);
@@ -1277,7 +1277,7 @@ fn print_tui_spec() {
         .usage(usage_active, &usage_summary)
         .kv("상태", vec![
             tui_spec::kv_item("env 도메인",
-                if connect_ok { "✓ 설치됨" } else { "✗ 미설치 (mac install env)" },
+                if connect_ok { "✓ 설치됨" } else { "✗ 미설치 (mai install env)" },
                 if connect_ok { "ok" } else { "error" }),
             tui_spec::kv_item("등록된 연결",
                 &format!("{}개", conns.len()),
@@ -1296,7 +1296,7 @@ fn print_tui_spec() {
                 if cfg.sweep_enabled {
                     "✓ 켜짐 (auto 실행 시마다 ~/Documents/WORK/NAS/ 스캔)"
                 } else {
-                    "✗ 꺼짐 (mac run mount sweep on 으로 활성화)"
+                    "✗ 꺼짐 (mai run mount sweep on 으로 활성화)"
                 },
                 if cfg.sweep_enabled { "ok" } else { "warn" }),
         ])
@@ -1312,6 +1312,6 @@ fn print_tui_spec() {
                 "key": "w"
             }),
         ])
-        .text("안내", "  자동 마운트 설정:\n    mac run mount auto-add <conn> <share>\n    mac run mount auto-toggle <conn> <share>\n    mac run mount auto-enable      # 로그인 시 + 5분마다 자동 실행\n\n  잔재 정리:\n    mac run mount sweep on|off|status\n    → auto 실행 시마다 ~/Documents/WORK/NAS/ 스캔, 카드/마운트에 없는 항목을\n      ~/NAS/.mountless-trash/YYMMDD-HHMMSS/ 로 격리 (삭제 아님)\n\n  수동:\n    mac run mount mount <name> <share>\n    mac run mount unmount <share>")
+        .text("안내", "  자동 마운트 설정:\n    mai run mount auto-add <conn> <share>\n    mai run mount auto-toggle <conn> <share>\n    mai run mount auto-enable      # 로그인 시 + 5분마다 자동 실행\n\n  잔재 정리:\n    mai run mount sweep on|off|status\n    → auto 실행 시마다 ~/Documents/WORK/NAS/ 스캔, 카드/마운트에 없는 항목을\n      ~/NAS/.mountless-trash/YYMMDD-HHMMSS/ 로 격리 (삭제 아님)\n\n  수동:\n    mai run mount mount <name> <share>\n    mai run mount unmount <share>")
         .print();
 }

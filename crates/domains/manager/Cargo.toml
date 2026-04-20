@@ -5,7 +5,7 @@ edition = "2024"
 license = "BUSL-1.1"
 
 [[bin]]
-name = "mac"
+name = "mai"
 path = "src/main.rs"
 
 [dependencies]

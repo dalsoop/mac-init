@@ -205,7 +205,7 @@ impl App {
         } else {
             frame.render_widget(
                 Paragraph::new(Span::styled(
-                    format!("  mac run {} --help", domain),
+                    format!("  mai run {} --help", domain),
                     Style::default().fg(Color::DarkGray),
                 )).block(Block::default().borders(Borders::ALL)
                     .border_style(Style::default().fg(Color::DarkGray))),
