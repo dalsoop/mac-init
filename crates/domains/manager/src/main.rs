@@ -501,22 +501,66 @@ fn download_domain(name: &str) -> Result<String, String> {
 }
 
 fn cmd_setup() {
-    println!("=== mac-app-init 초기 설정 ===\n");
+    println!("=== mac-app-init 셋업 ===\n");
 
+    // 1. 디렉토리
     fs::create_dir_all(domains_dir()).ok();
-    println!("  ✓ ~/.mac-app-init/domains/ 생성됨");
+    let cards_dir = PathBuf::from(home()).join(".mac-app-init/cards");
+    fs::create_dir_all(&cards_dir).ok();
+    #[cfg(unix)]
+    { use std::os::unix::fs::PermissionsExt; let _ = fs::set_permissions(&cards_dir, fs::Permissions::from_mode(0o700)); }
+    println!("[1] ✓ 디렉토리 생성");
 
-    // Scheduler LaunchAgent — core 로 위임
-    match mac_host_core::cron::install_scheduler() {
-        Ok(m) => println!("  {}", m),
-        Err(e) => println!("  ⚠ scheduler 설치 실패: {}", e),
+    // 2. mac-tui 설치
+    let tui_path = PathBuf::from(home()).join(".local/bin/mac-tui");
+    if !tui_path.exists() {
+        println!("[2] mac-tui 설치 중...");
+        let target = if cfg!(target_arch = "aarch64") { "aarch64-apple-darwin" } else { "x86_64-apple-darwin" };
+        let url = format!("https://github.com/{}/releases/latest/download/mac-tui-{}.tar.gz", GITHUB_REPO, target);
+        let bin_dir = PathBuf::from(home()).join(".local/bin");
+        let status = Command::new("bash")
+            .args(["-c", &format!("curl -sfL '{}' | tar xz -C '{}'", url, bin_dir.display())])
+            .status();
+        if status.map(|s| s.success()).unwrap_or(false) {
+            println!("    ✓ mac-tui 설치 완료");
+        } else {
+            println!("    ⚠ mac-tui 설치 실패 (mac upgrade 로 재시도)");
+        }
+    } else {
+        println!("[2] ✓ mac-tui 이미 설치됨");
     }
 
-    // Default schedule: daily mac upgrade at 10:00
+    // 3. 핵심 도메인 설치
+    println!("[3] 핵심 도메인 확인...");
+    let core = ["bootstrap", "env", "mount", "host", "cron", "shell", "keyboard", "git"];
+    for name in &core {
+        if !domain_bin_path(name).exists() {
+            print!("    {} 설치 중... ", name);
+            match download_domain(name) {
+                Ok(_) => println!("✓"),
+                Err(e) => println!("⚠ {}", e),
+            }
+        }
+    }
+    println!("    ✓ 핵심 도메인 확인 완료");
+
+    // 4. 의존성 (bootstrap)
+    println!("[4] 의존성 확인...");
+    let bootstrap_bin = domain_bin_path("bootstrap");
+    if bootstrap_bin.exists() {
+        let _ = Command::new(&bootstrap_bin).arg("install").status();
+    }
+
+    // 5. Scheduler LaunchAgent
+    println!("[5] 자동 업데이트 등록...");
+    match mac_host_core::cron::install_scheduler() {
+        Ok(m) => println!("    {}", m),
+        Err(e) => println!("    ⚠ {}", e),
+    }
     let mut sched = mac_host_core::cron::load_schedule();
     if !sched.jobs.iter().any(|j| j.name == "mac-upgrade") {
         let mac_bin = std::env::current_exe()
-            .unwrap_or_else(|_| PathBuf::from(format!("{}/.cargo/bin/mac", home())));
+            .unwrap_or_else(|_| PathBuf::from(format!("{}/.local/bin/mac", home())));
         sched.jobs.push(mac_host_core::models::cron::Job {
             name: "mac-upgrade".into(),
             command: format!("{} upgrade", mac_bin.display()),
@@ -529,17 +573,43 @@ fn cmd_setup() {
             enabled: true,
             description: "매일 10시 mac + 도메인 자동 업데이트".into(),
         });
-        if let Err(e) = mac_host_core::cron::save_schedule(&sched) {
-            println!("  ⚠ schedule 저장 실패: {}", e);
-        } else {
-            println!("  ✓ mac-upgrade 작업 추가 (매일 10:00)");
-        }
+        let _ = mac_host_core::cron::save_schedule(&sched);
+        println!("    ✓ mac-upgrade 작업 추가");
     }
 
-    println!("\n=== 완료 ===");
-    println!("  mac available     — 사용 가능한 도메인");
-    println!("  mac install cron  — cron 도메인 설치 (스케줄 관리 UI)");
-    println!("  mac doctor        — 설정 상태 확인");
+    // 6. locale.json
+    println!("[6] locale.json 생성...");
+    let locale_path = PathBuf::from(home()).join(".mac-app-init/locale.json");
+    if Command::new("nickel").arg("--version").output().map(|o| o.status.success()).unwrap_or(false) {
+        // nickel 있으면 ncl export 시도
+        let ncl_candidates = [
+            PathBuf::from(home()).join(".mac-app-init/src/mac-app-init/ncl/domains.ncl"),
+            PathBuf::from("ncl/domains.ncl"),
+        ];
+        for ncl in &ncl_candidates {
+            if ncl.exists() {
+                let out = Command::new("nickel").arg("export").arg(ncl).output();
+                if let Ok(o) = out {
+                    if o.status.success() {
+                        let _ = fs::write(&locale_path, &o.stdout);
+                        println!("    ✓ locale.json 생성 (ncl)");
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    if !locale_path.exists() {
+        let _ = fs::write(&locale_path, "{\"domains\":{},\"dns_presets\":{},\"section_names\":{}}");
+        println!("    ✓ locale.json fallback 생성");
+    }
+
+    println!("\n=== ✓ 셋업 완료 ===");
+    println!("");
+    println!("  mac-tui              TUI 실행");
+    println!("  mac available        도메인 목록");
+    println!("  mac install <name>   추가 도메인 설치");
+    println!("  mac upgrade          전체 업그레이드");
 }
 
 fn cmd_doctor() {
