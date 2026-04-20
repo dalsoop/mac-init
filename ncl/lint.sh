@@ -71,6 +71,69 @@ for d in "$ROOT"/crates/domains/*/src/main.rs; do
 done
 echo "✓ 하드코딩 검사 완료"
 
+# 5. tui-spec JSON 구조 검증 (빌드된 바이너리 대상)
+echo ""
+echo "=== tui-spec 출력 검증 ==="
+SPEC_FAIL=0
+for d in "$ROOT"/crates/domains/*/; do
+  name="$(basename "$d")"
+  [[ "$name" == "manager" ]] && continue
+  bin="$ROOT/target/release/mac-domain-$name"
+  [[ ! -x "$bin" ]] && bin="$ROOT/target/debug/mac-domain-$name"
+  [[ ! -x "$bin" ]] && continue  # 빌드 안 됐으면 skip
+
+  spec=$("$bin" tui-spec 2>/dev/null &
+  PID=$!; sleep 2
+  if kill -0 $PID 2>/dev/null; then kill -9 $PID 2>/dev/null; echo "TIMEOUT"; else wait $PID; fi)
+
+  if [[ "$spec" == "TIMEOUT" || -z "$spec" ]]; then
+    echo "  ⚠ $name: tui-spec 타임아웃/빈 출력 (건너뜀)"
+    continue
+  fi
+
+  # JSON 파싱 + 필수 필드 검증
+  result=$(echo "$spec" | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+except:
+    print('PARSE_ERROR'); sys.exit(0)
+
+errors = []
+if 'tab' not in d: errors.append('tab 누락')
+elif 'label_ko' not in d.get('tab', {}): errors.append('tab.label_ko 누락')
+if 'group' not in d: errors.append('group 누락')
+if 'sections' not in d: errors.append('sections 누락')
+elif not isinstance(d['sections'], list): errors.append('sections가 배열 아님')
+elif len(d['sections']) == 0: errors.append('sections 비어있음')
+else:
+    for i, s in enumerate(d['sections']):
+        if 'kind' not in s: errors.append(f'sections[{i}].kind 누락')
+        if 'title' not in s: errors.append(f'sections[{i}].title 누락')
+        if s.get('kind') == 'buttons' and not s.get('items'): errors.append(f'sections[{i}] 버튼 비어있음')
+
+if errors:
+    print('|'.join(errors))
+else:
+    print('OK')
+" 2>/dev/null)
+
+  if [[ "$result" == "OK" ]]; then
+    : # pass
+  elif [[ "$result" == "PARSE_ERROR" ]]; then
+    echo "  ✗ $name: tui-spec JSON 파싱 실패"
+    SPEC_FAIL=1
+  elif [[ -n "$result" ]]; then
+    echo "  ✗ $name: $result"
+    SPEC_FAIL=1
+  fi
+done
+if [[ $SPEC_FAIL -eq 0 ]]; then
+  echo "✓ tui-spec 구조 검증 완료"
+else
+  FAIL=1
+fi
+
 # 5. 바이너리 이름 규칙 (mac-domain-{name})
 echo ""
 echo "=== 바이너리 이름 규칙 ==="

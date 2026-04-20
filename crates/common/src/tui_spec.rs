@@ -122,7 +122,10 @@ impl TuiSpec {
     }
 
     /// JSON 문자열로 빌드 + 출력.
+    /// sections가 비어있으면 panic (개발 시점에 잡히도록).
     pub fn print(self) {
+        assert!(!self.sections.is_empty(),
+            "[{}] TuiSpec: sections가 비어있음 — .kv() 또는 .buttons() 필요", self.domain);
         println!("{}", self.build());
     }
 
