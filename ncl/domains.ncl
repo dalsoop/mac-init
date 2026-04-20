@@ -175,6 +175,7 @@ in
           { command = "dns status", label = "DNS 현황", key = "d" },
           { command = "dns flush", label = "DNS 캐시 플러시", key = "f" },
           { command = "dns test", label = "DNS 조회 테스트", key = "t" },
+          { command = "dns presets", label = "DNS 프리셋 목록", key = "p" },
         ],
         keybindings = [
           { key = "e", label = "DNS 변경 (프리셋/IP)", command = "dns set",
@@ -255,11 +256,11 @@ in
           { command = "gh-install", label = "gh CLI 설치", key = "i" },
           { command = "gh-ssh-setup", label = "SSH 키 등록", key = "g" },
         ],
-        editables = [
-          { field = "user.name", label = "Git 사용자 이름", command = "profile",
-            args = ["--name", "${value}"] },
-          { field = "user.email", label = "Git 이메일", command = "profile",
-            args = ["--email", "${value}"] },
+        keybindings = [
+          { key = "n", label = "사용자 이름 변경", command = "profile",
+            args = ["--name", "${prompt:Git 사용자 이름}"] },
+          { key = "m", label = "이메일 변경", command = "profile",
+            args = ["--email", "${prompt:Git 이메일}"] },
         ],
       },
     } | Domain,
