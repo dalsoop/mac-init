@@ -134,6 +134,21 @@ fn is_setup_done() -> bool {
 }
 
 fn main() {
+    // 인자 없이 `mai` 만 실행 → TUI
+    if std::env::args().len() <= 1 {
+        let tui = PathBuf::from(home()).join(".local/bin/mai-tui");
+        if tui.exists() {
+            let err = std::os::unix::process::CommandExt::exec(
+                Command::new(&tui).args(std::env::args().skip(1))
+            );
+            eprintln!("TUI 실행 실패: {}", err);
+            std::process::exit(1);
+        } else {
+            eprintln!("mai-tui 미설치. `mai setup` 으로 설치하세요.");
+            std::process::exit(1);
+        }
+    }
+
     let cli = Cli::parse();
 
     // First-run check (except for setup/doctor themselves)
