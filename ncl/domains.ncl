@@ -2,29 +2,39 @@
 # 이 파일이 전체 시스템의 Single Source of Truth
 # nickel export ncl/domains.ncl > ~/.mac-app-init/locale.json
 
-let Button = { command | String, label | String, key | String | default = "" }
+# ── 계약(Contract) ──
+# Nickel contract로 규칙 강제. 위반 시 nickel export 자체가 실패.
+
+let NonEmpty = std.contract.from_predicate (fun s => std.string.length s > 0)
+in
+let ValidGroup = [| 'init, 'infra, 'auto, 'dev, 'finder, 'system, 'other |]
+in
+
+let Button = {
+  command | NonEmpty,    # 빈 command 금지
+  label | NonEmpty,      # 빈 label 금지
+  key | String | default = "",
+}
 in
 let KeyBinding = {
-  key | String, label | String, command | String,
+  key | NonEmpty,        # 빈 key 금지
+  label | NonEmpty,
+  command | NonEmpty,
   args | Array String | default = [],
   confirm | Bool | default = false,
   reload | Bool | default = true,
 }
 in
-# 편집 가능 필드 — TUI에서 'e' 키로 인라인 수정.
-# field: KV 상태 항목의 key (표시 이름과 매칭)
-# command: 수정값을 전달할 CLI 서브커맨드
-# args: 명령 인자 템플릿. ${value}가 사용자 입력으로 치환됨
 let Editable = {
-  field | String,
-  label | String,
-  command | String,
+  field | NonEmpty,
+  label | NonEmpty,
+  command | NonEmpty,
   args | Array String | default = ["${value}"],
 }
 in
 let Domain = {
-  name | String,
-  description | String,
+  name | NonEmpty,
+  description | NonEmpty,
   enabled | Bool | default = true,
   tags | {
     product | [| 'init, 'infra, 'auto, 'dev, 'finder, 'system |],
@@ -34,9 +44,9 @@ let Domain = {
   requires | Array String | default = [],
   provides | Array String | default = [],
   i18n | {
-    label | String,
-    icon | String | default = "",
-    group | String,
+    label | NonEmpty,    # 한글 라벨 필수
+    icon | NonEmpty,     # 아이콘 필수
+    group | std.enum.TagOrString,  # 그룹 필수
     sections | { _ : String } | default = {},
     buttons | Array Button | default = [],
     keybindings | Array KeyBinding | default = [],
@@ -358,16 +368,29 @@ in
         ],
       },
     } | Domain,
+
+    obsidian = {
+      name = "obsidian",
+      description = "Obsidian 볼트 동기화 + 플러그인 관리",
+      tags = { product = 'dev, layer = 'local },
+      provides = ["obsidian status"],
+      i18n = {
+        label = "Obsidian 관리", icon = "📝", group = "dev",
+        buttons = [
+          { command = "status", label = "상태 확인", key = "s" },
+        ],
+      },
+    } | Domain,
   },
 
   bundles = {
     init = ["bootstrap"],
     infra = ["mount", "env", "host"],
     auto = ["cron", "files", "sd-backup"],
-    dev = ["git", "vscode", "container"],
+    dev = ["git", "vscode", "container", "obsidian"],
     finder = ["quickaction"],
     system = ["keyboard", "shell", "wireguard"],
     full = ["bootstrap", "mount", "env", "host", "cron", "files", "sd-backup",
-            "git", "vscode", "container", "quickaction", "keyboard", "shell", "wireguard"],
+            "git", "vscode", "container", "quickaction", "keyboard", "shell", "wireguard", "obsidian"],
   },
 }

@@ -207,6 +207,17 @@ pub fn editables_json(domain: &str) -> Vec<serde_json::Value> {
         .unwrap_or_default()
 }
 
+/// 전체 도메인 이름 목록. locale.json에서 읽음.
+pub fn get_all_domain_names() -> Vec<String> {
+    load_locale().as_ref()
+        .map(|l| {
+            let mut names: Vec<String> = l.domains.keys().cloned().collect();
+            names.sort();
+            names
+        })
+        .unwrap_or_default()
+}
+
 /// DNS 프리셋 전체 목록. locale.json의 dns_presets에서 읽음.
 pub fn dns_presets() -> HashMap<String, DnsPreset> {
     load_locale().as_ref()

@@ -110,21 +110,17 @@ fn asset_name(domain: &str) -> String {
     format!("mac-domain-{}-{}-apple-darwin.tar.gz", domain, arch())
 }
 
-fn known_domains() -> Vec<&'static str> {
+/// 도메인 목록. locale.json (ncl SSOT) 에서 읽음. 없으면 fallback.
+fn known_domains() -> Vec<String> {
+    let presets = mac_common::locale::get_all_domain_names();
+    if !presets.is_empty() { return presets; }
+    // locale.json 없을 때 fallback
     vec![
-        // 인입
-        "bootstrap",
-        // 인프라
-        "env", "mount", "host",
-        // 자동화
+        "bootstrap", "env", "mount", "host",
         "cron", "files", "sd-backup",
-        // 개발
         "git", "vscode", "container",
-        // Finder
-        "quickaction",
-        // 시스템
-        "keyboard", "shell", "wireguard",
-    ]
+        "quickaction", "keyboard", "shell", "wireguard",
+    ].into_iter().map(String::from).collect()
 }
 
 const LAUNCHAGENT_LABEL: &str = "com.mac-app-init.scheduler";
@@ -195,7 +191,7 @@ fn cmd_available() {
     println!("{:<20} {}", "DOMAIN", "STATUS");
     println!("{}", "─".repeat(40));
     for name in known_domains() {
-        let status = if installed.contains(&name) { "✓ installed" } else { "  available" };
+        let status = if installed.contains(&name.as_str()) { "✓ installed" } else { "  available" };
         println!("{:<20} {}", name, status);
     }
 }

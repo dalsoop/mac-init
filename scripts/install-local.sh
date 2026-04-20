@@ -11,6 +11,17 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEST="$HOME/.mac-app-init/domains"
 mkdir -p "$DEST"
 
+# ncl 스키마 검증 — 실패 시 빌드 중단
+if command -v nickel &>/dev/null; then
+  echo "▶ ncl 스키마 검증..."
+  if ! nickel export "$ROOT/ncl/domains.ncl" > "$HOME/.mac-app-init/locale.json" 2>&1; then
+    echo "✗ ncl/domains.ncl 스키마 위반 — 빌드 중단" >&2
+    echo "  nickel export ncl/domains.ncl 로 에러 확인" >&2
+    exit 1
+  fi
+  echo "  ✓ locale.json 갱신"
+fi
+
 build_and_copy() {
   local name="$1"
   local crate="mac-domain-$name"
