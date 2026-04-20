@@ -1920,3 +1920,99 @@ fn snapshot_section_menu_third() {
     let output = render_to_string(&mut app, 120, 20);
     insta::assert_snapshot!("section_menu_third", output);
 }
+
+// ═══════════════════════════════════════
+// 입력 모달 (editables) 테스트
+// ═══════════════════════════════════════
+
+#[test]
+fn edit_key_opens_modal_on_editable_field() {
+    use mac_host_tui::spec::EditableField;
+    struct EditRegistry;
+    impl Registry for EditRegistry {
+        fn installed_domains(&self) -> Vec<String> { vec!["git".into()] }
+        fn available_domains(&self) -> Vec<String> { vec!["git".into()] }
+        fn fetch_spec(&self, _: &str) -> Option<DomainSpec> {
+            Some(DomainSpec {
+                tab: TabInfo { label: "Git".into(), label_ko: Some("Git 설정".into()), icon: Some("🔱".into()), description: None },
+                group: Some("dev".into()),
+                sections: vec![
+                    Section::KeyValue {
+                        title: "상태".to_string(),
+                        items: vec![
+                            KvItem { key: "user.name".into(), value: "✓ testuser".into(),
+                                status: Some("ok".into()), data: Default::default() },
+                            KvItem { key: "user.email".into(), value: "✓ test@test.com".into(),
+                                status: Some("ok".into()), data: Default::default() },
+                        ],
+                    },
+                ],
+                keybindings: vec![], list_section: None,
+                refresh_interval: 0, editables: vec![
+                    EditableField {
+                        field: "user.name".into(), label: "Git 사용자 이름".into(),
+                        command: "profile".into(), args: vec!["--name".into(), "${value}".into()],
+                    },
+                    EditableField {
+                        field: "user.email".into(), label: "Git 이메일".into(),
+                        command: "profile".into(), args: vec!["--email".into(), "${value}".into()],
+                    },
+                ],
+                usage: None,
+            })
+        }
+        fn run_action(&self, _: &str, cmd: &str, args: &[String]) -> String {
+            format!("[mock] {} {}\n", cmd, args.join(" "))
+        }
+        fn install_domain(&self, _: &str) -> String { String::new() }
+        fn remove_domain(&self, _: &str) -> String { String::new() }
+    }
+
+    let mut app = App::with_registry(Arc::new(EditRegistry));
+    app.load();
+    app.selected_tab = 1;
+    app.focus = Focus::Content;
+    app.content_section = 0;
+    app.focus_button = 0; // user.name 선택
+
+    // 모달 없음
+    assert!(app.input_modal.is_none());
+
+    // 'e' 키
+    app.handle_key(key(KeyCode::Char('e')));
+
+    // 모달 열림
+    assert!(app.input_modal.is_some());
+    let modal = app.input_modal.as_ref().unwrap();
+    assert_eq!(modal.label, "Git 사용자 이름");
+    assert_eq!(modal.command, "profile");
+    // pre-fill: "✓ testuser" → "testuser"
+    assert_eq!(modal.input.value(), "testuser");
+}
+
+#[test]
+fn edit_key_noop_on_non_editable() {
+    let mut app = make_app();
+    app.selected_tab = 1;
+    app.focus = Focus::Content;
+    app.content_section = 0;
+
+    app.handle_key(key(KeyCode::Char('e')));
+    // editables가 비어있으므로 모달 안 열림
+    assert!(app.input_modal.is_none());
+}
+
+#[test]
+fn modal_esc_cancels() {
+    let mut app = make_app();
+    app.input_modal = Some(mac_host_tui::app::InputModal {
+        label: "test".into(),
+        input: tui_input::Input::default(),
+        domain: "git".into(),
+        command: "profile".into(),
+        args_template: vec!["--name".into(), "${value}".into()],
+    });
+
+    app.handle_key(key(KeyCode::Esc));
+    assert!(app.input_modal.is_none());
+}
