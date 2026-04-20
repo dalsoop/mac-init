@@ -136,17 +136,19 @@ fn is_setup_done() -> bool {
 fn main() {
     // 인자 없이 `mai` 만 실행 → TUI
     if std::env::args().len() <= 1 {
-        let tui = PathBuf::from(home()).join(".local/bin/mai-tui");
-        if tui.exists() {
-            let err = std::os::unix::process::CommandExt::exec(
-                Command::new(&tui).args(std::env::args().skip(1))
-            );
-            eprintln!("TUI 실행 실패: {}", err);
-            std::process::exit(1);
-        } else {
-            eprintln!("mai-tui 미설치. `mai setup` 으로 설치하세요.");
-            std::process::exit(1);
+        let candidates = [
+            domains_dir().join("mai-tui"),
+            PathBuf::from(home()).join(".local/bin/mai-tui"),
+        ];
+        for tui in &candidates {
+            if tui.exists() {
+                let err = std::os::unix::process::CommandExt::exec(&mut Command::new(tui));
+                eprintln!("TUI 실행 실패: {}", err);
+                std::process::exit(1);
+            }
         }
+        eprintln!("TUI 미설치. `mai setup` 으로 설치하세요.");
+        std::process::exit(1);
     }
 
     let cli = Cli::parse();
@@ -526,23 +528,22 @@ fn cmd_setup() {
     { use std::os::unix::fs::PermissionsExt; let _ = fs::set_permissions(&cards_dir, fs::Permissions::from_mode(0o700)); }
     println!("[1] ✓ 디렉토리 생성");
 
-    // 2. mai-tui 설치
-    let tui_path = PathBuf::from(home()).join(".local/bin/mai-tui");
+    // 2. TUI 설치 (domains 디렉터리에 — 사용자 PATH에 노출 안 함)
+    let tui_path = domains_dir().join("mai-tui");
     if !tui_path.exists() {
-        println!("[2] mai-tui 설치 중...");
+        println!("[2] TUI 설치 중...");
         let target = if cfg!(target_arch = "aarch64") { "aarch64-apple-darwin" } else { "x86_64-apple-darwin" };
         let url = format!("https://github.com/{}/releases/latest/download/mai-tui-{}.tar.gz", GITHUB_REPO, target);
-        let bin_dir = PathBuf::from(home()).join(".local/bin");
         let status = Command::new("bash")
-            .args(["-c", &format!("curl -sfL '{}' | tar xz -C '{}'", url, bin_dir.display())])
+            .args(["-c", &format!("curl -sfL '{}' | tar xz -C '{}'", url, domains_dir().display())])
             .status();
         if status.map(|s| s.success()).unwrap_or(false) {
-            println!("    ✓ mai-tui 설치 완료");
+            println!("    ✓ TUI 설치 완료");
         } else {
-            println!("    ⚠ mai-tui 설치 실패 (mai upgrade 로 재시도)");
+            println!("    ⚠ TUI 설치 실패 (mai upgrade 로 재시도)");
         }
     } else {
-        println!("[2] ✓ mai-tui 이미 설치됨");
+        println!("[2] ✓ TUI 이미 설치됨");
     }
 
     // 3. 핵심 도메인 설치
