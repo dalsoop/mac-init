@@ -9,7 +9,7 @@ name = "mac_host_tui"
 path = "src/lib.rs"
 
 [[bin]]
-name = "mac-tui"
+name = "mai-tui"
 path = "src/main.rs"
 
 [dependencies]

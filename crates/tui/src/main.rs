@@ -33,14 +33,14 @@ async fn main() -> Result<()> {
                         println!("✓ 업데이트 완료. TUI를 재시작합니다.\n");
                         // exec()로 자기 교체 — 새 바이너리로 재시작
                         let err = std::os::unix::process::CommandExt::exec(
-                            Command::new(std::env::current_exe().unwrap_or_else(|_| "mac-tui".into()))
+                            Command::new(std::env::current_exe().unwrap_or_else(|_| "mai-tui".into()))
                                 .args(std::env::args().skip(1))
                         );
                         eprintln!("재시작 실패: {}", err);
                         std::process::exit(1);
                     }
                     _ => {
-                        eprintln!("✗ 업데이트 실패. 수동: mac upgrade");
+                        eprintln!("✗ 업데이트 실패. 수동: mai upgrade");
                         std::process::exit(1);
                     }
                 }

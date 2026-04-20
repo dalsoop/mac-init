@@ -969,7 +969,7 @@ fn cmd_auto() {
     // 실패가 있으면 macOS 알림.
     if failed_count > 0 || quarantined_count > 0 {
         let msg = format!(
-            "마운트 실패 {}개, quarantine {}개. `mac-tui` 또는 `mai run mount auto-status` 로 확인.",
+            "마운트 실패 {}개, quarantine {}개. `mai-tui` 또는 `mai run mount auto-status` 로 확인.",
             failed_count, quarantined_count
         );
         notify("mac-app-init: Mount", &msg);

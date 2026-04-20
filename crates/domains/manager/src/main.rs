@@ -511,23 +511,23 @@ fn cmd_setup() {
     { use std::os::unix::fs::PermissionsExt; let _ = fs::set_permissions(&cards_dir, fs::Permissions::from_mode(0o700)); }
     println!("[1] ✓ 디렉토리 생성");
 
-    // 2. mac-tui 설치
-    let tui_path = PathBuf::from(home()).join(".local/bin/mac-tui");
+    // 2. mai-tui 설치
+    let tui_path = PathBuf::from(home()).join(".local/bin/mai-tui");
     if !tui_path.exists() {
-        println!("[2] mac-tui 설치 중...");
+        println!("[2] mai-tui 설치 중...");
         let target = if cfg!(target_arch = "aarch64") { "aarch64-apple-darwin" } else { "x86_64-apple-darwin" };
-        let url = format!("https://github.com/{}/releases/latest/download/mac-tui-{}.tar.gz", GITHUB_REPO, target);
+        let url = format!("https://github.com/{}/releases/latest/download/mai-tui-{}.tar.gz", GITHUB_REPO, target);
         let bin_dir = PathBuf::from(home()).join(".local/bin");
         let status = Command::new("bash")
             .args(["-c", &format!("curl -sfL '{}' | tar xz -C '{}'", url, bin_dir.display())])
             .status();
         if status.map(|s| s.success()).unwrap_or(false) {
-            println!("    ✓ mac-tui 설치 완료");
+            println!("    ✓ mai-tui 설치 완료");
         } else {
-            println!("    ⚠ mac-tui 설치 실패 (mai upgrade 로 재시도)");
+            println!("    ⚠ mai-tui 설치 실패 (mai upgrade 로 재시도)");
         }
     } else {
-        println!("[2] ✓ mac-tui 이미 설치됨");
+        println!("[2] ✓ mai-tui 이미 설치됨");
     }
 
     // 3. 핵심 도메인 설치
@@ -606,7 +606,7 @@ fn cmd_setup() {
 
     println!("\n=== ✓ 셋업 완료 ===");
     println!("");
-    println!("  mac-tui              TUI 실행");
+    println!("  mai-tui              TUI 실행");
     println!("  mai available        도메인 목록");
     println!("  mai install <name>   추가 도메인 설치");
     println!("  mai upgrade          전체 업그레이드");

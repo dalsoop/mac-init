@@ -11,29 +11,29 @@ curl -fsSL https://raw.githubusercontent.com/dalsoop/mac-app-init/main/install.s
 ## 시작
 
 ```bash
-mac setup                  # 자동 업데이트 등록
-mac install bootstrap      # 의존성 확인 (brew, gh, dotenvx, nickel, rust)
-mac install tmux           # tmux topbar 도메인 설치
-mac install keyboard       # 도메인 설치
-mac doctor                 # 상태 확인
+mai setup                  # 자동 업데이트 등록
+mai install bootstrap      # 의존성 확인 (brew, gh, dotenvx, nickel, rust)
+mai install tmux           # tmux topbar 도메인 설치
+mai install keyboard       # 도메인 설치
+mai doctor                 # 상태 확인
 ```
 
 ## 사용
 
 ```bash
 # 도메인 관리
-mac available              # 사용 가능한 도메인
-mac install <domain>       # 설치 (GitHub Release에서 다운)
+mai available              # 사용 가능한 도메인
+mai install <domain>       # 설치 (GitHub Release에서 다운)
 mac remove <domain>        # 삭제
 mac update <domain>        # 업데이트
-mac upgrade                # 전체 업그레이드
+mai upgrade                # 전체 업그레이드
 
 # 도메인 실행
-mac run tmux setup
-mac run tmux topbar
-mac run keyboard status
-mac run cron list
-mac run connect add proxmox
+mai run tmux setup
+mai run tmux topbar
+mai run keyboard status
+mai run cron list
+mai run connect add proxmox
 
 # TUI
 mac-host-tui               # 시각적 관리

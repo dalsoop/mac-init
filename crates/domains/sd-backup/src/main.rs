@@ -254,7 +254,7 @@ struct DetectedCard {
 
 /// /Volumes/ 스캔해서 DCIM 있는 볼륨 감지 + 기기 판별
 /// SD 카드 감지. 별도 프로세스로 격리 — D 상태 전파 차단.
-/// 자식 프로세스가 SD I/O에 stuck돼도 부모(mac-tui/watch)는 안전.
+/// 자식 프로세스가 SD I/O에 stuck돼도 부모(mai-tui/watch)는 안전.
 fn detect_cards() -> Vec<DetectedCard> {
     use std::time::Duration;
 
