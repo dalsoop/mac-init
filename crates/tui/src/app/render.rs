@@ -23,26 +23,13 @@ impl App {
         self.render_content(frame, main[1]);
 
         // 하단 키 안내
-        let hints_str;
         let hints = if self.input_modal.is_some() {
             "Enter 확인 │ Esc 취소"
         } else {
             match self.focus {
                 Focus::Sidebar => "↑↓ 이동 │ Enter/→ 선택 │ r 새로고침 │ Esc 종료",
                 Focus::SectionMenu => "↑↓ 섹션 │ Enter/→ 콘텐츠 │ ←/Esc 뒤로 │ r 새로고침",
-                Focus::Content => {
-                    let mut kb_hints = String::from("↑↓ 항목 │ Tab 섹션 │ ←/Esc 뒤로");
-                    if self.selected_tab > 0 {
-                        let idx = self.selected_tab - 1;
-                        if let Some(Some(spec)) = self.specs.get(idx) {
-                            for kb in &spec.keybindings {
-                                kb_hints.push_str(&format!(" │ {} {}", kb.key, kb.label));
-                            }
-                        }
-                    }
-                    hints_str = kb_hints;
-                    &hints_str
-                }
+                Focus::Content => "↑↓ 항목 │ Enter 실행 │ e 수정 │ Tab 섹션 │ ←/Esc 뒤로",
             }
         };
         frame.render_widget(

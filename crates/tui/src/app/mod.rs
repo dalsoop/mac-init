@@ -348,7 +348,6 @@ impl App {
                 }
                 KeyCode::Enter => self.activate_button(),
                 KeyCode::Char('e') => self.open_edit_modal(),
-                KeyCode::Char(c) => self.activate_by_key(c),
                 _ => {}
             }
         }
@@ -510,63 +509,6 @@ impl App {
         self.run_action_bg(domain_id, &domain, &command, &args, true);
     }
 
-    fn activate_by_key(&mut self, ch: char) {
-        if self.action_running { return; }
-        // 1) keybindings 우선 매치
-        if self.activate_keybinding(ch) { return; }
-        // 2) 버튼 key 매치 (legacy)
-        let (domain, command, args) = {
-            let Some((domain, buttons)) = self.current_buttons() else { return; };
-            let Some(b) = buttons.iter().find(|b| b.key.as_deref() == Some(&ch.to_string())) else { return; };
-            (domain.to_string(), b.command.clone(), b.args.clone())
-        };
-        let domain_id = self.active_domain_id().unwrap_or(DomainId(0));
-        self.output = format!("실행 중: {} {} …\n", domain, command);
-        self.run_action_bg(domain_id, &domain, &command, &args, true);
-    }
-
-    fn activate_keybinding(&mut self, ch: char) -> bool {
-        if self.selected_tab == 0 { return false; }
-        if self.action_running { return false; }
-        let domain_idx = self.selected_tab - 1;
-        let Some(spec) = self.specs[domain_idx].as_ref() else { return false; };
-        let key_str = ch.to_string();
-        let kb = match spec.keybindings.iter().find(|k| k.key == key_str) {
-            Some(k) => k.clone(),
-            None => return false,
-        };
-        let domain = self.domains[domain_idx].clone();
-
-        // 템플릿 치환
-        let selected_data = template::selected_item_data(spec, self.content_section, self.focus_button);
-        let args: Vec<String> = kb.args.iter()
-            .map(|a| template::resolve_template(a, &selected_data))
-            .collect();
-
-        // ${prompt:라벨}이 있으면 -> InputModal로 사용자 입력 받기
-        if let Some(prompt_idx) = args.iter().position(|a| a.starts_with("${prompt:")) {
-            let prompt_label = args[prompt_idx]
-                .trim_start_matches("${prompt:")
-                .trim_end_matches('}')
-                .to_string();
-            let mut args_template = args.clone();
-            args_template[prompt_idx] = "${value}".to_string();
-
-            self.input_modal = Some(InputModal {
-                label: prompt_label,
-                input: Input::default(),
-                domain,
-                command: kb.command,
-                args_template,
-            });
-            return true;
-        }
-
-        let domain_id = DomainId(domain_idx);
-        self.output = format!("[{}] 실행 중: {} {} …\n", kb.label, kb.command, args.join(" "));
-        self.run_action_bg(domain_id, &domain, &kb.command, &args, kb.reload);
-        true
-    }
 
     fn run_action_bg(&mut self, id: DomainId, domain: &str, command: &str, args: &[String], reload: bool) {
         self.action_rx = Some(async_ops::spawn_action(id, domain, command, args, reload, &self.reg));

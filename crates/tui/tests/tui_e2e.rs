@@ -525,54 +525,8 @@ fn content_jk_moves_focus_button() {
     assert_eq!(app.focus_button, 0);
 }
 
-#[test]
-fn button_key_triggers_action() {
-    let mut app = make_app();
-    navigate_to_mount(&mut app);
-    app.handle_key(key(KeyCode::Enter)); // Content 진입
 
-    // 's' 키 → Status 버튼 실행
-    app.handle_key(key(KeyCode::Char('s')));
-    assert!(app.action_running);
-    assert!(app.output.contains("실행 중"));
 
-    std::thread::sleep(std::time::Duration::from_millis(50));
-    app.poll_action();
-    assert!(!app.action_running);
-    assert!(app.output.contains("[mock]"));
-}
-
-#[test]
-fn action_running_blocks_additional_actions() {
-    let mut app = make_app();
-    navigate_to_mount(&mut app);
-    app.handle_key(key(KeyCode::Enter)); // Content 진입
-
-    app.handle_key(key(KeyCode::Char('s')));
-    assert!(app.action_running);
-    let output_after_first = app.output.clone();
-
-    app.handle_key(key(KeyCode::Char('l')));
-    assert_eq!(app.output, output_after_first);
-
-    std::thread::sleep(std::time::Duration::from_millis(50));
-    app.poll_action();
-}
-
-#[test]
-fn keybinding_with_template() {
-    let mut app = make_app();
-    navigate_to_mount(&mut app);
-    app.handle_key(key(KeyCode::Enter)); // Content 진입
-
-    app.handle_key(key(KeyCode::Char('T')));
-    assert!(app.action_running);
-    assert!(app.output.contains("토글"));
-
-    std::thread::sleep(std::time::Duration::from_millis(50));
-    app.poll_action();
-    assert!(app.output.contains("[mock]"));
-}
 
 #[test]
 fn mouse_click_selects_domain() {
@@ -959,29 +913,6 @@ fn rapid_domain_switching() {
 }
 
 /// 액션 실행 중 Esc로 사이드바 복귀 → action_rx 유실 안 되는지
-#[test]
-fn esc_during_action_preserves_action() {
-    let mut app = make_app();
-    navigate_to_mount(&mut app);
-    app.handle_key(key(KeyCode::Enter)); // Content 진입
-    // 액션 실행
-    app.handle_key(key(KeyCode::Char('s')));
-    assert!(app.action_running);
-
-    // Esc → SectionMenu → Esc → Sidebar
-    app.handle_key(key(KeyCode::Esc));
-    assert_eq!(app.focus, Focus::SectionMenu);
-    app.handle_key(key(KeyCode::Esc));
-    assert_eq!(app.focus, Focus::Sidebar);
-    // 액션은 여전히 실행 중
-    assert!(app.action_running);
-
-    // poll로 완료
-    std::thread::sleep(std::time::Duration::from_millis(50));
-    app.poll_action();
-    assert!(!app.action_running);
-    assert!(app.output.contains("[mock]"));
-}
 
 /// resolve_template 단위 테스트
 #[test]
@@ -1336,53 +1267,6 @@ fn render_many_kv_items() {
 // ═══════════════════════════════════════
 
 /// keybinding과 button key가 같을 때 keybinding이 우선
-#[test]
-fn keybinding_takes_priority_over_button_key() {
-    struct ConflictRegistry;
-    impl Registry for ConflictRegistry {
-        fn installed_domains(&self) -> Vec<String> { vec!["test".into()] }
-        fn available_domains(&self) -> Vec<String> { vec!["test".into()] }
-        fn fetch_spec(&self, _: &str) -> Option<DomainSpec> {
-            Some(DomainSpec {
-                tab: TabInfo { label: "Test".into(), label_ko: None, icon: None, description: None },
-                group: Some("other".into()),
-                sections: vec![
-                    Section::Buttons {
-                        title: "Actions".into(),
-                        items: vec![
-                            Button { label: "Button-S".into(), command: "button-cmd".into(), args: vec![], key: Some("s".into()) },
-                        ],
-                    },
-                ],
-                keybindings: vec![
-                    KeyBinding {
-                        key: "s".into(), label: "Keybind-S".into(), command: "kb-cmd".into(),
-                        args: vec![], confirm: false, reload: true,
-                    },
-                ],
-                list_section: None, refresh_interval: 0, editables: vec![], usage: None,
-            })
-        }
-        fn run_action(&self, _: &str, cmd: &str, _: &[String]) -> String {
-            format!("ran:{}\n", cmd)
-        }
-        fn install_domain(&self, _: &str) -> String { String::new() }
-        fn remove_domain(&self, _: &str) -> String { String::new() }
-    }
-    let mut app = App::with_registry(Arc::new(ConflictRegistry));
-    app.load();
-    app.selected_tab = 1;
-    app.focus = Focus::Content;
-
-    app.handle_key(key(KeyCode::Char('s')));
-    // keybinding이 우선 → "Keybind-S" label이 output에
-    assert!(app.output.contains("Keybind-S"));
-    assert!(!app.output.contains("Button-S"));
-
-    std::thread::sleep(std::time::Duration::from_millis(50));
-    app.poll_action();
-    assert!(app.output.contains("ran:kb-cmd"));
-}
 
 // ═══════════════════════════════════════
 // poll_bg_loading 흐름
@@ -1796,31 +1680,6 @@ fn env_cards_focus_renders_marker() {
     assert!(!synology_line.contains("▸"), "synology 줄에 아직 ▸ 있음");
 }
 
-/// env Cards에서 keybinding R로 readonly 토글 → ${selected.name} 치환 확인
-#[test]
-fn env_cards_keybinding_uses_selected() {
-    let mut app = make_env_app();
-    app.selected_tab = 1;
-    app.focus = Focus::Content;
-    app.content_section = 0;
-
-    // truenas 선택 (index 1)
-    app.handle_key(key(KeyCode::Down));
-    assert_eq!(app.focus_button, 1);
-
-    // R → readonly 토글 keybinding
-    app.handle_key(key(KeyCode::Char('R')));
-    assert!(app.action_running);
-    // output에 truenas가 있어야 함 (${selected.name} 치환)
-    assert!(app.output.contains("truenas") || app.output.contains("readonly"),
-        "output에 선택된 카드 정보 없음: {}", app.output);
-
-    std::thread::sleep(std::time::Duration::from_millis(50));
-    app.poll_action();
-    // mock에서 set-option truenas readonly false 실행됨
-    assert!(app.output.contains("set-option"), "set-option 명령 없음: {}", app.output);
-    assert!(app.output.contains("truenas"), "truenas 이름 없음: {}", app.output);
-}
 
 /// Tab으로 Actions 섹션 이동 후 ↑↓, 다시 Cards로 돌아왔을 때 focus_button 리셋
 #[test]
