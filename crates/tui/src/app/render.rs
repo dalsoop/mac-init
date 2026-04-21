@@ -211,13 +211,13 @@ impl App {
             frame.render_widget(
                 Paragraph::new(vec![
                     Line::from(""),
-                    Line::from(Span::styled("  `mac` 바이너리를 찾을 수 없거나 사용 가능한 도메인이 없습니다.", Style::default().fg(Color::Yellow))),
+                    Line::from(Span::styled("  `mai` 바이너리를 찾을 수 없거나 사용 가능한 도메인이 없습니다.", Style::default().fg(Color::Yellow))),
                     Line::from(""),
-                    Line::from(Span::styled("  터미널에서:  mac available", Style::default().fg(Color::Cyan))),
+                    Line::from(Span::styled("  터미널에서:  mai available", Style::default().fg(Color::Cyan))),
                 ]).block(
                     Block::default().borders(Borders::ALL)
                         .border_style(Style::default().fg(Color::DarkGray))
-                        .title(" Install "),
+                        .title(" 도메인 현황 "),
                 ),
                 chunks[0],
             );
@@ -292,11 +292,21 @@ impl App {
             );
         }
 
+        let output = if self.output.is_empty() {
+            format!(
+                "Enter/Space: 설치 또는 제거\nr: 새로고침\n\n현재 설치: {}개\n사용 가능 목록: {}개\n\n문제 점검: mai doctor",
+                self.domains.len(),
+                self.available.len(),
+            )
+        } else {
+            self.output.clone()
+        };
+
         frame.render_widget(
-            Paragraph::new(self.output.as_str()).wrap(Wrap { trim: true }).block(
+            Paragraph::new(output).wrap(Wrap { trim: true }).block(
                 Block::default().borders(Borders::ALL)
                     .border_style(Style::default().fg(Color::DarkGray))
-                    .title(" Output — Enter/Space: 설치·삭제 토글 "),
+                    .title(" 설치 / 상태 "),
             ),
             chunks[1],
         );

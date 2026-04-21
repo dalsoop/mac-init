@@ -470,9 +470,9 @@ impl App {
     fn toggle_install(&mut self) {
         let Some(name) = self.available.get(self.install_focus).cloned() else { return; };
         let msg = if self.is_installed(&name) {
-            format!("Removing {}...\n", name)
+            format!("제거 중: {}...\n", name)
         } else {
-            format!("Installing {}...\n", name)
+            format!("설치 중: {}...\n", name)
         };
         self.output = msg;
         let result = if self.is_installed(&name) {
