@@ -9,9 +9,10 @@
 - [ ] `Cargo.toml` + `src/main.rs` 작성
 - [ ] 루트 `Cargo.toml` workspace members에 자동 포함됨 (`crates/domains/*`)
 - [ ] `tui-spec` 서브커맨드 추가
-- [ ] `crates/domains/manager/src/main.rs` 의 `known_domains()` 에 이름 추가
+- [ ] `ncl/domains.ncl` 에 도메인 메타데이터 추가
+- [ ] 필요 시 `crates/domains/manager/src/main.rs` 의 locale fallback 목록도 동기화
 - [ ] `.github/workflows/release-domains.yml` 의 `matrix.domain` 에 이름 추가
-- [ ] (선택) `ncl/domains.ncl` 에 메타데이터 추가
+- [ ] 버튼과 `provides` 목록이 서로 맞는지 확인
 - [ ] 빌드·테스트 → 커밋 → 태그 → 릴리스
 
 ## 2. 디렉터리 구조
@@ -159,14 +160,16 @@ TUI 환경에서는 `read_line` 등 대화형 입력이 동작하지 않는다.
 
 ## 6. manager 등록
 
-`crates/domains/manager/src/main.rs` 의 `known_domains()` 에 이름 추가:
+기본 경로는 `ncl/domains.ncl` 이고, `mai` 는 여기서 도메인 목록을 읽는다.
+다만 locale 생성 전 fallback 경로도 유지하려면 `crates/domains/manager/src/main.rs` 의
+`known_domains()` fallback 목록도 같이 맞춰 둔다.
 
 ```rust
-fn known_domains() -> Vec<&'static str> {
+fn known_domains() -> Vec<String> {
     vec![
-        "bootstrap", "keyboard", // ...
-        "<name>",  // ← 추가
-    ]
+        "bootstrap", "env", "mount", "host",
+        "<name>",
+    ].into_iter().map(String::from).collect()
 }
 ```
 
@@ -188,17 +191,20 @@ matrix:
 # 빌드
 cargo build --release -p mac-domain-<name>
 
-# 로컬 설치 (릴리스 없이 테스트)
-cp target/release/mac-domain-<name> ~/.mac-app-init/domains/
+# 메타데이터 검증
+nickel export ncl/domains.ncl > /tmp/mai-locale-check.json
 
-# registry.json 에 수동 등록 (또는 릴리스 후 mai install)
-# 실제로는 릴리스 찍고 `mai install <name>` 사용 권장
+# 로컬 설치 (릴리스 없이 테스트)
+bash scripts/install-local.sh manager <name>
 
 # tui-spec 검증
 ~/.mac-app-init/domains/mac-domain-<name> tui-spec | jq .
 
+# manager 경유 실행 검증
+~/.local/bin/mai run <name> status
+
 # TUI에서 확인
-mai-tui
+~/.local/bin/mai
 ```
 
 ## 9. 릴리스
@@ -219,6 +225,6 @@ mai upgrade
 ## 10. 참고: 기존 도메인
 
 - **순수 상태 조회형**: `keyboard`, `vscode`, `wireguard` — `tui-spec` 에 실제 상태 프로브
-- **테이블 렌더형**: `connect`, `dotfiles`, `cron`, `quickaction` — 데이터 파일 읽어 table 섹션
-- **액션 위주**: `files`, `projects`, `worktree` — text + buttons 조합
+- **테이블 렌더형**: `env`, `cron`, `quickaction`, `proxmox` — 데이터 파일/원격 상태를 table 섹션으로 노출
+- **액션 위주**: `files`, `shell`, `tmux` — text + buttons 조합
 - **복잡한 설치형**: `bootstrap`, `container` — `Command::new` 로 brew/docker 등 프로브
