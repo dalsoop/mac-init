@@ -51,10 +51,12 @@ mac-host-tui               # 시각적 관리
 
 repo 안의 `portable/mai/` 는 `mai` 설정의 SSOT 이다.
 
-- `portable/mai/cards/*.json`: 카드 1장 안에 연결 메타 + mount 선언 + bind 선언을 함께 저장
+- `portable/mai/cards/enabled/*.json`: 현재 `mai`가 관리하는 카드
+- `portable/mai/cards/disabled/*.json`: 정의는 있지만 현재 관리하지 않는 카드
 - `portable/mai/dotenvx.env`: 암호화된 dotenvx secrets seed (선택)
 
 카드 형식은 `ncl/cards.ncl` 계약으로 강제된다. 형식이 어긋나면 `nickel eval ncl/cards.ncl` 과 CI의 `ncl-validate` 단계가 실패한다.
+카드의 관리 여부는 `enabled/disabled` 디렉터리 위치로 결정된다.
 
 새 맥에서는 repo를 받은 뒤 `mai setup` 을 실행하면 현재 repo의 `portable/mai/` 를 설정 원본으로 기록한다.
 이후 `env`, `mount`, `proxmox` 도메인은 `portable/mai/` 를 직접 읽고 쓰며, `~/.mac-app-init/` 는 런타임 상태와 캐시만 유지한다.

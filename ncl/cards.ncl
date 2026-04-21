@@ -54,10 +54,10 @@ let Card = {
 in
 {
   cards = {
-    kvm = (import "../portable/mai/cards/kvm.json") | Card,
-    proxmox50 = (import "../portable/mai/cards/proxmox50.json") | Card,
-    proxmox60 = (import "../portable/mai/cards/proxmox60.json") | Card,
-    synology = (import "../portable/mai/cards/synology.json") | Card,
-    truenas = (import "../portable/mai/cards/truenas.json") | Card,
+    kvm = (import "../portable/mai/cards/enabled/kvm.json") | Card,
+    proxmox50 = (import "../portable/mai/cards/enabled/proxmox50.json") | Card,
+    proxmox60 = (import "../portable/mai/cards/enabled/proxmox60.json") | Card,
+    synology = (import "../portable/mai/cards/enabled/synology.json") | Card,
+    truenas = (import "../portable/mai/cards/enabled/truenas.json") | Card,
   },
 }

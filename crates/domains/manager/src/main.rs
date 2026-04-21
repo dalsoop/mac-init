@@ -73,9 +73,16 @@ enum Commands {
 #[derive(Subcommand)]
 enum CardAction {
     /// 카드 목록
-    List,
+    List {
+        #[arg(long)]
+        all: bool,
+    },
     /// 카드 상세
     Show { name: String },
+    /// 카드 활성화
+    Enable { name: String },
+    /// 카드 비활성화
+    Disable { name: String },
     /// 카드 mount entry 추가
     MountAdd {
         card: String,
@@ -128,31 +135,53 @@ fn registry_path() -> PathBuf {
     domains_dir().join("registry.json")
 }
 
-fn cards_root() -> PathBuf {
-    mac_common::paths::ssot_cards_dir()
+fn enabled_cards_dir() -> PathBuf {
+    mac_common::paths::ssot_enabled_cards_dir()
+}
+
+fn disabled_cards_dir() -> PathBuf {
+    mac_common::paths::ssot_disabled_cards_dir()
+}
+
+fn enabled_card_path(name: &str) -> PathBuf {
+    enabled_cards_dir().join(format!("{}.json", name))
+}
+
+fn disabled_card_path(name: &str) -> PathBuf {
+    disabled_cards_dir().join(format!("{}.json", name))
 }
 
 fn card_path(name: &str) -> PathBuf {
-    cards_root().join(format!("{}.json", name))
+    if enabled_card_path(name).exists() {
+        enabled_card_path(name)
+    } else if disabled_card_path(name).exists() {
+        disabled_card_path(name)
+    } else {
+        enabled_card_path(name)
+    }
 }
 
-fn list_cards() -> Vec<String> {
-    let dir = cards_root();
-    if !dir.exists() {
-        return Vec::new();
-    }
+fn list_cards(all: bool) -> Vec<String> {
     let mut cards = Vec::new();
-    if let Ok(it) = fs::read_dir(dir) {
-        for e in it.filter_map(|x| x.ok()) {
-            if e.path().extension().and_then(|s| s.to_str()) != Some("json") {
-                continue;
-            }
-            if let Some(stem) = e.path().file_stem().and_then(|s| s.to_str()) {
-                cards.push(stem.to_string());
+    let dirs = if all {
+        mac_common::paths::ssot_all_cards_dirs()
+    } else {
+        vec![enabled_cards_dir()]
+    };
+    for dir in dirs {
+        if let Ok(it) = fs::read_dir(dir) {
+            for e in it.filter_map(|x| x.ok()) {
+                if e.path().extension().and_then(|s| s.to_str()) != Some("json") {
+                    continue;
+                }
+                if let Some(stem) = e.path().file_stem().and_then(|s| s.to_str()) {
+                    cards.push(stem.to_string());
+                }
             }
         }
     }
     cards.sort();
+    cards.dedup();
     cards
 }
 
@@ -174,14 +203,19 @@ fn save_card_json(name: &str, value: &JsonValue) -> Result<(), String> {
     .map_err(|e| e.to_string())
 }
 
-fn cmd_card_list() {
-    let cards = list_cards();
+fn cmd_card_list(all: bool) {
+    let cards = list_cards(all);
     if cards.is_empty() {
         println!("카드가 없습니다.");
         return;
     }
     for card in cards {
-        println!("{}", card);
+        let state = if enabled_card_path(&card).exists() {
+            "enabled"
+        } else {
+            "disabled"
+        };
+        println!("{:<12} {}", state, card);
     }
 }
 
@@ -193,6 +227,48 @@ fn cmd_card_show(name: &str) {
             std::process::exit(1);
         }
     }
+}
+
+fn cmd_card_enable(name: &str) {
+    let src = disabled_card_path(name);
+    let dst = enabled_card_path(name);
+    if dst.exists() {
+        println!("이미 enabled: {}", name);
+        return;
+    }
+    if !src.exists() {
+        eprintln!("✗ 비활성 카드 없음: {}", name);
+        std::process::exit(1);
+    }
+    if let Some(parent) = dst.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    if let Err(e) = fs::rename(&src, &dst) {
+        eprintln!("✗ {} -> {} 이동 실패: {}", src.display(), dst.display(), e);
+        std::process::exit(1);
+    }
+    println!("✓ card enabled: {}", name);
+}
+
+fn cmd_card_disable(name: &str) {
+    let src = enabled_card_path(name);
+    let dst = disabled_card_path(name);
+    if dst.exists() {
+        println!("이미 disabled: {}", name);
+        return;
+    }
+    if !src.exists() {
+        eprintln!("✗ 활성 카드 없음: {}", name);
+        std::process::exit(1);
+    }
+    if let Some(parent) = dst.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    if let Err(e) = fs::rename(&src, &dst) {
+        eprintln!("✗ {} -> {} 이동 실패: {}", src.display(), dst.display(), e);
+        std::process::exit(1);
+    }
+    println!("✓ card disabled: {}", name);
 }
 
 fn cmd_card_mount_add(card: &str, share: &str, alias: Option<&str>) {
@@ -476,8 +552,10 @@ fn main() {
         Commands::Run { name, args } => cmd_run(&name, &args),
         Commands::Ssh { target } => cmd_ssh(&target),
         Commands::Card { action } => match action {
-            CardAction::List => cmd_card_list(),
+            CardAction::List { all } => cmd_card_list(all),
             CardAction::Show { name } => cmd_card_show(&name),
+            CardAction::Enable { name } => cmd_card_enable(&name),
+            CardAction::Disable { name } => cmd_card_disable(&name),
             CardAction::MountAdd { card, share, alias } => {
                 cmd_card_mount_add(&card, &share, alias.as_deref())
             }

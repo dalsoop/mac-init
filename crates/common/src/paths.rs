@@ -69,11 +69,44 @@ pub fn record_config_source(root: &Path) -> std::io::Result<()> {
     fs::write(config_source_path(), root.display().to_string())
 }
 
-/// 카드 SSOT 디렉터리. portable/mai/cards 가 있으면 그쪽이 원본.
-pub fn ssot_cards_dir() -> PathBuf {
+/// 카드 SSOT 루트 디렉터리.
+pub fn ssot_cards_root() -> PathBuf {
     portable_root()
         .map(|root| root.join("cards"))
         .unwrap_or_else(cards_dir)
+}
+
+/// 활성화된 카드 디렉터리.
+pub fn ssot_enabled_cards_dir() -> PathBuf {
+    let root = ssot_cards_root();
+    let enabled = root.join("enabled");
+    if enabled.exists() || root.join("disabled").exists() {
+        enabled
+    } else {
+        root
+    }
+}
+
+/// 비활성 카드 디렉터리.
+pub fn ssot_disabled_cards_dir() -> PathBuf {
+    ssot_cards_root().join("disabled")
+}
+
+/// 전체 카드 디렉터리들 (enabled 우선, 그다음 disabled).
+pub fn ssot_all_cards_dirs() -> Vec<PathBuf> {
+    let root = ssot_cards_root();
+    let enabled = root.join("enabled");
+    let disabled = root.join("disabled");
+    if enabled.exists() || disabled.exists() {
+        vec![enabled, disabled]
+    } else {
+        vec![root]
+    }
+}
+
+/// 런타임 도메인이 읽는 활성 카드 디렉터리.
+pub fn ssot_cards_dir() -> PathBuf {
+    ssot_enabled_cards_dir()
 }
 
 pub fn ssot_mount_config_path() -> PathBuf {
