@@ -33,10 +33,26 @@ struct CardBindMount {
 #[derive(Debug, Clone, Deserialize)]
 struct ProxmoxCard {
     name: String,
+    #[serde(default)]
+    kind: Option<String>,
     host: String,
     user: String,
     #[serde(default)]
     web_port: u16,
+    #[serde(default)]
+    bind_mounts: Vec<CardBindMount>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct LxcCard {
+    name: String,
+    #[serde(default)]
+    kind: Option<String>,
+    #[serde(default)]
+    proxmox_host: String,
+    #[allow(dead_code)]
+    #[serde(default)]
+    vmid: u64,
     #[serde(default)]
     bind_mounts: Vec<CardBindMount>,
 }
@@ -112,8 +128,8 @@ fn proxmox_web_port() -> u16 {
         &active_proxmox_web_port_key(),
         &active_proxmox_default_web_port().to_string(),
     )
-        .parse()
-        .unwrap_or(active_proxmox_default_web_port())
+    .parse()
+    .unwrap_or(active_proxmox_default_web_port())
 }
 
 fn proxmox_password_exists() -> bool {
@@ -138,7 +154,7 @@ struct BindMountRule {
 
 fn load_bind_mount_rules() -> Vec<BindMountRule> {
     let active = active_proxmox_card_name();
-    load_proxmox_cards()
+    let mut rules: Vec<BindMountRule> = load_proxmox_cards()
         .into_iter()
         .filter(|card| card.name == active)
         .flat_map(|card| {
@@ -149,7 +165,22 @@ fn load_bind_mount_rules() -> Vec<BindMountRule> {
                 readonly: bind.readonly,
             })
         })
-        .collect()
+        .collect();
+    rules.extend(load_lxc_cards_for_active().into_iter().flat_map(|card| {
+        let fallback_name = lxc_card_slug(&card.name);
+        card.bind_mounts.into_iter().map(move |bind| BindMountRule {
+            lxc: if bind.lxc.is_empty() {
+                fallback_name.clone()
+            } else {
+                bind.lxc
+            },
+            source: bind.source,
+            target: bind.target,
+            readonly: bind.readonly,
+        })
+    }));
+    rules.sort_by(|a, b| a.lxc.cmp(&b.lxc).then(a.target.cmp(&b.target)));
+    rules
 }
 
 fn save_bind_mount_rules(rules: &[BindMountRule]) -> Result<(), String> {
@@ -178,6 +209,136 @@ fn save_bind_mount_rules(rules: &[BindMountRule]) -> Result<(), String> {
         serde_json::to_string_pretty(&json).map_err(|e| e.to_string())?,
     )
     .map_err(|e| e.to_string())
+}
+
+fn lxc_card_slug(name: &str) -> String {
+    name.strip_prefix("lxc.").unwrap_or(name).to_string()
+}
+
+fn enabled_card_paths() -> Vec<PathBuf> {
+    let dir = paths::ssot_cards_dir();
+    let mut out = Vec::new();
+    if let Ok(it) = fs::read_dir(dir) {
+        for e in it.filter_map(|x| x.ok()) {
+            if e.path().extension().and_then(|s| s.to_str()) == Some("json") {
+                out.push(e.path());
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+fn load_lxc_cards_for_active() -> Vec<LxcCard> {
+    let active = active_proxmox_card_name();
+    let mut out = Vec::new();
+    for path in enabled_card_paths() {
+        let Ok(content) = fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(card) = serde_json::from_str::<LxcCard>(&content) else {
+            continue;
+        };
+        let is_lxc = card.kind.as_deref() == Some("lxc") || card.name.starts_with("lxc.");
+        if is_lxc && card.proxmox_host == active {
+            out.push(card);
+        }
+    }
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    out
+}
+
+fn find_lxc_card_path(active: &str, lxc: &str) -> Option<PathBuf> {
+    let candidates = [
+        paths::ssot_cards_dir().join(format!("lxc.{}.json", lxc)),
+        paths::ssot_cards_dir().join(format!("{}.json", lxc)),
+    ];
+    for path in candidates {
+        let Ok(content) = fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(card) = serde_json::from_str::<LxcCard>(&content) else {
+            continue;
+        };
+        let is_lxc = card.kind.as_deref() == Some("lxc") || card.name.starts_with("lxc.");
+        if is_lxc && card.proxmox_host == active {
+            return Some(path);
+        }
+    }
+    None
+}
+
+fn save_bind_mount_rule_to_lxc_card(active: &str, rule: &BindMountRule) -> Result<bool, String> {
+    let Some(path) = find_lxc_card_path(active, &rule.lxc) else {
+        return Ok(false);
+    };
+    let content = fs::read_to_string(&path).map_err(|e| format!("{}: {}", path.display(), e))?;
+    let mut json: serde_json::Value =
+        serde_json::from_str(&content).map_err(|e| format!("{}: {}", path.display(), e))?;
+    let obj = json
+        .as_object_mut()
+        .ok_or_else(|| format!("{} 카드 JSON object 아님", path.display()))?;
+    let arr = obj
+        .entry("bind_mounts")
+        .or_insert_with(|| serde_json::json!([]))
+        .as_array_mut()
+        .ok_or_else(|| format!("{} bind_mounts array 아님", path.display()))?;
+    if let Some(existing) = arr
+        .iter_mut()
+        .find(|entry| entry.get("target").and_then(|v| v.as_str()) == Some(&rule.target))
+    {
+        *existing = serde_json::json!({
+            "lxc": rule.lxc,
+            "source": rule.source,
+            "target": rule.target,
+            "readonly": rule.readonly,
+        });
+    } else {
+        arr.push(serde_json::json!({
+            "lxc": rule.lxc,
+            "source": rule.source,
+            "target": rule.target,
+            "readonly": rule.readonly,
+        }));
+    }
+    fs::write(
+        &path,
+        serde_json::to_string_pretty(&json).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+fn remove_bind_mount_rule_from_lxc_card(
+    active: &str,
+    lxc: &str,
+    target: &str,
+) -> Result<bool, String> {
+    let Some(path) = find_lxc_card_path(active, lxc) else {
+        return Ok(false);
+    };
+    let content = fs::read_to_string(&path).map_err(|e| format!("{}: {}", path.display(), e))?;
+    let mut json: serde_json::Value =
+        serde_json::from_str(&content).map_err(|e| format!("{}: {}", path.display(), e))?;
+    let obj = json
+        .as_object_mut()
+        .ok_or_else(|| format!("{} 카드 JSON object 아님", path.display()))?;
+    let arr = obj
+        .entry("bind_mounts")
+        .or_insert_with(|| serde_json::json!([]))
+        .as_array_mut()
+        .ok_or_else(|| format!("{} bind_mounts array 아님", path.display()))?;
+    let before = arr.len();
+    arr.retain(|entry| entry.get("target").and_then(|v| v.as_str()) != Some(target));
+    if arr.len() == before {
+        return Ok(false);
+    }
+    fs::write(
+        &path,
+        serde_json::to_string_pretty(&json).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(true)
 }
 
 #[derive(Subcommand)]
@@ -210,10 +371,7 @@ enum Commands {
         readonly: bool,
     },
     /// LXC bind mount 선언 제거
-    BindRemove {
-        lxc: String,
-        target: String,
-    },
+    BindRemove { lxc: String, target: String },
     /// 선언된 bind mount를 Proxmox LXC 설정에 동기화
     BindSync {
         /// 특정 LXC 또는 VMID만 동기화
@@ -272,21 +430,14 @@ fn main() {
 }
 
 fn load_proxmox_cards() -> Vec<ProxmoxCard> {
-    let dir = paths::ssot_cards_dir();
-    if !dir.exists() {
-        return Vec::new();
-    }
     let mut out = Vec::new();
-    if let Ok(it) = fs::read_dir(dir) {
-        for e in it.filter_map(|x| x.ok()) {
-            if e.path().extension().and_then(|s| s.to_str()) != Some("json") {
-                continue;
-            }
-            if let Ok(content) = fs::read_to_string(e.path()) {
-                if let Ok(card) = serde_json::from_str::<ProxmoxCard>(&content) {
-                    if card.name.starts_with("proxmox") {
-                        out.push(card);
-                    }
+    for path in enabled_card_paths() {
+        if let Ok(content) = fs::read_to_string(path) {
+            if let Ok(card) = serde_json::from_str::<ProxmoxCard>(&content) {
+                let is_host =
+                    card.kind.as_deref() != Some("lxc") && card.name.starts_with("proxmox");
+                if is_host {
+                    out.push(card);
                 }
             }
         }
@@ -553,7 +704,10 @@ fn mount_spec(rule: &BindMountRule) -> String {
 }
 
 fn host_path_exists(path: &str) -> Result<bool, String> {
-    let check = format!("test -e '{}' && echo yes || echo no", path.replace('\'', "'\\''"));
+    let check = format!(
+        "test -e '{}' && echo yes || echo no",
+        path.replace('\'', "'\\''")
+    );
     let out = ssh_cmd_output(&proxmox_host(), &proxmox_user(), &check)?;
     Ok(out.trim() == "yes")
 }
@@ -699,6 +853,30 @@ fn cmd_bind_list() {
 
 fn cmd_bind_add(lxc: &str, source: &str, target: &str, readonly: bool) {
     let normalized = normalize_lxc_key(lxc);
+    let active = active_proxmox_card_name();
+    let new_rule = BindMountRule {
+        lxc: normalized.clone(),
+        source: source.to_string(),
+        target: target.to_string(),
+        readonly,
+    };
+    match save_bind_mount_rule_to_lxc_card(&active, &new_rule) {
+        Ok(true) => {
+            println!(
+                "✓ LXC 카드 bind 저장: {} {} -> {} ({})",
+                normalized,
+                source,
+                target,
+                if readonly { "ro" } else { "rw" }
+            );
+            return;
+        }
+        Ok(false) => {}
+        Err(e) => {
+            eprintln!("✗ {}", e);
+            std::process::exit(1);
+        }
+    }
     let mut rules = load_bind_mount_rules();
     if let Some(existing) = rules
         .iter_mut()
@@ -730,16 +908,30 @@ fn cmd_bind_add(lxc: &str, source: &str, target: &str, readonly: bool) {
 
 fn cmd_bind_remove(lxc: &str, target: &str) {
     let normalized = normalize_lxc_key(lxc);
+    let active = active_proxmox_card_name();
+    let mut removed_from_card = false;
+    match remove_bind_mount_rule_from_lxc_card(&active, &normalized, target) {
+        Ok(true) => {
+            removed_from_card = true;
+        }
+        Ok(false) => {}
+        Err(e) => {
+            eprintln!("✗ {}", e);
+            std::process::exit(1);
+        }
+    }
     let mut rules = load_bind_mount_rules();
     let before = rules.len();
     rules.retain(|rule| !(rule.lxc == normalized && rule.target == target));
-    if rules.len() == before {
+    if rules.len() == before && !removed_from_card {
         println!("일치하는 선언이 없습니다: {} {}", normalized, target);
         return;
     }
-    if let Err(e) = save_bind_mount_rules(&rules) {
-        eprintln!("✗ {}", e);
-        std::process::exit(1);
+    if rules.len() != before {
+        if let Err(e) = save_bind_mount_rules(&rules) {
+            eprintln!("✗ {}", e);
+            std::process::exit(1);
+        }
     }
     if let Some(vmid) = all_lxc()
         .into_iter()
@@ -795,7 +987,10 @@ fn cmd_bind_sync(target: Option<&str>) {
 
         matched += per_lxc.len();
         if status != "running" {
-            eprintln!("⚠ {}({}) stopped 상태라 bind sync는 건너뜁니다.", name, vmid);
+            eprintln!(
+                "⚠ {}({}) stopped 상태라 bind sync는 건너뜁니다.",
+                name, vmid
+            );
             skipped += per_lxc.len();
             continue;
         }

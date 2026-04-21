@@ -34,42 +34,5 @@
       "alias": "truenas"
     }
   ],
-  "bind_mounts": [
-    {
-      "lxc": "gitlab",
-      "source": "/mnt/truenas-organized",
-      "target": "/mnt/truenas",
-      "readonly": false
-    },
-    {
-      "lxc": "host-ops",
-      "source": "/mnt/truenas-organized",
-      "target": "/mnt/truenas",
-      "readonly": false
-    },
-    {
-      "lxc": "infra-control",
-      "source": "/mnt/truenas-organized",
-      "target": "/mnt/truenas",
-      "readonly": false
-    },
-    {
-      "lxc": "obsidian-bot",
-      "source": "/mnt/truenas-organized",
-      "target": "/mnt/truenas",
-      "readonly": false
-    },
-    {
-      "lxc": "openclaw",
-      "source": "/mnt/truenas-organized",
-      "target": "/mnt/truenas",
-      "readonly": false
-    },
-    {
-      "lxc": "outline",
-      "source": "/mnt/truenas-organized",
-      "target": "/mnt/truenas",
-      "readonly": false
-    }
-  ]
+  "bind_mounts": []
 }

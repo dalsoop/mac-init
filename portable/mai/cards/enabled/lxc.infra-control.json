@@ -1,0 +1,28 @@
+{
+  "name": "lxc.infra-control",
+  "kind": "lxc",
+  "host": "192.168.2.50",
+  "user": "root",
+  "port": 22,
+  "scheme": "ssh",
+  "description": "portable managed LXC card: infra-control",
+  "tags": ["portable", "lxc", "proxmox50"],
+  "password_ref": "none",
+  "mount_options": {
+    "readonly": false,
+    "noappledouble": true,
+    "soft": true,
+    "nobrowse": true
+  },
+  "proxmox_host": "proxmox50",
+  "vmid": 50104,
+  "mount_entries": [],
+  "bind_mounts": [
+    {
+      "lxc": "infra-control",
+      "source": "/mnt/truenas-organized",
+      "target": "/mnt/truenas",
+      "readonly": false
+    }
+  ]
+}

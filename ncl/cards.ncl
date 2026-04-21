@@ -3,6 +3,12 @@
 
 let NonEmpty = std.contract.from_predicate (fun s => std.string.length s > 0)
 in
+let ValidCardKind = std.contract.from_predicate (
+  fun s =>
+    s == "host" ||
+    s == "lxc"
+)
+in
 let ValidDriver = std.contract.from_predicate (
   fun s =>
     s == "ssh" ||
@@ -39,6 +45,7 @@ let BindMount = {
 in
 let Card = {
   name | NonEmpty,
+  kind | ValidCardKind | optional,
   host | NonEmpty,
   user | NonEmpty,
   port | Number,
@@ -49,12 +56,20 @@ let Card = {
   mount_options | MountOptions | default = {},
   mount_entries | Array MountEntry | default = [],
   bind_mounts | Array BindMount | default = [],
+  proxmox_host | String | optional,
+  vmid | Number | optional,
   web_port | Number | optional,
 }
 in
-{
+{ 
   cards = {
     kvm = (import "../portable/mai/cards/enabled/kvm.json") | Card,
+    lxc_gitlab = (import "../portable/mai/cards/enabled/lxc.gitlab.json") | Card,
+    lxc_host_ops = (import "../portable/mai/cards/enabled/lxc.host-ops.json") | Card,
+    lxc_infra_control = (import "../portable/mai/cards/enabled/lxc.infra-control.json") | Card,
+    lxc_obsidian_bot = (import "../portable/mai/cards/enabled/lxc.obsidian-bot.json") | Card,
+    lxc_openclaw = (import "../portable/mai/cards/enabled/lxc.openclaw.json") | Card,
+    lxc_outline = (import "../portable/mai/cards/enabled/lxc.outline.json") | Card,
     proxmox50 = (import "../portable/mai/cards/enabled/proxmox50.json") | Card,
     proxmox60 = (import "../portable/mai/cards/enabled/proxmox60.json") | Card,
     synology = (import "../portable/mai/cards/enabled/synology.json") | Card,

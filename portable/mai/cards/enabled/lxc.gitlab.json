@@ -1,0 +1,28 @@
+{
+  "name": "lxc.gitlab",
+  "kind": "lxc",
+  "host": "192.168.2.50",
+  "user": "root",
+  "port": 22,
+  "scheme": "ssh",
+  "description": "portable managed LXC card: gitlab",
+  "tags": ["portable", "lxc", "proxmox50"],
+  "password_ref": "none",
+  "mount_options": {
+    "readonly": false,
+    "noappledouble": true,
+    "soft": true,
+    "nobrowse": true
+  },
+  "proxmox_host": "proxmox50",
+  "vmid": 50063,
+  "mount_entries": [],
+  "bind_mounts": [
+    {
+      "lxc": "gitlab",
+      "source": "/mnt/truenas-organized",
+      "target": "/mnt/truenas",
+      "readonly": false
+    }
+  ]
+}
