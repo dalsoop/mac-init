@@ -399,7 +399,7 @@ fn cmd_add(
 }
 
 fn cmd_setup_proxmox(host: &str, user: &str, realm: &str, web_port: u16, password: Option<&str>) {
-    let card = Card {
+    let web_card = Card {
         name: "proxmox".into(),
         host: host.into(),
         user: user.into(),
@@ -409,12 +409,30 @@ fn cmd_setup_proxmox(host: &str, user: &str, realm: &str, web_port: u16, passwor
         tags: vec!["infra".into(), "proxmox".into()],
         rclone_remote: String::new(),
         rclone_path: String::new(),
-        password_ref: "dotenvx:auto".into(),
+        password_ref: "dotenvx:PROXMOX_PASSWORD".into(),
         mount_options: MountOptions::default_for_scheme("https"),
     };
 
-    if let Err(e) = save_card(&card) {
+    let ssh_card = Card {
+        name: "proxmox-ssh".into(),
+        host: host.into(),
+        user: user.into(),
+        port: 22,
+        scheme: "ssh".into(),
+        description: "Proxmox VE SSH".into(),
+        tags: vec!["infra".into(), "proxmox".into(), "mount".into()],
+        rclone_remote: String::new(),
+        rclone_path: String::new(),
+        password_ref: "dotenvx:PROXMOX_PASSWORD".into(),
+        mount_options: MountOptions::default_for_scheme("ssh"),
+    };
+
+    if let Err(e) = save_card(&web_card) {
         eprintln!("✗ proxmox 카드 저장 실패: {}", e);
+        std::process::exit(1);
+    }
+    if let Err(e) = save_card(&ssh_card) {
+        eprintln!("✗ proxmox-ssh 카드 저장 실패: {}", e);
         std::process::exit(1);
     }
 
@@ -439,9 +457,11 @@ fn cmd_setup_proxmox(host: &str, user: &str, realm: &str, web_port: u16, passwor
 
     println!("✓ proxmox 등록 완료");
     println!("  카드: proxmox (https://{}:{})", host, web_port);
+    println!("  카드: proxmox-ssh (ssh://{}@{}:22)", user, host);
     println!("  realm: {}", realm);
     println!("  .env : PROXMOX_HOST / PROXMOX_USER / PROXMOX_REALM / PROXMOX_WEB_PORT{}", if password.is_some() { " / PROXMOX_PASSWORD" } else { "" });
     println!("  열기: mai run env open proxmox");
+    println!("  마운트: mai run mount shares");
 }
 
 fn cmd_add_rclone(name: &str, remote: &str, path: &str, description: Option<&str>) {
