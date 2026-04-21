@@ -35,6 +35,17 @@ enum Commands {
         #[arg(long)]
         description: Option<String>,
     },
+    /// Proxmox Web UI 기본 카드 + .env 값 등록
+    SetupProxmox {
+        #[arg(long, default_value = "192.168.2.50")]
+        host: String,
+        #[arg(long, default_value = "root")]
+        user: String,
+        #[arg(long, default_value_t = 8006)]
+        web_port: u16,
+        #[arg(long)]
+        password: Option<String>,
+    },
     /// 클라우드(rclone) 카드 추가. 사전에 `rclone config` 로 remote 등록 필요.
     AddRclone {
         name: String,
@@ -57,6 +68,8 @@ enum Commands {
     },
     /// 비번 조회 (stdout 에 평문. 내부 도메인이 호출)
     GetPassword { name: String },
+    /// 기본 앱으로 연결 열기 (웹/ssh/smb URL)
+    Open { name: String },
     /// 마운트 옵션 변경 (key=readonly|noappledouble|soft|nobrowse, value=true|false)
     SetOption {
         name: String,
@@ -93,12 +106,16 @@ fn main() {
         Commands::Add { name, host, user, port, scheme, password, description } => {
             cmd_add(&name, &host, &user, port, &scheme, password.as_deref(), description.as_deref())
         }
+        Commands::SetupProxmox { host, user, web_port, password } => {
+            cmd_setup_proxmox(&host, &user, web_port, password.as_deref())
+        }
         Commands::AddRclone { name, remote, path, description } => {
             cmd_add_rclone(&name, &remote, &path, description.as_deref())
         }
         Commands::Rm { name } => cmd_rm(&name),
         Commands::SetPassword { name, password } => cmd_set_password(&name, password.as_deref()),
         Commands::GetPassword { name } => cmd_get_password(&name),
+        Commands::Open { name } => cmd_open(&name),
         Commands::SetOption { name, key, value } => cmd_set_option(&name, &key, &value),
         Commands::Import => cmd_import(),
         Commands::Test { name } => cmd_test(&name),
@@ -196,6 +213,10 @@ impl Default for MountOptions {
 impl MountOptions {
     /// 스킴별 권장 기본값. 추후 NFS 등 분기 가능.
     fn default_for_scheme(_scheme: &str) -> Self { Self::default() }
+}
+
+fn is_mountable_scheme(scheme: &str) -> bool {
+    matches!(scheme, "smb" | "nfs" | "afp" | "webdav" | "webdavs" | "rclone")
 }
 
 use mac_common::{paths, tui_spec::{self, TuiSpec}};
@@ -375,6 +396,50 @@ fn cmd_add(
     println!("✓ 카드 추가: {}", name);
 }
 
+fn cmd_setup_proxmox(host: &str, user: &str, web_port: u16, password: Option<&str>) {
+    let card = Card {
+        name: "proxmox".into(),
+        host: host.into(),
+        user: user.into(),
+        port: web_port,
+        scheme: "https".into(),
+        description: "Proxmox VE Web UI".into(),
+        tags: vec!["infra".into(), "proxmox".into()],
+        rclone_remote: String::new(),
+        rclone_path: String::new(),
+        password_ref: "dotenvx:auto".into(),
+        mount_options: MountOptions::default_for_scheme("https"),
+    };
+
+    if let Err(e) = save_card(&card) {
+        eprintln!("✗ proxmox 카드 저장 실패: {}", e);
+        std::process::exit(1);
+    }
+
+    for (key, value) in [
+        ("PROXMOX_HOST", host),
+        ("PROXMOX_USER", user),
+        ("PROXMOX_WEB_PORT", &web_port.to_string()),
+    ] {
+        if let Err(e) = dotenvx_set(key, value) {
+            eprintln!("✗ {} 저장 실패: {}", key, e);
+            std::process::exit(1);
+        }
+    }
+
+    if let Some(pw) = password {
+        if let Err(e) = dotenvx_set("PROXMOX_PASSWORD", pw) {
+            eprintln!("✗ PROXMOX_PASSWORD 저장 실패: {}", e);
+            std::process::exit(1);
+        }
+    }
+
+    println!("✓ proxmox 등록 완료");
+    println!("  카드: proxmox (https://{}:{})", host, web_port);
+    println!("  .env : PROXMOX_HOST / PROXMOX_USER / PROXMOX_WEB_PORT{}", if password.is_some() { " / PROXMOX_PASSWORD" } else { "" });
+    println!("  열기: mai run env open proxmox");
+}
+
 fn cmd_add_rclone(name: &str, remote: &str, path: &str, description: Option<&str>) {
     if load_card(name).is_some() {
         eprintln!("✗ 이미 존재: {}", name);
@@ -468,6 +533,44 @@ fn cmd_get_password(name: &str) {
     }
 }
 
+fn card_open_url(card: &Card) -> Result<String, String> {
+    match card.scheme.as_str() {
+        "http" | "https" | "ftp" | "ftps" | "smb" | "nfs" | "afp" | "webdav" | "webdavs" => {
+            Ok(format!("{}://{}:{}", card.scheme, card.host, card.port))
+        }
+        "ssh" => Ok(format!("ssh://{}@{}:{}", card.user, card.host, card.port)),
+        "rclone" => Err("rclone 카드는 open 대상이 아닙니다.".into()),
+        other => Ok(format!("{}://{}:{}", other, card.host, card.port)),
+    }
+}
+
+fn cmd_open(name: &str) {
+    let Some(card) = load_card(name) else {
+        eprintln!("✗ 카드 '{}' 없음", name);
+        std::process::exit(1);
+    };
+    let url = match card_open_url(&card) {
+        Ok(url) => url,
+        Err(err) => {
+            eprintln!("✗ {}", err);
+            std::process::exit(1);
+        }
+    };
+    let out = Command::new("open")
+        .arg(&url)
+        .output()
+        .map_err(|e| format!("open 실행 실패: {}", e))
+        .unwrap_or_else(|err| {
+            eprintln!("✗ {}", err);
+            std::process::exit(1);
+        });
+    if !out.status.success() {
+        eprintln!("✗ {}", String::from_utf8_lossy(&out.stderr).trim());
+        std::process::exit(1);
+    }
+    println!("✓ 열기: {}", url);
+}
+
 // === import: connections.json + .env → 카드 ===
 
 fn cmd_set_option(name: &str, key: &str, value: &str) {
@@ -475,6 +578,13 @@ fn cmd_set_option(name: &str, key: &str, value: &str) {
         eprintln!("✗ 카드 '{}' 없음", name);
         std::process::exit(1);
     };
+    if !is_mountable_scheme(&card.scheme) {
+        eprintln!(
+            "✗ '{}' 카드는 {} scheme 이라 mount 옵션 대상이 아닙니다.",
+            name, card.scheme
+        );
+        std::process::exit(1);
+    }
     let mut opts = card.mount_options.clone();
     let display_value: String;
     match key {
@@ -794,6 +904,26 @@ fn cmd_status() {
     if conn_path.exists() {
         println!("\n⚠ legacy {} 존재 — `env import` 권장", conn_path.display());
     }
+
+    let proxmox_host = dotenvx_get("PROXMOX_HOST");
+    let proxmox_user = dotenvx_get("PROXMOX_USER");
+    let proxmox_port = dotenvx_get("PROXMOX_WEB_PORT");
+    if proxmox_host.is_some() || proxmox_user.is_some() || proxmox_port.is_some() {
+        println!("\n[proxmox]");
+        println!(
+            "  • web ui: https://{}:{}",
+            proxmox_host.as_deref().unwrap_or("미설정"),
+            proxmox_port.as_deref().unwrap_or("8006"),
+        );
+        println!(
+            "  • user:   {}",
+            proxmox_user.as_deref().unwrap_or("미설정"),
+        );
+        println!(
+            "  • 비번:   {}",
+            if dotenvx_get("PROXMOX_PASSWORD").is_some() { "✓ dotenvx" } else { "✗ 없음" },
+        );
+    }
 }
 
 fn audit_permissions() -> Vec<String> {
@@ -916,11 +1046,15 @@ fn print_tui_spec() {
     let items: Vec<serde_json::Value> = cards.iter().map(|c| {
         let has_pw = dotenvx_key_for(c).is_some_and(|k| dotenvx_get(&k).is_some());
         let mo = &c.mount_options;
+        let mountable = is_mountable_scheme(&c.scheme);
+        let kind = if mountable { "mount" } else { "service" };
         tui_spec::kv_item_data(&c.name,
-            &format!("{}://{}@{}:{}", c.scheme, c.user, c.host, c.port),
+            &format!("{}://{}@{}:{} [{}]", c.scheme, c.user, c.host, c.port, kind),
             if has_pw { "ok" } else { "warn" },
             serde_json::json!({
                 "name": c.name,
+                "scheme": c.scheme,
+                "mountable": mountable.to_string(),
                 "readonly": mo.readonly.to_string(),
                 "noappledouble": mo.noappledouble.to_string(),
                 "soft": mo.soft.to_string(),
@@ -937,6 +1071,25 @@ fn print_tui_spec() {
         .usage(usage_active, &usage_summary)
         .kv("상태", items)
         .buttons()
-        .text("안내", "j/k 로 카드 선택. R/N/S/B 로 선택 카드의 mount 옵션 토글. d 로 삭제.")
+        .buttons_custom("빠른 실행", vec![
+            serde_json::json!({
+                "label": "Proxmox 등록",
+                "command": "setup-proxmox",
+                "key": "p"
+            }),
+            serde_json::json!({
+                "label": "Proxmox 웹 열기",
+                "command": "open",
+                "args": ["proxmox"],
+                "key": "o"
+            }),
+            serde_json::json!({
+                "label": "Proxmox 테스트",
+                "command": "test",
+                "args": ["proxmox"],
+                "key": "t"
+            }),
+        ])
+        .text("안내", "카드는 mount 가능(smb/nfs/afp/webdav/rclone)과 service 전용(https/ssh 등)으로 나뉩니다. mount 옵션은 mount 가능한 카드에만 적용됩니다. Proxmox는 `mai run env setup-proxmox --password ...` 로 등록.")
         .print();
 }

@@ -112,6 +112,15 @@ const DEPS: &[Dep] = &[
         ],
         description: "VPN CLI (wireguard 도메인에 필요)",
     },
+    Dep {
+        name: "iTerm2",
+        check_cmd: "brew",
+        check_args: &["list", "--cask", "iterm2"],
+        install_steps: &[
+            ("brew", &["install", "--cask", "iterm2"]),
+        ],
+        description: "터미널 앱",
+    },
 ];
 
 fn check_installed(dep: &Dep) -> Option<String> {

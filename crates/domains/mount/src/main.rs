@@ -195,6 +195,10 @@ struct Connection {
     scheme: String,
 }
 
+fn is_mountable_scheme(scheme: &str) -> bool {
+    matches!(scheme, "smb" | "nfs" | "afp" | "webdav" | "webdavs" | "rclone")
+}
+
 fn load_connections() -> Vec<Connection> {
     let path = connections_path();
     if !path.exists() { return Vec::new(); }
@@ -202,12 +206,16 @@ fn load_connections() -> Vec<Connection> {
     let json: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
     let result: Vec<Connection> = json.get("services").and_then(|v| v.as_array())
         .map(|arr| arr.iter().filter_map(|s| {
+            let scheme = s.get("scheme").and_then(|v| v.as_str()).unwrap_or("smb").to_string();
+            if !is_mountable_scheme(&scheme) {
+                return None;
+            }
             Some(Connection {
                 name: s.get("name")?.as_str()?.to_string(),
                 host: s.get("host")?.as_str()?.to_string(),
                 user: s.get("user")?.as_str()?.to_string(),
                 port: s.get("port")?.as_u64()? as u16,
-                scheme: s.get("scheme").and_then(|v| v.as_str()).unwrap_or("smb").to_string(),
+                scheme,
             })
         }).collect())
         .unwrap_or_default();
@@ -223,6 +231,9 @@ fn load_connections() -> Vec<Connection> {
 fn find_connection(name: &str) -> Option<Connection> {
     // 1순위: env 카드. 2순위: legacy connections.json
     if let Some(c) = env_card_show(name) {
+        if !is_mountable_scheme(&c.scheme) {
+            return None;
+        }
         return Some(c);
     }
     load_connections().into_iter().find(|c| c.name == name)
@@ -245,6 +256,9 @@ fn load_all_connections() -> Vec<Connection> {
                         v.get("port").and_then(|x| x.as_u64()),
                     ) {
                         let scheme = v.get("scheme").and_then(|x| x.as_str()).unwrap_or("smb").to_string();
+                        if !is_mountable_scheme(&scheme) {
+                            continue;
+                        }
                         cards.push(Connection {
                             name: name.into(), host: host.into(), user: user.into(), port: port as u16, scheme,
                         });

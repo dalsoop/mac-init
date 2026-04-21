@@ -143,6 +143,23 @@ in
       },
     } | Domain,
 
+    proxmox = {
+      name = "proxmox",
+      description = "Proxmox VE 웹 UI 연결 + 상태 확인",
+      tags = { product = 'infra, layer = 'remote },
+      requires = ["env"],
+      provides = ["proxmox status", "proxmox setup", "proxmox open", "proxmox lxc-list"],
+      i18n = {
+        label = "Proxmox", icon = "🧱", group = "infra",
+        buttons = [
+          { command = "status", label = "상태 확인" },
+          { command = "setup", label = "기본 등록" },
+          { command = "open", label = "웹 UI 열기" },
+          { command = "lxc-list", label = "LXC 목록" },
+        ],
+      },
+    } | Domain,
+
     cron = {
       name = "cron",
       description = "mac-app-init 스케줄 관리 (schedule.json)",
@@ -354,12 +371,12 @@ in
 
   bundles = {
     init = ["bootstrap"],
-    infra = ["mount", "env", "host"],
+    infra = ["mount", "env", "host", "proxmox"],
     auto = ["cron", "files", "sd-backup"],
     dev = ["git", "vscode", "container", "obsidian"],
     finder = ["quickaction"],
     system = ["keyboard", "shell", "tmux", "wireguard"],
-    full = ["bootstrap", "mount", "env", "host", "cron", "files", "sd-backup",
+    full = ["bootstrap", "mount", "env", "host", "proxmox", "cron", "files", "sd-backup",
             "git", "vscode", "container", "quickaction", "keyboard", "shell", "tmux", "wireguard", "obsidian"],
   },
 }

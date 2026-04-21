@@ -1010,6 +1010,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "mac-domain-proxmox"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "mac-common",
+ "mac-host-core",
+ "serde_json",
+]
+
+[[package]]
 name = "mac-domain-quickaction"
 version = "0.1.0"
 dependencies = [
