@@ -1,3 +1,4 @@
+use clap::{Parser, Subcommand};
 use mac_host_core::common;
 use mac_host_core::config;
 #[cfg(domain = "cron")]
@@ -32,11 +33,10 @@ use mac_host_core::ssh;
 use mac_host_core::synology;
 #[cfg(domain = "veil")]
 use mac_host_core::veil;
-#[cfg(domain = "worktree")]
-use mac_host_core::worktree;
 #[cfg(domain = "workspace")]
 use mac_host_core::workspace;
-use clap::{Parser, Subcommand};
+#[cfg(domain = "worktree")]
+use mac_host_core::worktree;
 
 #[derive(Parser)]
 #[command(name = "mac-host-commands")]
@@ -629,17 +629,35 @@ fn main() {
         Commands::Status => {
             config::Config::status();
             #[cfg(domain = "setup")]
-            { println!("\n{}\n", "─".repeat(50)); setup::status(); }
+            {
+                println!("\n{}\n", "─".repeat(50));
+                setup::status();
+            }
             #[cfg(domain = "network")]
-            { println!("\n{}\n", "─".repeat(50)); network::status(); }
+            {
+                println!("\n{}\n", "─".repeat(50));
+                network::status();
+            }
             #[cfg(domain = "ssh")]
-            { println!("\n{}\n", "─".repeat(50)); ssh::status(); }
+            {
+                println!("\n{}\n", "─".repeat(50));
+                ssh::status();
+            }
             #[cfg(domain = "mount")]
-            { println!("\n{}\n", "─".repeat(50)); mount::status(); }
+            {
+                println!("\n{}\n", "─".repeat(50));
+                mount::status();
+            }
             #[cfg(domain = "proxmox")]
-            { println!("\n{}\n", "─".repeat(50)); proxmox::status(); }
+            {
+                println!("\n{}\n", "─".repeat(50));
+                proxmox::status();
+            }
             #[cfg(domain = "obsidian")]
-            { println!("\n{}\n", "─".repeat(50)); obsidian::status(); }
+            {
+                println!("\n{}\n", "─".repeat(50));
+                obsidian::status();
+            }
         }
 
         Commands::Config { cmd } => match cmd {
@@ -689,7 +707,11 @@ fn main() {
             SynologyCmd::Ssh => synology::ssh(),
             SynologyCmd::Exec { cmd } => synology::exec(&cmd),
             SynologyCmd::Mv { src, dest } => synology::mv(&src, &dest),
-            SynologyCmd::Rename { path, old_name, new_name } => synology::rename(&path, &old_name, &new_name),
+            SynologyCmd::Rename {
+                path,
+                old_name,
+                new_name,
+            } => synology::rename(&path, &old_name, &new_name),
             SynologyCmd::Ls { path } => synology::ls(&path),
             SynologyCmd::Find { pattern } => synology::find(&pattern),
             SynologyCmd::CleanupMeta => synology::cleanup_meta(),
@@ -698,8 +720,16 @@ fn main() {
         #[cfg(domain = "worktree")]
         Commands::Worktree { cmd } => match cmd {
             WorktreeCmd::Status => worktree::status(),
-            WorktreeCmd::Add { project, btype, name } => worktree::add(&project, &btype, &name),
-            WorktreeCmd::Remove { project, btype, name } => worktree::remove(&project, &btype, &name),
+            WorktreeCmd::Add {
+                project,
+                btype,
+                name,
+            } => worktree::add(&project, &btype, &name),
+            WorktreeCmd::Remove {
+                project,
+                btype,
+                name,
+            } => worktree::remove(&project, &btype, &name),
             WorktreeCmd::Clean => worktree::clean(),
         },
 
@@ -713,9 +743,13 @@ fn main() {
             WorkspaceCmd::AiStatus => workspace::ai_status(),
             WorkspaceCmd::AiSetup => workspace::ai_setup(),
             WorkspaceCmd::AiReinstallOpencode => workspace::ai_reinstall_opencode(),
-            WorkspaceCmd::AiSetProviderKeys { google_api_key, minimax_api_key } => {
-                workspace::ai_set_provider_keys(google_api_key.as_deref(), minimax_api_key.as_deref())
-            }
+            WorkspaceCmd::AiSetProviderKeys {
+                google_api_key,
+                minimax_api_key,
+            } => workspace::ai_set_provider_keys(
+                google_api_key.as_deref(),
+                minimax_api_key.as_deref(),
+            ),
             WorkspaceCmd::AiStartOmx => workspace::ai_start_omx(),
         },
 
@@ -734,10 +768,24 @@ fn main() {
             DalCmd::Install => dal::install(),
             DalCmd::Build => dal::build(),
             DalCmd::SetupPath => dal::setup_path(),
-            DalCmd::Watch { team, interval, host } => dal::watch(&team, interval, &host),
-            DalCmd::Task { dal: dal_name, prompt, team, r#async: async_mode, host } => dal::task(&team, &dal_name, &prompt, async_mode, &host),
+            DalCmd::Watch {
+                team,
+                interval,
+                host,
+            } => dal::watch(&team, interval, &host),
+            DalCmd::Task {
+                dal: dal_name,
+                prompt,
+                team,
+                r#async: async_mode,
+                host,
+            } => dal::task(&team, &dal_name, &prompt, async_mode, &host),
             DalCmd::TaskList { team, host } => dal::task_list(&team, &host),
-            DalCmd::Tell { team, message, host } => dal::tell(&team, &message, &host),
+            DalCmd::Tell {
+                team,
+                message,
+                host,
+            } => dal::tell(&team, &message, &host),
         },
 
         #[cfg(domain = "files")]

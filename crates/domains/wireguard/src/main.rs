@@ -35,14 +35,14 @@ enum Commands {
     TuiSpec,
 }
 
-use mac_common::{cmd, tui_spec::{self, TuiSpec}};
+use mac_common::{
+    cmd,
+    tui_spec::{self, TuiSpec},
+};
 
 fn config_dir() -> PathBuf {
     // Try multiple locations
-    let candidates = [
-        "/opt/homebrew/etc/wireguard",
-        "/usr/local/etc/wireguard",
-    ];
+    let candidates = ["/opt/homebrew/etc/wireguard", "/usr/local/etc/wireguard"];
     for p in &candidates {
         if PathBuf::from(p).is_dir() {
             return PathBuf::from(p);
@@ -71,13 +71,21 @@ fn print_tui_spec() {
     let cfg_dir = config_dir();
 
     let mut rows: Vec<serde_json::Value> = Vec::new();
-    let active = if wg_cli { cmd::stdout("wg", &["show", "interfaces"]) } else { String::new() };
+    let active = if wg_cli {
+        cmd::stdout("wg", &["show", "interfaces"])
+    } else {
+        String::new()
+    };
     let active_list: Vec<&str> = active.split_whitespace().collect();
 
     if let Ok(entries) = fs::read_dir(&cfg_dir) {
         for e in entries.flatten() {
             if e.path().extension().map(|x| x == "conf").unwrap_or(false) {
-                let name = e.path().file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+                let name = e
+                    .path()
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_default();
                 let running = active_list.contains(&name.as_str());
                 rows.push(serde_json::json!([
                     if running { "●" } else { " " }.to_string(),
@@ -91,21 +99,40 @@ fn print_tui_spec() {
     let config_count = rows.len();
     let active_tunnels = active_list.len();
     let usage_active = config_count > 0;
-    let usage_summary = if active_tunnels > 0 { format!("{}개 활성", active_tunnels) }
-        else if config_count > 0 { format!("{}개 설정", config_count) }
-        else { "미설정".to_string() };
+    let usage_summary = if active_tunnels > 0 {
+        format!("{}개 활성", active_tunnels)
+    } else if config_count > 0 {
+        format!("{}개 설정", config_count)
+    } else {
+        "미설정".to_string()
+    };
 
     TuiSpec::new("wireguard")
         .usage(usage_active, &usage_summary)
-        .kv("상태", vec![
-            tui_spec::kv_item("wg CLI",
-                if wg_cli { "✓ 설치됨" } else { "✗ 미설치" },
-                if wg_cli { "ok" } else { "error" }),
-            tui_spec::kv_item("WireGuard.app",
-                if gui { "✓ 설치됨" } else { "✗ 미설치" },
-                if gui { "ok" } else { "warn" }),
-            tui_spec::kv_item("설정 디렉토리", &cfg_dir.display().to_string(), "ok"),
-        ])
+        .kv(
+            "상태",
+            vec![
+                tui_spec::kv_item(
+                    "wg CLI",
+                    if wg_cli {
+                        "✓ 설치됨"
+                    } else {
+                        "✗ 미설치"
+                    },
+                    if wg_cli { "ok" } else { "error" },
+                ),
+                tui_spec::kv_item(
+                    "WireGuard.app",
+                    if gui {
+                        "✓ 설치됨"
+                    } else {
+                        "✗ 미설치"
+                    },
+                    if gui { "ok" } else { "warn" },
+                ),
+                tui_spec::kv_item("설정 디렉토리", &cfg_dir.display().to_string(), "ok"),
+            ],
+        )
         .table("설정", vec!["", "NAME", "PATH"], rows)
         .buttons()
         .print();
@@ -126,14 +153,22 @@ fn cmd_status() {
 
     // GUI app
     let gui = std::path::Path::new("/Applications/WireGuard.app").exists();
-    println!("[WireGuard.app] {}", if gui { "✓ 설치됨" } else { "✗ 미설치" });
+    println!(
+        "[WireGuard.app] {}",
+        if gui {
+            "✓ 설치됨"
+        } else {
+            "✗ 미설치"
+        }
+    );
 
     // Configs
     let cfg_dir = config_dir();
     println!("\n[설정 디렉토리] {}", cfg_dir.display());
     if cfg_dir.is_dir() {
         if let Ok(entries) = fs::read_dir(&cfg_dir) {
-            let confs: Vec<String> = entries.flatten()
+            let confs: Vec<String> = entries
+                .flatten()
                 .filter(|e| e.path().extension().map(|x| x == "conf").unwrap_or(false))
                 .map(|e| e.file_name().to_string_lossy().to_string())
                 .collect();
@@ -165,9 +200,19 @@ fn cmd_install() {
 
     if !cmd::ok("which", &["wg"]) {
         println!("[wg CLI 설치 중...]");
-        let ok = Command::new("brew").args(["install", "wireguard-tools"]).status()
-            .map(|s| s.success()).unwrap_or(false);
-        println!("  {}", if ok { "✓ wireguard-tools 설치 완료" } else { "✗ 설치 실패" });
+        let ok = Command::new("brew")
+            .args(["install", "wireguard-tools"])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        println!(
+            "  {}",
+            if ok {
+                "✓ wireguard-tools 설치 완료"
+            } else {
+                "✗ 설치 실패"
+            }
+        );
         installed_any = true;
     } else {
         println!("[wg CLI] ✓ 이미 설치됨");
@@ -175,9 +220,19 @@ fn cmd_install() {
 
     if !std::path::Path::new("/Applications/WireGuard.app").exists() {
         println!("[WireGuard.app 설치 중...]");
-        let ok = Command::new("brew").args(["install", "--cask", "wireguard"]).status()
-            .map(|s| s.success()).unwrap_or(false);
-        println!("  {}", if ok { "✓ WireGuard.app 설치 완료" } else { "✗ 설치 실패 (Mac App Store에서 설치 권장)" });
+        let ok = Command::new("brew")
+            .args(["install", "--cask", "wireguard"])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        println!(
+            "  {}",
+            if ok {
+                "✓ WireGuard.app 설치 완료"
+            } else {
+                "✗ 설치 실패 (Mac App Store에서 설치 권장)"
+            }
+        );
         installed_any = true;
     } else {
         println!("[WireGuard.app] ✓ 이미 설치됨");
@@ -203,7 +258,8 @@ fn cmd_list() {
 
     println!("=== WireGuard 설정 ===\n");
     if let Ok(entries) = fs::read_dir(&cfg_dir) {
-        let confs: Vec<_> = entries.flatten()
+        let confs: Vec<_> = entries
+            .flatten()
             .filter(|e| e.path().extension().map(|x| x == "conf").unwrap_or(false))
             .collect();
 
@@ -218,9 +274,18 @@ fn cmd_list() {
         let active_list: Vec<&str> = active.split_whitespace().collect();
 
         for c in &confs {
-            let name = c.path().file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+            let name = c
+                .path()
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
             let running = active_list.contains(&name.as_str());
-            println!("  {} {:<20} {}", if running { "✓" } else { " " }, name, c.path().display());
+            println!(
+                "  {} {:<20} {}",
+                if running { "✓" } else { " " },
+                name,
+                c.path().display()
+            );
         }
     }
 }
@@ -241,7 +306,9 @@ fn cmd_up(name: &str) {
 
 fn cmd_down(name: &str) {
     println!("WireGuard {} 정지 중...", name);
-    let status = Command::new("sudo").args(["wg-quick", "down", name]).status();
+    let status = Command::new("sudo")
+        .args(["wg-quick", "down", name])
+        .status();
     match status {
         Ok(s) if s.success() => println!("✓ {} 정지됨", name),
         _ => println!("✗ 정지 실패"),
@@ -267,7 +334,9 @@ fn cmd_add(name: &str, conf: &str) {
     match fs::copy(&src, &dest) {
         Ok(_) => {
             // Set permissions 600
-            let _ = Command::new("chmod").args(["600", &dest.to_string_lossy()]).output();
+            let _ = Command::new("chmod")
+                .args(["600", &dest.to_string_lossy()])
+                .output();
             println!("✓ {} 추가 완료 → {}", name, dest.display());
             println!("  연결: mai run wireguard up {}", name);
         }

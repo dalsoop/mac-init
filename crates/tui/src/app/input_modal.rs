@@ -38,7 +38,9 @@ impl InputModal {
         match key.code {
             KeyCode::Enter => {
                 let value = self.input.value().to_string();
-                let args: Vec<String> = self.args_template.iter()
+                let args: Vec<String> = self
+                    .args_template
+                    .iter()
                     .map(|a| a.replace("${value}", &value))
                     .collect();
                 ModalAction::Submit {
@@ -50,9 +52,10 @@ impl InputModal {
             }
             KeyCode::Esc => ModalAction::Cancel,
             KeyCode::Char(c) => {
-                self.input = self.input.clone().with_value(
-                    format!("{}{}", self.input.value(), c)
-                );
+                self.input = self
+                    .input
+                    .clone()
+                    .with_value(format!("{}{}", self.input.value(), c));
                 ModalAction::Consumed
             }
             KeyCode::Backspace => {

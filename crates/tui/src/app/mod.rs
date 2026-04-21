@@ -9,12 +9,14 @@ mod template;
 mod types;
 
 // ── Re-exports for tests and main.rs ──
-pub use types::{ActiveView, DomainId, Focus, SidebarItem};
 pub use input_modal::InputModal;
+pub use types::{ActiveView, DomainId, Focus, SidebarItem};
 
 use crate::registry::{Registry, SystemRegistry};
 use crate::spec::{DomainSpec, Section};
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use crossterm::event::{
+    KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 use std::cell::Cell;
 use std::sync::Arc;
 use tui_input::Input;
@@ -115,10 +117,16 @@ impl App {
 
     pub fn load(&mut self) {
         self.domains = self.reg.installed_domains();
-        self.specs = self.domains.iter().map(|d| self.reg.fetch_spec(d)).collect();
+        self.specs = self
+            .domains
+            .iter()
+            .map(|d| self.reg.fetch_spec(d))
+            .collect();
         self.available = self.reg.available_domains();
         self.rebuild_sidebar();
-        if self.selected_tab > self.domains.len() { self.selected_tab = 0; }
+        if self.selected_tab > self.domains.len() {
+            self.selected_tab = 0;
+        }
     }
 
     fn rebuild_sidebar(&mut self) {
@@ -138,16 +146,23 @@ impl App {
 
     /// 백그라운드에서 전체 도메인 spec 프리로드.
     pub fn preload_all_specs(&mut self) {
-        let domains: Vec<(DomainId, String)> = self.domains.iter().enumerate()
-            .map(|(i, d)| (DomainId(i), d.clone())).collect();
+        let domains: Vec<(DomainId, String)> = self
+            .domains
+            .iter()
+            .enumerate()
+            .map(|(i, d)| (DomainId(i), d.clone()))
+            .collect();
         self.preload_rx = Some(async_ops::spawn_preload_all(&domains, &self.reg));
     }
 
     /// 현재 탭의 refresh_interval (초). 0 이면 자동 갱신 없음.
     pub fn current_refresh_interval(&self) -> u32 {
-        if self.selected_tab == 0 { return 0; }
+        if self.selected_tab == 0 {
+            return 0;
+        }
         let idx = self.selected_tab - 1;
-        self.specs.get(idx)
+        self.specs
+            .get(idx)
             .and_then(|s| s.as_ref())
             .map(|s| s.refresh_interval)
             .unwrap_or(0)
@@ -155,7 +170,9 @@ impl App {
 
     /// 현재 탭의 spec 만 재로드.
     pub fn refresh_current_tab(&mut self) {
-        if self.selected_tab == 0 { return; }
+        if self.selected_tab == 0 {
+            return;
+        }
         let idx = self.selected_tab - 1;
         if let Some(domain) = self.domains.get(idx).cloned() {
             self.specs[idx] = self.reg.fetch_spec(&domain);
@@ -165,12 +182,19 @@ impl App {
     // ── Key handling ──
 
     pub fn handle_key(&mut self, key: KeyEvent) {
-        if key.kind != KeyEventKind::Press { return; }
+        if key.kind != KeyEventKind::Press {
+            return;
+        }
 
         // 입력 모달이 활성화되어 있으면 모든 키를 모달로
         if let Some(modal) = &mut self.input_modal {
             match modal.handle_key(key) {
-                input_modal::ModalAction::Submit { domain, command, args, .. } => {
+                input_modal::ModalAction::Submit {
+                    domain,
+                    command,
+                    args,
+                    ..
+                } => {
                     self.input_modal = None;
                     let domain_id = self.active_domain_id().unwrap_or(DomainId(0));
                     self.output = format!("실행 중: {} {} {} …\n", domain, command, args.join(" "));
@@ -201,8 +225,12 @@ impl App {
         // 종료 확인 모드
         if self.confirm_quit {
             match key.code {
-                KeyCode::Char('y') | KeyCode::Char('Y') => { self.should_quit = true; }
-                _ => { self.confirm_quit = false; }
+                KeyCode::Char('y') | KeyCode::Char('Y') => {
+                    self.should_quit = true;
+                }
+                _ => {
+                    self.confirm_quit = false;
+                }
             }
             return;
         }
@@ -216,16 +244,16 @@ impl App {
 
     fn handle_sidebar_key(&mut self, key: KeyEvent) {
         match key.code {
-            KeyCode::Esc => { self.confirm_quit = true; }
+            KeyCode::Esc => {
+                self.confirm_quit = true;
+            }
             KeyCode::Up | KeyCode::Char('k') => {
-                self.sidebar_cursor = sidebar::sidebar_move(
-                    &self.sidebar_items, self.sidebar_cursor, -1
-                );
+                self.sidebar_cursor =
+                    sidebar::sidebar_move(&self.sidebar_items, self.sidebar_cursor, -1);
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                self.sidebar_cursor = sidebar::sidebar_move(
-                    &self.sidebar_items, self.sidebar_cursor, 1
-                );
+                self.sidebar_cursor =
+                    sidebar::sidebar_move(&self.sidebar_items, self.sidebar_cursor, 1);
             }
             KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
                 if let Some(item) = self.sidebar_items.get(self.sidebar_cursor).cloned() {
@@ -427,7 +455,9 @@ impl App {
 
     /// 메인 루프에서 호출 -- 백그라운드 액션 완료 확인.
     pub fn poll_action(&mut self) {
-        let Some(ref rx) = self.action_rx else { return; };
+        let Some(ref rx) = self.action_rx else {
+            return;
+        };
         if let Ok((id, reload, result)) = rx.try_recv() {
             self.output.push_str(&result);
             if reload {
@@ -443,19 +473,28 @@ impl App {
     // ── Section helpers ──
 
     fn current_section_count(&self) -> usize {
-        if self.selected_tab == 0 { return 1; }
+        if self.selected_tab == 0 {
+            return 1;
+        }
         let idx = self.selected_tab - 1;
-        self.specs.get(idx)
+        self.specs
+            .get(idx)
             .and_then(|s| s.as_ref())
             .map(|s| s.sections.len())
             .unwrap_or(1)
     }
 
     fn current_section_item_count(&self) -> usize {
-        if self.selected_tab == 0 { return 0; }
+        if self.selected_tab == 0 {
+            return 0;
+        }
         let idx = self.selected_tab - 1;
-        let Some(Some(spec)) = self.specs.get(idx) else { return 0; };
-        let section_idx = self.content_section.min(spec.sections.len().saturating_sub(1));
+        let Some(Some(spec)) = self.specs.get(idx) else {
+            return 0;
+        };
+        let section_idx = self
+            .content_section
+            .min(spec.sections.len().saturating_sub(1));
         match spec.sections.get(section_idx) {
             Some(Section::KeyValue { items, .. }) => items.len(),
             Some(Section::Table { rows, .. }) => rows.len(),
@@ -468,7 +507,9 @@ impl App {
     // ── Actions ──
 
     fn toggle_install(&mut self) {
-        let Some(name) = self.available.get(self.install_focus).cloned() else { return; };
+        let Some(name) = self.available.get(self.install_focus).cloned() else {
+            return;
+        };
         let msg = if self.is_installed(&name) {
             format!("Removing {}...\n", name)
         } else {
@@ -485,7 +526,9 @@ impl App {
     }
 
     fn current_buttons(&self) -> Option<(&str, &[crate::spec::Button])> {
-        if self.selected_tab == 0 { return None; }
+        if self.selected_tab == 0 {
+            return None;
+        }
         let domain_idx = self.selected_tab - 1;
         let spec = self.specs.get(domain_idx)?.as_ref()?;
         for section in &spec.sections {
@@ -497,11 +540,17 @@ impl App {
     }
 
     fn activate_button(&mut self) {
-        if self.action_running { return; }
+        if self.action_running {
+            return;
+        }
         let (domain, command, args) = {
-            let Some((domain, buttons)) = self.current_buttons() else { return; };
+            let Some((domain, buttons)) = self.current_buttons() else {
+                return;
+            };
             let idx = self.focus_button.min(buttons.len().saturating_sub(1));
-            let Some(b) = buttons.get(idx) else { return; };
+            let Some(b) = buttons.get(idx) else {
+                return;
+            };
             (domain.to_string(), b.command.clone(), b.args.clone())
         };
         let domain_id = self.active_domain_id().unwrap_or(DomainId(0));
@@ -509,21 +558,37 @@ impl App {
         self.run_action_bg(domain_id, &domain, &command, &args, true);
     }
 
-
-    fn run_action_bg(&mut self, id: DomainId, domain: &str, command: &str, args: &[String], reload: bool) {
-        self.action_rx = Some(async_ops::spawn_action(id, domain, command, args, reload, &self.reg));
+    fn run_action_bg(
+        &mut self,
+        id: DomainId,
+        domain: &str,
+        command: &str,
+        args: &[String],
+        reload: bool,
+    ) {
+        self.action_rx = Some(async_ops::spawn_action(
+            id, domain, command, args, reload, &self.reg,
+        ));
         self.action_running = true;
     }
 
     // ── Edit modal ──
 
     fn open_edit_modal(&mut self) {
-        if self.selected_tab == 0 { return; }
+        if self.selected_tab == 0 {
+            return;
+        }
         let domain_idx = self.selected_tab - 1;
-        let Some(spec) = self.specs[domain_idx].as_ref() else { return; };
-        if spec.editables.is_empty() { return; }
+        let Some(spec) = self.specs[domain_idx].as_ref() else {
+            return;
+        };
+        if spec.editables.is_empty() {
+            return;
+        }
 
-        let section_idx = self.content_section.min(spec.sections.len().saturating_sub(1));
+        let section_idx = self
+            .content_section
+            .min(spec.sections.len().saturating_sub(1));
         let field_key = match spec.sections.get(section_idx) {
             Some(Section::KeyValue { items, .. }) if !items.is_empty() => {
                 let idx = self.focus_button.min(items.len() - 1);
@@ -532,13 +597,18 @@ impl App {
             _ => return,
         };
 
-        let Some(editable) = spec.editables.iter().find(|e| e.field == field_key) else { return; };
+        let Some(editable) = spec.editables.iter().find(|e| e.field == field_key) else {
+            return;
+        };
 
         let current_value = match spec.sections.get(section_idx) {
             Some(Section::KeyValue { items, .. }) => {
                 let idx = self.focus_button.min(items.len() - 1);
                 let v = &items[idx].value;
-                v.strip_prefix("✓ ").or(v.strip_prefix("✗ ")).unwrap_or(v).to_string()
+                v.strip_prefix("✓ ")
+                    .or(v.strip_prefix("✗ "))
+                    .unwrap_or(v)
+                    .to_string()
             }
             _ => String::new(),
         };
@@ -554,7 +624,11 @@ impl App {
 
     // ── Template (public for test backward compatibility) ──
 
-    pub fn resolve_template(&self, tmpl: &str, data: &std::collections::HashMap<String, String>) -> String {
+    pub fn resolve_template(
+        &self,
+        tmpl: &str,
+        data: &std::collections::HashMap<String, String>,
+    ) -> String {
         template::resolve_template(tmpl, data)
     }
 }

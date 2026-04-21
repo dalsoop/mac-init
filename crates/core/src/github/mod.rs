@@ -7,7 +7,14 @@ pub fn status() {
 
     // gh CLI 설치 확인
     let (has_gh, _) = common::run_cmd_quiet("which", &["gh"]);
-    println!("[gh CLI] {}", if has_gh { "✓ 설치됨" } else { "✗ 미설치" });
+    println!(
+        "[gh CLI] {}",
+        if has_gh {
+            "✓ 설치됨"
+        } else {
+            "✗ 미설치"
+        }
+    );
 
     if !has_gh {
         println!("  mac-host-commands github install");
@@ -55,8 +62,22 @@ pub fn status() {
     let (_, name) = common::run_cmd_quiet("git", &["config", "--global", "user.name"]);
     let (_, email) = common::run_cmd_quiet("git", &["config", "--global", "user.email"]);
     println!("\n[git config]");
-    println!("  user.name: {}", if name.trim().is_empty() { "✗ 미설정" } else { name.trim() });
-    println!("  user.email: {}", if email.trim().is_empty() { "✗ 미설정" } else { email.trim() });
+    println!(
+        "  user.name: {}",
+        if name.trim().is_empty() {
+            "✗ 미설정"
+        } else {
+            name.trim()
+        }
+    );
+    println!(
+        "  user.email: {}",
+        if email.trim().is_empty() {
+            "✗ 미설정"
+        } else {
+            email.trim()
+        }
+    );
 
     // SSH 키 등록 확인
     let (ssh_ok, ssh_keys) = common::run_cmd_quiet("gh", &["ssh-key", "list"]);
@@ -143,19 +164,39 @@ pub fn setup_ssh() {
 
     let (ok, _, _) = common::run_cmd("gh", &["ssh-key", "add", &key_path, "--title", &hostname]);
     if ok {
-        println!("[github] SSH 키 등록 완료: {}", pub_key.trim().split(' ').last().unwrap_or(""));
+        println!(
+            "[github] SSH 키 등록 완료: {}",
+            pub_key.trim().split(' ').last().unwrap_or("")
+        );
     }
 }
 
 pub fn repos() {
-    let (_, output) = common::run_cmd_quiet("gh", &["repo", "list", "--limit", "30", "--json", "name,description,visibility,updatedAt", "--template",
-        "{{range .}}{{.name}}\t{{.visibility}}\t{{.description}}\n{{end}}"]);
+    let (_, output) = common::run_cmd_quiet(
+        "gh",
+        &[
+            "repo",
+            "list",
+            "--limit",
+            "30",
+            "--json",
+            "name,description,visibility,updatedAt",
+            "--template",
+            "{{range .}}{{.name}}\t{{.visibility}}\t{{.description}}\n{{end}}",
+        ],
+    );
     println!("=== GitHub 레포 목록 ===\n");
     for line in output.lines() {
-        if line.trim().is_empty() { continue; }
+        if line.trim().is_empty() {
+            continue;
+        }
         let parts: Vec<&str> = line.splitn(3, '\t').collect();
         if parts.len() >= 2 {
-            let vis = if parts[1] == "PUBLIC" { "" } else { " (private)" };
+            let vis = if parts[1] == "PUBLIC" {
+                ""
+            } else {
+                " (private)"
+            };
             let desc = if parts.len() >= 3 && !parts[2].is_empty() {
                 format!(" — {}", parts[2])
             } else {

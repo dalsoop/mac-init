@@ -1,7 +1,7 @@
 //! Template resolution for keybinding args.
 
-use crate::spec::Section;
 use crate::spec::DomainSpec;
+use crate::spec::Section;
 use std::collections::HashMap;
 
 /// Resolve `${selected.<field>}` and `${toggle:<field>}` in a template string.
@@ -12,7 +12,8 @@ pub fn resolve_template(template: &str, data: &HashMap<String, String>) -> Strin
         out.push_str(&rest[..start]);
         let after = &rest[start + 2..];
         let Some(end) = after.find('}') else {
-            out.push_str("${"); out.push_str(after);
+            out.push_str("${");
+            out.push_str(after);
             rest = "";
             break;
         };
@@ -24,7 +25,9 @@ pub fn resolve_template(template: &str, data: &HashMap<String, String>) -> Strin
             let cur = data.get(field).map(|s| s.as_str()).unwrap_or("false");
             out.push_str(if cur == "true" { "false" } else { "true" });
         } else {
-            out.push_str("${"); out.push_str(expr); out.push('}');
+            out.push_str("${");
+            out.push_str(expr);
+            out.push('}');
         }
     }
     out.push_str(rest);
@@ -59,8 +62,12 @@ pub fn selected_item_data(
     if let Some(list_title) = spec.list_section.as_ref() {
         for section in &spec.sections {
             if let Section::KeyValue { title, items } = section {
-                if title != list_title { continue; }
-                if items.is_empty() { return empty; }
+                if title != list_title {
+                    continue;
+                }
+                if items.is_empty() {
+                    return empty;
+                }
                 let idx = focus_button.min(items.len() - 1);
                 let item = &items[idx];
                 let mut data = item.data.clone();

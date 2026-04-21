@@ -48,7 +48,14 @@ fn resolve_path(mac_path: &str) -> String {
     } else {
         // 매핑 없으면 경고
         eprintln!("[synology] 경로 매핑 없음: {mac_path}");
-        eprintln!("  사용 가능: {}", path_map().iter().map(|(m, _)| m.as_str()).collect::<Vec<_>>().join(", "));
+        eprintln!(
+            "  사용 가능: {}",
+            path_map()
+                .iter()
+                .map(|(m, _)| m.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
         mac_path.to_string()
     }
 }
@@ -57,12 +64,35 @@ pub fn status() {
     println!("=== Synology 상태 ===\n");
 
     let (ssh_ok, _) = ssh_cmd("echo ok");
-    println!("[SSH] {}@{} {}", &synology_user(), &synology_ip(), if ssh_ok { "✓ 연결 가능" } else { "✗ 연결 불가" });
+    println!(
+        "[SSH] {}@{} {}",
+        &synology_user(),
+        &synology_ip(),
+        if ssh_ok {
+            "✓ 연결 가능"
+        } else {
+            "✗ 연결 불가"
+        }
+    );
 
-    let (_, dsm) = common::run_cmd_quiet("curl", &["-sk", "--connect-timeout", "3",
-        &format!("https://{}:5001/webapi/query.cgi?api=SYNO.API.Info&version=1&method=query", &synology_ip())]);
+    let (_, dsm) = common::run_cmd_quiet(
+        "curl",
+        &[
+            "-sk",
+            "--connect-timeout",
+            "3",
+            &format!(
+                "https://{}:5001/webapi/query.cgi?api=SYNO.API.Info&version=1&method=query",
+                &synology_ip()
+            ),
+        ],
+    );
     let dsm_ok = dsm.contains("success");
-    println!("[DSM] https://{}:5001 {}", &synology_ip(), if dsm_ok { "✓" } else { "✗" });
+    println!(
+        "[DSM] https://{}:5001 {}",
+        &synology_ip(),
+        if dsm_ok { "✓" } else { "✗" }
+    );
 
     if ssh_ok {
         let (_, shares) = ssh_cmd("ls -d /volume*/*/ 2>/dev/null | grep -cv '@'");
@@ -79,11 +109,22 @@ pub fn status() {
 }
 
 pub fn ssh() {
-    println!("[synology] SSH 접속: {}@{}", &synology_user(), &synology_ip());
+    println!(
+        "[synology] SSH 접속: {}@{}",
+        &synology_user(),
+        &synology_ip()
+    );
     let cfg = Config::load();
     let _ = Command::new("ssh")
-        .args(["-t", &format!("{}@{}", cfg.proxmox.user, cfg.proxmox.host),
-            &format!("sshpass -p 'g#%fN3SfF#kI6#' ssh -o StrictHostKeyChecking=accept-new {}@{}", &synology_user(), &synology_ip())])
+        .args([
+            "-t",
+            &format!("{}@{}", cfg.proxmox.user, cfg.proxmox.host),
+            &format!(
+                "sshpass -p 'g#%fN3SfF#kI6#' ssh -o StrictHostKeyChecking=accept-new {}@{}",
+                &synology_user(),
+                &synology_ip()
+            ),
+        ])
         .status();
 }
 
@@ -145,7 +186,10 @@ pub fn ls(path: &str) {
 
 pub fn find(pattern: &str) {
     println!("[synology] 검색: {pattern}\n");
-    let cmd = format!("find /volume1 /volume2 -maxdepth 4 -name '*{}*' -not -path '*@eaDir*' -not -path '*#recycle*' 2>/dev/null", pattern);
+    let cmd = format!(
+        "find /volume1 /volume2 -maxdepth 4 -name '*{}*' -not -path '*@eaDir*' -not -path '*#recycle*' 2>/dev/null",
+        pattern
+    );
     let (_, output) = ssh_cmd(&cmd);
     for line in output.lines() {
         if !line.trim().is_empty() {
@@ -184,7 +228,9 @@ fn ssh_cmd(cmd: &str) -> (bool, String) {
     let cfg = Config::load();
     let full_cmd = format!(
         "sshpass -p 'g#%fN3SfF#kI6#' ssh -o StrictHostKeyChecking=accept-new {}@{} '{}'",
-        &synology_user(), &synology_ip(), cmd.replace('\'', "'\\''")
+        &synology_user(),
+        &synology_ip(),
+        cmd.replace('\'', "'\\''")
     );
     common::ssh_cmd(&cfg.proxmox.host, &cfg.proxmox.user, &full_cmd)
 }

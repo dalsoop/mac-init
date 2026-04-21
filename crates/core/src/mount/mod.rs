@@ -13,8 +13,16 @@ pub fn status() {
     let (_, mounts) = common::run_cmd_quiet("mount", &[]);
 
     for target in &cfg.mount.targets {
-        let host = if target.host.is_empty() { &cfg.proxmox.host } else { &target.host };
-        let user = if target.user.is_empty() { &cfg.proxmox.user } else { &target.user };
+        let host = if target.host.is_empty() {
+            &cfg.proxmox.host
+        } else {
+            &target.host
+        };
+        let user = if target.user.is_empty() {
+            &cfg.proxmox.user
+        } else {
+            &target.user
+        };
         let mount_point = if target.mount_point.is_empty() {
             format!("{}/{}", cfg.mount.base_path, target.name)
         } else {
@@ -22,9 +30,15 @@ pub fn status() {
         };
 
         let mounted = mounts.contains(&mount_point);
-        let mark = if mounted { "✓ 마운트됨" } else { "✗ 마운트 안 됨" };
-        println!("  [{}] {user}@{host}:{} -> {} ({}) {mark}",
-            target.name, target.remote_path, mount_point, target.method);
+        let mark = if mounted {
+            "✓ 마운트됨"
+        } else {
+            "✗ 마운트 안 됨"
+        };
+        println!(
+            "  [{}] {user}@{host}:{} -> {} ({}) {mark}",
+            target.name, target.remote_path, mount_point, target.method
+        );
     }
 
     if cfg.mount.targets.is_empty() {
@@ -47,13 +61,29 @@ pub fn mount(name: &str) {
         Some(t) => t,
         None => {
             eprintln!("[mount] '{name}' 타겟을 찾을 수 없습니다.");
-            eprintln!("  사용 가능: {}", cfg.mount.targets.iter().map(|t| t.name.as_str()).collect::<Vec<_>>().join(", "));
+            eprintln!(
+                "  사용 가능: {}",
+                cfg.mount
+                    .targets
+                    .iter()
+                    .map(|t| t.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
             std::process::exit(1);
         }
     };
 
-    let host = if target.host.is_empty() { &cfg.proxmox.host } else { &target.host };
-    let user = if target.user.is_empty() { &cfg.proxmox.user } else { &target.user };
+    let host = if target.host.is_empty() {
+        &cfg.proxmox.host
+    } else {
+        &target.host
+    };
+    let user = if target.user.is_empty() {
+        &cfg.proxmox.user
+    } else {
+        &target.user
+    };
     let mount_point = if target.mount_point.is_empty() {
         format!("{}/{}", cfg.mount.base_path, target.name)
     } else {
@@ -123,7 +153,11 @@ pub fn unmount(name: &str) {
         println!("[unmount] '{name}' 해제 완료");
 
         // SMB 터널도 정리
-        let host = if target.host.is_empty() { &cfg.proxmox.host } else { &target.host };
+        let host = if target.host.is_empty() {
+            &cfg.proxmox.host
+        } else {
+            &target.host
+        };
         kill_smb_tunnel(host);
     }
 }
@@ -131,9 +165,7 @@ pub fn unmount(name: &str) {
 /// 마운트 포인트가 실제로 살아있는지 확인 (좀비 마운트 감지)
 fn is_mount_alive(mount_point: &str) -> bool {
     // mount 명령 대신 실제 ls로 접근 테스트
-    let result = Command::new("ls")
-        .arg(mount_point)
-        .output();
+    let result = Command::new("ls").arg(mount_point).output();
     match result {
         Ok(out) => out.status.success(),
         Err(_) => false,
@@ -158,7 +190,10 @@ pub fn reconnect_all() {
         };
 
         if !is_mount_alive(&mount_point) {
-            println!("[mount] '{}' 끊김 감지 → 강제 해제 후 재연결...", target.name);
+            println!(
+                "[mount] '{}' 끊김 감지 → 강제 해제 후 재연결...",
+                target.name
+            );
             // 좀비 마운트 강제 해제
             let _ = Command::new("sudo")
                 .args(["umount", "-f", &mount_point])
@@ -204,11 +239,16 @@ fn mount_sshfs(host: &str, user: &str, remote_path: &str, mount_point: &str, nam
             "sshfs".to_string(),
             format!("{user}@{host}:{remote_path}"),
             mount_point.to_string(),
-            "-o".to_string(), "reconnect".to_string(),
-            "-o".to_string(), format!("volname={name}"),
-            "-o".to_string(), "follow_symlinks".to_string(),
-            "-o".to_string(), "allow_other".to_string(),
-            "-o".to_string(), format!("ssh_command=ssh -o {ssh_opts}"),
+            "-o".to_string(),
+            "reconnect".to_string(),
+            "-o".to_string(),
+            format!("volname={name}"),
+            "-o".to_string(),
+            "follow_symlinks".to_string(),
+            "-o".to_string(),
+            "allow_other".to_string(),
+            "-o".to_string(),
+            format!("ssh_command=ssh -o {ssh_opts}"),
         ]
     } else {
         vec![]
@@ -218,14 +258,21 @@ fn mount_sshfs(host: &str, user: &str, remote_path: &str, mount_point: &str, nam
         let args: Vec<&str> = sshfs_args.iter().map(|s| s.as_str()).collect();
         common::run_cmd("sudo", &args)
     } else {
-        common::run_cmd("sshfs", &[
-            &format!("{user}@{host}:{remote_path}"),
-            mount_point,
-            "-o", "reconnect",
-            "-o", &format!("volname={name}"),
-            "-o", "follow_symlinks",
-            "-o", &format!("ssh_command=ssh -o {ssh_opts}"),
-        ])
+        common::run_cmd(
+            "sshfs",
+            &[
+                &format!("{user}@{host}:{remote_path}"),
+                mount_point,
+                "-o",
+                "reconnect",
+                "-o",
+                &format!("volname={name}"),
+                "-o",
+                "follow_symlinks",
+                "-o",
+                &format!("ssh_command=ssh -o {ssh_opts}"),
+            ],
+        )
     };
 
     if ok {
@@ -250,16 +297,26 @@ fn mount_smb_via_tunnel(host: &str, user: &str, remote_path: &str, mount_point: 
     let local_port = tunnel_port_for(host);
 
     // 기존 터널이 있는지 확인
-    let (_, ps) = common::run_cmd_quiet("pgrep", &["-f", &format!("ssh.*-L.*{local_port}.*{host}")]);
+    let (_, ps) =
+        common::run_cmd_quiet("pgrep", &["-f", &format!("ssh.*-L.*{local_port}.*{host}")]);
     let tunnel_exists = !ps.trim().is_empty();
 
     if !tunnel_exists {
-        println!("[mount] SSH 터널 생성: localhost:{local_port} -> {host}:445 (via {})", cfg.proxmox.host);
+        println!(
+            "[mount] SSH 터널 생성: localhost:{local_port} -> {host}:445 (via {})",
+            cfg.proxmox.host
+        );
         let tunnel_ok = Command::new("sudo")
-            .args(["ssh", "-f", "-N",
-                "-o", "StrictHostKeyChecking=accept-new",
-                "-L", &format!("{local_port}:{host}:445"),
-                &format!("{}@{}", cfg.proxmox.user, cfg.proxmox.host)])
+            .args([
+                "ssh",
+                "-f",
+                "-N",
+                "-o",
+                "StrictHostKeyChecking=accept-new",
+                "-L",
+                &format!("{local_port}:{host}:445"),
+                &format!("{}@{}", cfg.proxmox.user, cfg.proxmox.host),
+            ])
             .status()
             .map(|s| s.success())
             .unwrap_or(false);
@@ -281,11 +338,15 @@ fn mount_smb_via_tunnel(host: &str, user: &str, remote_path: &str, mount_point: 
     println!("[mount] smb://{user}@localhost:{local_port}/{share} -> {mount_point}");
 
     // mount_smbfs에 포트 지정: -o port=PORT
-    let (ok, _, stderr) = common::run_cmd("mount_smbfs", &[
-        "-o", &format!("port={local_port}"),
-        &format!("//{user}:{password}@localhost/{share}"),
-        mount_point,
-    ]);
+    let (ok, _, stderr) = common::run_cmd(
+        "mount_smbfs",
+        &[
+            "-o",
+            &format!("port={local_port}"),
+            &format!("//{user}:{password}@localhost/{share}"),
+            mount_point,
+        ],
+    );
 
     if ok {
         println!("[mount] '{name}' 마운트 완료");
@@ -298,19 +359,32 @@ fn mount_smb_via_tunnel(host: &str, user: &str, remote_path: &str, mount_point: 
     }
 }
 
-fn mount_smb_nsmb(port: u16, user: &str, password: &str, share: &str, mount_point: &str, name: &str) {
+fn mount_smb_nsmb(
+    port: u16,
+    user: &str,
+    password: &str,
+    share: &str,
+    mount_point: &str,
+    name: &str,
+) {
     // /etc/nsmb.conf에 localhost 포트 설정
-    let nsmb_content = format!(
-        "[default]\nport445=no_netbios\n\n[localhost]\nport={port}\naddr=127.0.0.1\n"
-    );
+    let nsmb_content =
+        format!("[default]\nport445=no_netbios\n\n[localhost]\nport={port}\naddr=127.0.0.1\n");
     let _ = Command::new("sudo")
-        .args(["bash", "-c", &format!("echo '{}' > /etc/nsmb.conf", nsmb_content)])
+        .args([
+            "bash",
+            "-c",
+            &format!("echo '{}' > /etc/nsmb.conf", nsmb_content),
+        ])
         .status();
 
-    let (ok, _, _) = common::run_cmd("mount_smbfs", &[
-        &format!("//{user}:{password}@localhost/{share}"),
-        mount_point,
-    ]);
+    let (ok, _, _) = common::run_cmd(
+        "mount_smbfs",
+        &[
+            &format!("//{user}:{password}@localhost/{share}"),
+            mount_point,
+        ],
+    );
 
     if ok {
         println!("[mount] '{name}' 마운트 완료");
@@ -366,9 +440,7 @@ fn ensure_mount_point(mount_point: &str) {
                 .args(["mkdir", "-p", mount_point])
                 .status();
         } else {
-            let _ = Command::new("mkdir")
-                .args(["-p", mount_point])
-                .output();
+            let _ = Command::new("mkdir").args(["-p", mount_point]).output();
         }
     }
 }

@@ -1,9 +1,11 @@
-use std::path::Path;
 use std::fs;
+use std::path::Path;
 
 use crate::common;
 
-const BRANCH_TYPES: &[&str] = &["feat", "fix", "refactor", "docs", "test", "release", "hotfix"];
+const BRANCH_TYPES: &[&str] = &[
+    "feat", "fix", "refactor", "docs", "test", "release", "hotfix",
+];
 const MAX_WORKTREES: usize = 3;
 const STALE_DAYS: u64 = 7;
 
@@ -40,7 +42,12 @@ pub fn status() {
 
         if let Some((project, btype, bname)) = parse_worktree_folder(&name) {
             *projects.entry(project.to_string()).or_insert(0) += 1;
-            worktrees.push((name.clone(), project.to_string(), btype.to_string(), bname.to_string()));
+            worktrees.push((
+                name.clone(),
+                project.to_string(),
+                btype.to_string(),
+                bname.to_string(),
+            ));
         }
     }
 
@@ -111,15 +118,17 @@ pub fn add(project: &str, btype: &str, name: &str) {
     println!("  브랜치: {branch}");
 
     // git worktree add
-    let (ok, _, _stderr) = common::run_cmd("git", &[
-        "-C", &main_path, "worktree", "add", "-b", &branch, &wt_path,
-    ]);
+    let (ok, _, _stderr) = common::run_cmd(
+        "git",
+        &["-C", &main_path, "worktree", "add", "-b", &branch, &wt_path],
+    );
 
     if !ok {
         // 브랜치가 이미 있으면 -b 없이
-        let (ok2, _, _) = common::run_cmd("git", &[
-            "-C", &main_path, "worktree", "add", &wt_path, &branch,
-        ]);
+        let (ok2, _, _) = common::run_cmd(
+            "git",
+            &["-C", &main_path, "worktree", "add", &wt_path, &branch],
+        );
         if !ok2 {
             eprintln!("[worktree] 생성 실패");
             std::process::exit(1);
@@ -151,9 +160,7 @@ pub fn remove(project: &str, btype: &str, name: &str) {
 
     println!("[worktree] {folder} 제거 중...");
 
-    let (ok, _, _) = common::run_cmd("git", &[
-        "-C", &main_path, "worktree", "remove", &wt_path,
-    ]);
+    let (ok, _, _) = common::run_cmd("git", &["-C", &main_path, "worktree", "remove", &wt_path]);
 
     if ok {
         println!("[worktree] ✓ {folder} 제거 완료");
@@ -175,9 +182,8 @@ pub fn clean() {
             let branch = format!("{btype}/{bname}");
 
             // 머지됐는지 확인
-            let (_, merged) = common::run_cmd_quiet("git", &[
-                "-C", &main_path, "branch", "--merged", "main",
-            ]);
+            let (_, merged) =
+                common::run_cmd_quiet("git", &["-C", &main_path, "branch", "--merged", "main"]);
             let is_merged = merged.lines().any(|l| l.trim() == branch);
 
             // stale 확인
@@ -220,7 +226,9 @@ fn git_current_branch(path: &str) -> String {
 
 fn days_since_last_commit(path: &str) -> u64 {
     let (ok, ts) = common::run_cmd_quiet("git", &["-C", path, "log", "-1", "--format=%ct"]);
-    if !ok { return 999; }
+    if !ok {
+        return 999;
+    }
     let commit_ts: u64 = ts.trim().parse().unwrap_or(0);
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

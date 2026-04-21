@@ -20,13 +20,17 @@ pub trait Registry: Send + Sync + 'static {
 
 pub struct SystemRegistry;
 
-fn home() -> String { std::env::var("HOME").unwrap_or_default() }
+fn home() -> String {
+    std::env::var("HOME").unwrap_or_default()
+}
 
 fn domains_dir() -> PathBuf {
     PathBuf::from(home()).join(".mac-app-init/domains")
 }
 
-fn mac_bin() -> &'static str { "mac" }
+fn mac_bin() -> &'static str {
+    "mac"
+}
 
 fn domain_bin(name: &str) -> PathBuf {
     domains_dir().join(format!("mac-domain-{}", name))
@@ -35,19 +39,29 @@ fn domain_bin(name: &str) -> PathBuf {
 impl Registry for SystemRegistry {
     fn installed_domains(&self) -> Vec<String> {
         let registry = domains_dir().join("registry.json");
-        if !registry.exists() { return Vec::new(); }
+        if !registry.exists() {
+            return Vec::new();
+        }
         let content = fs::read_to_string(&registry).unwrap_or_default();
         let json: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
-        json.get("installed").and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|d| d.get("name").and_then(|n| n.as_str()).map(String::from)).collect())
+        json.get("installed")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|d| d.get("name").and_then(|n| n.as_str()).map(String::from))
+                    .collect()
+            })
             .unwrap_or_default()
     }
 
     fn available_domains(&self) -> Vec<String> {
         let output = Command::new(mac_bin()).arg("available").output();
-        let Ok(o) = output else { return Vec::new(); };
+        let Ok(o) = output else {
+            return Vec::new();
+        };
         let stdout = String::from_utf8_lossy(&o.stdout);
-        stdout.lines()
+        stdout
+            .lines()
             .skip(2)
             .filter_map(|line| line.split_whitespace().next().map(String::from))
             .filter(|s| !s.is_empty() && !s.starts_with('─'))
@@ -56,9 +70,13 @@ impl Registry for SystemRegistry {
 
     fn fetch_spec(&self, domain: &str) -> Option<DomainSpec> {
         let bin = domain_bin(domain);
-        if !bin.exists() { return None; }
+        if !bin.exists() {
+            return None;
+        }
         let output = Command::new(&bin).arg("tui-spec").output().ok()?;
-        if !output.status.success() { return None; }
+        if !output.status.success() {
+            return None;
+        }
         let stdout = String::from_utf8_lossy(&output.stdout);
         serde_json::from_str(&stdout).ok()
     }
@@ -81,7 +99,11 @@ impl Registry for SystemRegistry {
     fn install_domain(&self, name: &str) -> String {
         let output = Command::new(mac_bin()).args(["install", name]).output();
         match output {
-            Ok(o) => format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)),
+            Ok(o) => format!(
+                "{}{}",
+                String::from_utf8_lossy(&o.stdout),
+                String::from_utf8_lossy(&o.stderr)
+            ),
             Err(e) => format!("Error: {}", e),
         }
     }
@@ -89,7 +111,11 @@ impl Registry for SystemRegistry {
     fn remove_domain(&self, name: &str) -> String {
         let output = Command::new(mac_bin()).args(["remove", name]).output();
         match output {
-            Ok(o) => format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)),
+            Ok(o) => format!(
+                "{}{}",
+                String::from_utf8_lossy(&o.stdout),
+                String::from_utf8_lossy(&o.stderr)
+            ),
             Err(e) => format!("Error: {}", e),
         }
     }
@@ -97,9 +123,21 @@ impl Registry for SystemRegistry {
 
 // ── 하위 호환: 기존 free function → SystemRegistry 위임 ──
 
-pub fn installed_domains() -> Vec<String> { SystemRegistry.installed_domains() }
-pub fn available_domains() -> Vec<String> { SystemRegistry.available_domains() }
-pub fn fetch_spec(domain: &str) -> Option<DomainSpec> { SystemRegistry.fetch_spec(domain) }
-pub fn run_action(domain: &str, command: &str, args: &[String]) -> String { SystemRegistry.run_action(domain, command, args) }
-pub fn install_domain(name: &str) -> String { SystemRegistry.install_domain(name) }
-pub fn remove_domain(name: &str) -> String { SystemRegistry.remove_domain(name) }
+pub fn installed_domains() -> Vec<String> {
+    SystemRegistry.installed_domains()
+}
+pub fn available_domains() -> Vec<String> {
+    SystemRegistry.available_domains()
+}
+pub fn fetch_spec(domain: &str) -> Option<DomainSpec> {
+    SystemRegistry.fetch_spec(domain)
+}
+pub fn run_action(domain: &str, command: &str, args: &[String]) -> String {
+    SystemRegistry.run_action(domain, command, args)
+}
+pub fn install_domain(name: &str) -> String {
+    SystemRegistry.install_domain(name)
+}
+pub fn remove_domain(name: &str) -> String {
+    SystemRegistry.remove_domain(name)
+}

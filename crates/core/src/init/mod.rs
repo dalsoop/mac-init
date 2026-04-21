@@ -1,6 +1,6 @@
+use std::fs;
 use std::path::Path;
 use std::process::Command;
-use std::fs;
 
 use crate::common;
 
@@ -185,7 +185,8 @@ fn setup_projects_sync() {
 
     let script_path = format!("{h}/시스템/bin/projects-sync.sh");
     if Path::new(&script_path).exists() {
-        let plist_content = format!(r#"<?xml version="1.0" encoding="UTF-8"?>
+        let plist_content = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -204,7 +205,10 @@ fn setup_projects_sync() {
     <key>StandardErrorPath</key>
     <string>{home}/시스템/로그/projects-sync.log</string>
 </dict>
-</plist>"#, script = script_path, home = h);
+</plist>"#,
+            script = script_path,
+            home = h
+        );
 
         fs::write(&plist, plist_content).ok();
         let _ = Command::new("launchctl").args(["load", &plist]).status();

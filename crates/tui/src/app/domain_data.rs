@@ -6,8 +6,8 @@
 
 #![allow(dead_code)]
 
-use crate::spec::DomainSpec;
 use super::types::DomainId;
+use crate::spec::DomainSpec;
 
 pub struct DomainEntry {
     pub name: String,
@@ -21,7 +21,9 @@ pub struct DomainStore {
 impl DomainStore {
     pub fn new(names: Vec<String>, specs: Vec<Option<DomainSpec>>) -> Self {
         assert_eq!(names.len(), specs.len());
-        let entries = names.into_iter().zip(specs)
+        let entries = names
+            .into_iter()
+            .zip(specs)
             .map(|(name, spec)| DomainEntry { name, spec })
             .collect();
         Self { entries }
@@ -56,11 +58,17 @@ impl DomainStore {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (DomainId, &DomainEntry)> {
-        self.entries.iter().enumerate().map(|(i, e)| (DomainId(i), e))
+        self.entries
+            .iter()
+            .enumerate()
+            .map(|(i, e)| (DomainId(i), e))
     }
 
     pub fn find_by_name(&self, name: &str) -> Option<DomainId> {
-        self.entries.iter().position(|e| e.name == name).map(DomainId)
+        self.entries
+            .iter()
+            .position(|e| e.name == name)
+            .map(DomainId)
     }
 
     /// Expose names as a Vec<String> for backward compatibility.

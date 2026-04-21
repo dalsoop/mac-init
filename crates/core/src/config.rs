@@ -41,7 +41,9 @@ fn default_proxmox_host() -> String {
 fn default_proxmox_user() -> String {
     std::env::var("PROXMOX_USER").unwrap_or_else(|_| "root".to_string())
 }
-fn default_proxmox_port() -> u16 { 22 }
+fn default_proxmox_port() -> u16 {
+    22
+}
 
 #[derive(Deserialize, Default, Clone)]
 pub struct NasConfig {
@@ -59,7 +61,9 @@ pub struct MountConfig {
     pub targets: Vec<MountTarget>,
 }
 
-fn default_mount_base() -> String { "/Volumes".to_string() }
+fn default_mount_base() -> String {
+    "/Volumes".to_string()
+}
 
 #[derive(Deserialize, Default, Clone)]
 pub struct MountTarget {
@@ -75,7 +79,9 @@ pub struct MountTarget {
     pub method: String,
 }
 
-fn default_method() -> String { "sshfs".to_string() }
+fn default_method() -> String {
+    "sshfs".to_string()
+}
 
 impl Config {
     pub fn load() -> Self {
@@ -165,10 +171,21 @@ method = "sshfs"
 
         let env_path = common::env_file();
         let env_exists = env_path.exists();
-        println!("[.env] {}: {}", env_path.display(), if env_exists { "✓" } else { "✗" });
+        println!(
+            "[.env] {}: {}",
+            env_path.display(),
+            if env_exists { "✓" } else { "✗" }
+        );
 
         if env_exists {
-            let env_vars = ["PROXMOX_HOST", "PROXMOX_USER", "MOUNT_USER", "MOUNT_PASSWORD", "SYNOLOGY_PASSWORD", "TRUENAS_PASSWORD"];
+            let env_vars = [
+                "PROXMOX_HOST",
+                "PROXMOX_USER",
+                "MOUNT_USER",
+                "MOUNT_PASSWORD",
+                "SYNOLOGY_PASSWORD",
+                "TRUENAS_PASSWORD",
+            ];
             for var in env_vars {
                 let val = std::env::var(var).unwrap_or_default();
                 let mark = if val.is_empty() { "✗" } else { "✓" };
@@ -178,7 +195,15 @@ method = "sshfs"
 
         let cfg_path = common::config_file();
         let exists = cfg_path.exists();
-        println!("\n[config] {}: {}", cfg_path.display(), if exists { "✓" } else { "✗ (config init 실행 필요)" });
+        println!(
+            "\n[config] {}: {}",
+            cfg_path.display(),
+            if exists {
+                "✓"
+            } else {
+                "✗ (config init 실행 필요)"
+            }
+        );
 
         if !exists {
             return;
@@ -198,7 +223,14 @@ method = "sshfs"
             println!("  host: {}", cfg.synology.host);
             println!("  user: {}", cfg.synology.user);
             let pw = std::env::var("SYNOLOGY_PASSWORD").unwrap_or_default();
-            println!("  password: {}", if pw.is_empty() { "✗" } else { "✓ (설정됨)" });
+            println!(
+                "  password: {}",
+                if pw.is_empty() {
+                    "✗"
+                } else {
+                    "✓ (설정됨)"
+                }
+            );
         }
 
         println!("\n[truenas]");
@@ -208,21 +240,39 @@ method = "sshfs"
             println!("  host: {}", cfg.truenas.host);
             println!("  user: {}", cfg.truenas.user);
             let pw = std::env::var("TRUENAS_PASSWORD").unwrap_or_default();
-            println!("  password: {}", if pw.is_empty() { "✗" } else { "✓ (설정됨)" });
+            println!(
+                "  password: {}",
+                if pw.is_empty() {
+                    "✗"
+                } else {
+                    "✓ (설정됨)"
+                }
+            );
         }
 
         println!("\n[mount]");
         println!("  base_path: {}", cfg.mount.base_path);
         println!("  targets: {}개", cfg.mount.targets.len());
         for t in &cfg.mount.targets {
-            let host = if t.host.is_empty() { &cfg.proxmox.host } else { &t.host };
-            let user = if t.user.is_empty() { &cfg.proxmox.user } else { &t.user };
+            let host = if t.host.is_empty() {
+                &cfg.proxmox.host
+            } else {
+                &t.host
+            };
+            let user = if t.user.is_empty() {
+                &cfg.proxmox.user
+            } else {
+                &t.user
+            };
             let mp = if t.mount_point.is_empty() {
                 format!("{}/{}", cfg.mount.base_path, t.name)
             } else {
                 t.mount_point.clone()
             };
-            println!("    [{}] {user}@{host}:{} -> {} ({})", t.name, t.remote_path, mp, t.method);
+            println!(
+                "    [{}] {user}@{host}:{} -> {} ({})",
+                t.name, t.remote_path, mp, t.method
+            );
         }
     }
 }

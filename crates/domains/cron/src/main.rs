@@ -49,18 +49,29 @@ fn main() {
     let cli = Cli::parse();
     match cli.command {
         Commands::Jobs => cmd_jobs(),
-        Commands::Add { name, command, cron: c, interval } => {
-            match cron::add_job(&name, &command, c, interval) {
-                Ok(msg) => println!("✓ {}", msg),
-                Err(e) => eprintln!("✗ {}", e),
-            }
-        }
+        Commands::Add {
+            name,
+            command,
+            cron: c,
+            interval,
+        } => match cron::add_job(&name, &command, c, interval) {
+            Ok(msg) => println!("✓ {}", msg),
+            Err(e) => eprintln!("✗ {}", e),
+        },
         Commands::Remove { name } => match cron::remove_job(&name) {
             Ok(msg) => println!("✓ {}", msg),
             Err(e) => eprintln!("✗ {}", e),
         },
         Commands::Toggle { name } => match cron::toggle_job(&name) {
-            Ok((n, en)) => println!("'{}' {}", n, if en { "✓ 활성화" } else { "✗ 비활성화" }),
+            Ok((n, en)) => println!(
+                "'{}' {}",
+                n,
+                if en {
+                    "✓ 활성화"
+                } else {
+                    "✗ 비활성화"
+                }
+            ),
             Err(e) => eprintln!("✗ {}", e),
         },
         Commands::SetupScheduler => match cron::install_scheduler() {
@@ -83,7 +94,10 @@ fn cmd_jobs() {
         println!("  mai run cron add <name> <command> --cron \"0 9 * * *\"");
         return;
     }
-    println!("{:<20} {:<8} {:<25} {}", "NAME", "STATUS", "SCHEDULE", "COMMAND");
+    println!(
+        "{:<20} {:<8} {:<25} {}",
+        "NAME", "STATUS", "SCHEDULE", "COMMAND"
+    );
     println!("{}", "─".repeat(80));
     for j in &s.jobs {
         let st = if j.enabled { "✓" } else { "✗" };
@@ -101,8 +115,16 @@ fn cmd_status() {
     let scheduler_on = cron::scheduler_installed();
 
     println!("=== Cron 상태 (mac-app-init 스케줄) ===\n");
-    println!("스케줄러 LaunchAgent: {}", if scheduler_on { "✓ 설치됨" } else { "✗ 미설치 (mai run cron setup-scheduler)" });
-    println!("스케줄 jobs: {}개 (활성 {}개)",
+    println!(
+        "스케줄러 LaunchAgent: {}",
+        if scheduler_on {
+            "✓ 설치됨"
+        } else {
+            "✗ 미설치 (mai run cron setup-scheduler)"
+        }
+    );
+    println!(
+        "스케줄 jobs: {}개 (활성 {}개)",
         sched.jobs.len(),
         sched.jobs.iter().filter(|j| j.enabled).count(),
     );
@@ -115,19 +137,18 @@ fn print_tui_spec() {
     let sched = cron::load_schedule();
     let scheduler_on = cron::scheduler_installed();
 
-    let job_rows: Vec<serde_json::Value> = sched.jobs.iter().map(|j| {
-        let sc = match j.schedule.stype.as_str() {
-            "cron" => j.schedule.cron.clone().unwrap_or_default(),
-            "interval" => format!("every {}s", j.schedule.interval_seconds.unwrap_or(0)),
-            _ => "?".into(),
-        };
-        serde_json::json!([
-            if j.enabled { "✓" } else { "✗" },
-            j.name,
-            sc,
-            j.command,
-        ])
-    }).collect();
+    let job_rows: Vec<serde_json::Value> = sched
+        .jobs
+        .iter()
+        .map(|j| {
+            let sc = match j.schedule.stype.as_str() {
+                "cron" => j.schedule.cron.clone().unwrap_or_default(),
+                "interval" => format!("every {}s", j.schedule.interval_seconds.unwrap_or(0)),
+                _ => "?".into(),
+            };
+            serde_json::json!([if j.enabled { "✓" } else { "✗" }, j.name, sc, j.command,])
+        })
+        .collect();
 
     let active_jobs = sched.jobs.iter().filter(|j| j.enabled).count();
 

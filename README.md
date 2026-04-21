@@ -34,6 +34,11 @@ mai run tmux topbar
 mai run keyboard status
 mai run cron list
 mai run connect add proxmox
+mai run mount lxc-list
+mai run mount auto-add-lxc gitlab /
+mai run proxmox bind-list
+mai run proxmox bind-add gitlab /mnt/truenas-organized/gitlab /srv/gitlab
+mai run proxmox bind-sync
 
 # TUI
 mac-host-tui               # 시각적 관리

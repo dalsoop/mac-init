@@ -78,11 +78,15 @@ fn load_env_dotenvx(path: &Path) -> bool {
     match output {
         Ok(o) if o.status.success() => {
             let stdout = String::from_utf8_lossy(&o.stdout);
-            if let Ok(map) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&stdout) {
+            if let Ok(map) =
+                serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&stdout)
+            {
                 for (key, value) in &map {
                     if std::env::var(key).is_err() {
                         if let Some(val) = value.as_str() {
-                            unsafe { std::env::set_var(key, val); }
+                            unsafe {
+                                std::env::set_var(key, val);
+                            }
                         }
                     }
                 }
@@ -105,8 +109,11 @@ fn load_env_plain(path: &Path) {
         if let Some((key, value)) = trimmed.split_once('=') {
             let key = key.trim();
             let value = value.trim().trim_matches('"');
-            if std::env::var(key).is_err() && !value.is_empty() && !value.starts_with("encrypted:") {
-                unsafe { std::env::set_var(key, value); }
+            if std::env::var(key).is_err() && !value.is_empty() && !value.starts_with("encrypted:")
+            {
+                unsafe {
+                    std::env::set_var(key, value);
+                }
             }
         }
     }
@@ -133,17 +140,26 @@ pub fn run_cmd_quiet(cmd: &str, args: &[&str]) -> (bool, String) {
 }
 
 pub fn ssh_cmd(host: &str, user: &str, remote_cmd: &str) -> (bool, String) {
-    run_cmd_quiet("ssh", &[
-        "-o", "BatchMode=yes",
-        "-o", "ConnectTimeout=5",
-        &format!("{user}@{host}"),
-        remote_cmd,
-    ])
+    run_cmd_quiet(
+        "ssh",
+        &[
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=5",
+            &format!("{user}@{host}"),
+            remote_cmd,
+        ],
+    )
 }
 
 pub fn run_self(args: &[&str]) -> String {
     match Command::new("mac-host-commands").args(args).output() {
-        Ok(o) => format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)),
+        Ok(o) => format!(
+            "{}{}",
+            String::from_utf8_lossy(&o.stdout),
+            String::from_utf8_lossy(&o.stderr)
+        ),
         Err(e) => format!("Error: {}", e),
     }
 }

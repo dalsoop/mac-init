@@ -2,7 +2,12 @@
 //! 14개 도메인의 print_tui_spec() 공통 구조를 추상화.
 //!
 //! ```rust
-//! use mac_common::tui_spec::TuiSpec;
+//! use mac_common::tui_spec::{self, TuiSpec};
+//!
+//! let items = vec![
+//!     tui_spec::kv_item("등록", "카드 3개", "ok"),
+//!     tui_spec::kv_item("연결", "정상", "ok"),
+//! ];
 //!
 //! let spec = TuiSpec::new("env")
 //!     .refresh(30)
@@ -12,7 +17,7 @@
 //!     .buttons()          // locale.json에서 자동 로드
 //!     .text("안내", "도움말 텍스트")
 //!     .build();
-//! println!("{}", spec);
+//! assert!(!spec.is_empty());
 //! ```
 
 use serde_json::Value;
@@ -124,8 +129,11 @@ impl TuiSpec {
     /// JSON 문자열로 빌드 + 출력.
     /// sections가 비어있으면 panic (개발 시점에 잡히도록).
     pub fn print(self) {
-        assert!(!self.sections.is_empty(),
-            "[{}] TuiSpec: sections가 비어있음 — .kv() 또는 .buttons() 필요", self.domain);
+        assert!(
+            !self.sections.is_empty(),
+            "[{}] TuiSpec: sections가 비어있음 — .kv() 또는 .buttons() 필요",
+            self.domain
+        );
         println!("{}", self.build());
     }
 

@@ -62,63 +62,61 @@ const DEPS: &[Dep] = &[
         name: "Homebrew",
         check_cmd: "brew",
         check_args: &["--version"],
-        install_steps: &[
-            ("bash", &["-c", "/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""]),
-        ],
+        install_steps: &[(
+            "bash",
+            &[
+                "-c",
+                "/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"",
+            ],
+        )],
         description: "macOS 패키지 매니저",
     },
     Dep {
         name: "Rust",
         check_cmd: "rustc",
         check_args: &["--version"],
-        install_steps: &[
-            ("bash", &["-c", "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"]),
-        ],
+        install_steps: &[(
+            "bash",
+            &[
+                "-c",
+                "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y",
+            ],
+        )],
         description: "Rust 컴파일러 + Cargo",
     },
     Dep {
         name: "GitHub CLI",
         check_cmd: "gh",
         check_args: &["--version"],
-        install_steps: &[
-            ("brew", &["install", "gh"]),
-        ],
+        install_steps: &[("brew", &["install", "gh"])],
         description: "GitHub CLI (mac install에 필요)",
     },
     Dep {
         name: "dotenvx",
         check_cmd: "dotenvx",
         check_args: &["--version"],
-        install_steps: &[
-            ("brew", &["install", "dotenvx/brew/dotenvx"]),
-        ],
+        install_steps: &[("brew", &["install", "dotenvx/brew/dotenvx"])],
         description: ".env 암호화 (connect에 필요)",
     },
     Dep {
         name: "Nickel",
         check_cmd: "nickel",
         check_args: &["--version"],
-        install_steps: &[
-            ("brew", &["install", "nickel"]),
-        ],
+        install_steps: &[("brew", &["install", "nickel"])],
         description: "설정 스키마 언어",
     },
     Dep {
         name: "WireGuard",
         check_cmd: "wg",
         check_args: &["--version"],
-        install_steps: &[
-            ("brew", &["install", "wireguard-tools"]),
-        ],
+        install_steps: &[("brew", &["install", "wireguard-tools"])],
         description: "VPN CLI (wireguard 도메인에 필요)",
     },
     Dep {
         name: "iTerm2",
         check_cmd: "brew",
         check_args: &["list", "--cask", "iterm2"],
-        install_steps: &[
-            ("brew", &["install", "--cask", "iterm2"]),
-        ],
+        install_steps: &[("brew", &["install", "--cask", "iterm2"])],
         description: "터미널 앱",
     },
 ];
@@ -142,9 +140,7 @@ fn check_installed(dep: &Dep) -> Option<String> {
 fn install_dep(dep: &Dep) -> bool {
     for (cmd, args) in dep.install_steps {
         println!("  → {} {}", cmd, args.join(" "));
-        let status = Command::new(cmd)
-            .args(*args)
-            .status();
+        let status = Command::new(cmd).args(*args).status();
         match status {
             Ok(s) if s.success() => {}
             _ => return false,
@@ -161,7 +157,11 @@ fn main() {
         Commands::Check => cmd_check(),
         Commands::SetupPath => cmd_setup_path(),
         Commands::SetupSd => cmd_setup_sd(),
-        Commands::SetupAll => { cmd_install(); cmd_setup_path(); cmd_setup_sd(); },
+        Commands::SetupAll => {
+            cmd_install();
+            cmd_setup_path();
+            cmd_setup_sd();
+        }
         Commands::Agent { action } => match action {
             AgentAction::List => mac_host_core::cron::list(),
             AgentAction::Info { label } => mac_host_core::cron::info(&label),
@@ -174,9 +174,14 @@ fn main() {
     }
 }
 
-use mac_common::{paths, tui_spec::{self, TuiSpec}};
+use mac_common::{
+    paths,
+    tui_spec::{self, TuiSpec},
+};
 
-fn home() -> String { paths::home() }
+fn home() -> String {
+    paths::home()
+}
 
 fn shell_store_path() -> std::path::PathBuf {
     std::path::PathBuf::from(home()).join(".mac-app-init/shell.json")
@@ -195,7 +200,9 @@ struct ShellPathEntry {
     label: String,
 }
 
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct ShellStore {
@@ -207,13 +214,17 @@ struct ShellStore {
 
 fn load_shell_store() -> ShellStore {
     let p = shell_store_path();
-    if !p.exists() { return ShellStore::default(); }
+    if !p.exists() {
+        return ShellStore::default();
+    }
     serde_json::from_str(&std::fs::read_to_string(&p).unwrap_or_default()).unwrap_or_default()
 }
 
 fn save_shell_store(s: &ShellStore) {
     let p = shell_store_path();
-    if let Some(parent) = p.parent() { let _ = std::fs::create_dir_all(parent); }
+    if let Some(parent) = p.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
     let _ = std::fs::write(&p, serde_json::to_string_pretty(s).unwrap_or_default());
 }
 
@@ -228,8 +239,16 @@ fn generate_shell_sh(s: &ShellStore) {
 
     for e in &s.paths {
         if e.enabled {
-            let c = if e.label.is_empty() { String::new() } else { format!("  # {}", e.label) };
-            lines.push(format!("export PATH=\"{}:$PATH\"{}", paths::expand(&e.path), c));
+            let c = if e.label.is_empty() {
+                String::new()
+            } else {
+                format!("  # {}", e.label)
+            };
+            lines.push(format!(
+                "export PATH=\"{}:$PATH\"{}",
+                paths::expand(&e.path),
+                c
+            ));
         }
     }
 
@@ -240,7 +259,9 @@ fn generate_shell_sh(s: &ShellStore) {
     }
 
     let sh = shell_sh_path();
-    if let Some(parent) = sh.parent() { let _ = std::fs::create_dir_all(parent); }
+    if let Some(parent) = sh.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
     let _ = std::fs::write(&sh, lines.join("\n") + "\n");
 }
 
@@ -265,14 +286,21 @@ fn cmd_setup_path() {
     let filtered = filtered_lines.join("\n");
     if filtered != content {
         content = filtered;
-        if !content.ends_with('\n') { content.push('\n'); }
+        if !content.ends_with('\n') {
+            content.push('\n');
+        }
         changed = true;
         println!("✓ legacy aliases.sh source 제거");
     }
 
     if !content.contains(".mac-app-init/shell.sh") {
-        if !content.ends_with('\n') { content.push('\n'); }
-        content.push_str(&format!("\n# mac-app-init shell\nsource {}\n", shell_sh.display()));
+        if !content.ends_with('\n') {
+            content.push('\n');
+        }
+        content.push_str(&format!(
+            "\n# mac-app-init shell\nsource {}\n",
+            shell_sh.display()
+        ));
         changed = true;
         println!("✓ source shell.sh 추가");
     } else {
@@ -328,7 +356,9 @@ fn cmd_setup_sd() {
     // 1. 로컬 백업 경로
     let backup_dir = format!("{}/Documents/WORK/미디어/SD백업", home());
     let _ = fs::create_dir_all(&backup_dir);
-    let _ = Command::new(&sd_bin).args(["set-target", &backup_dir]).status();
+    let _ = Command::new(&sd_bin)
+        .args(["set-target", &backup_dir])
+        .status();
 
     // 2. 자동 백업 on
     let _ = Command::new(&sd_bin).args(["auto", "on"]).status();
@@ -344,14 +374,17 @@ fn cmd_setup_sd() {
 }
 
 fn print_tui_spec() {
-    let items: Vec<serde_json::Value> = DEPS.iter().map(|dep| {
-        let ver = check_installed(dep);
-        let (value, status) = match &ver {
-            Some(v) => (format!("✓ {}", v), "ok"),
-            None => ("✗ 미설치".to_string(), "error"),
-        };
-        tui_spec::kv_item(dep.name, &value, status)
-    }).collect();
+    let items: Vec<serde_json::Value> = DEPS
+        .iter()
+        .map(|dep| {
+            let ver = check_installed(dep);
+            let (value, status) = match &ver {
+                Some(v) => (format!("✓ {}", v), "ok"),
+                None => ("✗ 미설치".to_string(), "error"),
+            };
+            tui_spec::kv_item(dep.name, &value, status)
+        })
+        .collect();
 
     // PATH 설정 상태
     use std::path::PathBuf;
@@ -365,11 +398,20 @@ fn print_tui_spec() {
         let s = std::fs::read_to_string(&sd_cfg_path).unwrap_or_default();
         let v: serde_json::Value = serde_json::from_str(&s).unwrap_or_default();
         (
-            v.get("auto_enabled").and_then(|v| v.as_bool()).unwrap_or(false),
-            v.get("auto_eject").and_then(|v| v.as_bool()).unwrap_or(false),
-            v.get("backup_target").and_then(|v| v.as_str()).unwrap_or("미설정").to_string(),
+            v.get("auto_enabled")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            v.get("auto_eject")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            v.get("backup_target")
+                .and_then(|v| v.as_str())
+                .unwrap_or("미설정")
+                .to_string(),
         )
-    } else { (false, false, "미설정".into()) };
+    } else {
+        (false, false, "미설정".into())
+    };
 
     // TCC 상태
     let mac_bin_path = format!("{}/.cargo/bin/mac", home());
@@ -382,7 +424,10 @@ fn print_tui_spec() {
         .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "2")
         .unwrap_or(false);
 
-    let installed_count = items.iter().filter(|i| i.get("status").and_then(|s| s.as_str()) == Some("ok")).count();
+    let installed_count = items
+        .iter()
+        .filter(|i| i.get("status").and_then(|s| s.as_str()) == Some("ok"))
+        .count();
     let total_count = DEPS.len();
     let usage_active = installed_count == total_count;
     let usage_summary = format!("{}/{} 설치됨", installed_count, total_count);
@@ -391,22 +436,48 @@ fn print_tui_spec() {
         .refresh(60)
         .usage(usage_active, &usage_summary)
         .kv("상태", items)
-        .kv("초기 설정", vec![
-            tui_spec::kv_item("PATH (shell.sh)",
-                if path_ok { "✓ 설정됨" } else { "✗ 미설정" },
-                if path_ok { "ok" } else { "error" }),
-            tui_spec::kv_item("TCC (Documents 접근)",
-                if tcc_ok { "✓ 허용" } else { "✗ 미허용" },
-                if tcc_ok { "ok" } else { "warn" }),
-            tui_spec::kv_item("SD 자동 백업",
-                if sd_auto { "✓ 켜짐" } else { "꺼짐" },
-                if sd_auto { "ok" } else { "warn" }),
-            tui_spec::kv_item("SD 자동 추출",
-                if sd_eject { "✓ 켜짐" } else { "꺼짐" },
-                if sd_eject { "ok" } else { "warn" }),
-            tui_spec::kv_item("SD 백업 경로", &sd_target,
-                if sd_target == "미설정" { "error" } else { "ok" }),
-        ])
+        .kv(
+            "초기 설정",
+            vec![
+                tui_spec::kv_item(
+                    "PATH (shell.sh)",
+                    if path_ok {
+                        "✓ 설정됨"
+                    } else {
+                        "✗ 미설정"
+                    },
+                    if path_ok { "ok" } else { "error" },
+                ),
+                tui_spec::kv_item(
+                    "TCC (Documents 접근)",
+                    if tcc_ok {
+                        "✓ 허용"
+                    } else {
+                        "✗ 미허용"
+                    },
+                    if tcc_ok { "ok" } else { "warn" },
+                ),
+                tui_spec::kv_item(
+                    "SD 자동 백업",
+                    if sd_auto { "✓ 켜짐" } else { "꺼짐" },
+                    if sd_auto { "ok" } else { "warn" },
+                ),
+                tui_spec::kv_item(
+                    "SD 자동 추출",
+                    if sd_eject { "✓ 켜짐" } else { "꺼짐" },
+                    if sd_eject { "ok" } else { "warn" },
+                ),
+                tui_spec::kv_item(
+                    "SD 백업 경로",
+                    &sd_target,
+                    if sd_target == "미설정" {
+                        "error"
+                    } else {
+                        "ok"
+                    },
+                ),
+            ],
+        )
         .buttons()
         .print();
 }
@@ -441,12 +512,18 @@ fn cmd_status() {
             &format!("SELECT auth_value FROM access WHERE client='{}' AND service='kTCCServiceSystemPolicyDocumentsFolder';", mac_bin),
         ])
         .output();
-    let mac_allowed = tcc_check.ok()
+    let mac_allowed = tcc_check
+        .ok()
         .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "2")
         .unwrap_or(false);
-    println!("  {} mac CLI Documents 접근: {}",
+    println!(
+        "  {} mac CLI Documents 접근: {}",
         if mac_allowed { "✓" } else { "✗" },
-        if mac_allowed { "허용됨" } else { "미허용 — 터미널에서 mac 실행 시 '접근 허용' 팝업에 허용 필요" }
+        if mac_allowed {
+            "허용됨"
+        } else {
+            "미허용 — 터미널에서 mac 실행 시 '접근 허용' 팝업에 허용 필요"
+        }
     );
     println!("  ℹ 도메인 바이너리는 `mac run` 경유로 실행하면 TCC 상속됨.");
     if missing > 0 {

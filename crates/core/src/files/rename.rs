@@ -1,17 +1,20 @@
+use std::fs;
 use std::path::Path;
 use std::process::Command;
-use std::fs;
 
 use super::home;
 
 pub fn classify_file(path: &Path) -> &'static str {
-    let ext = path.extension()
+    let ext = path
+        .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_lowercase();
 
     match ext.as_str() {
-        "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "ico" | "bmp" | "tiff" => "문서/미디어/사진",
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "ico" | "bmp" | "tiff" => {
+            "문서/미디어/사진"
+        }
         "psd" | "ai" | "sketch" | "fig" | "xd" => "문서/미디어/디자인",
         "mp4" | "mov" | "avi" | "mkv" | "webm" => "문서/미디어/영상",
         "mp3" | "wav" | "flac" | "aac" | "ogg" | "m4a" => "문서/미디어/음악",
@@ -27,7 +30,10 @@ pub fn classify_file(path: &Path) -> &'static str {
 }
 
 pub fn format_filename(path: &Path) -> String {
-    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("unknown");
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown");
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
 
     let re_formatted = regex_lite::Regex::new(r"^\d{6}_").unwrap();

@@ -17,7 +17,10 @@ fn main() {
     }
 
     let all_values: Vec<String> = domain_names.iter().map(|n| format!("\"{}\"", n)).collect();
-    println!("cargo::rustc-check-cfg=cfg(domain, values({}))", all_values.join(", "));
+    println!(
+        "cargo::rustc-check-cfg=cfg(domain, values({}))",
+        all_values.join(", ")
+    );
 
     for name in &domain_names {
         println!("cargo:rustc-cfg=domain=\"{}\"", name);

@@ -72,7 +72,11 @@ fn main() {
         Commands::Search { query } => cmd_search(&query),
         Commands::Dns { action } => match action {
             DnsAction::Status => dns_status(),
-            DnsAction::Set { interface, value, secondary } => dns_set(&interface, &value, secondary.as_deref()),
+            DnsAction::Set {
+                interface,
+                value,
+                secondary,
+            } => dns_set(&interface, &value, secondary.as_deref()),
             DnsAction::Reset { interface } => dns_reset(&interface),
             DnsAction::Flush => dns_flush(),
             DnsAction::Test { domain, server } => dns_test(&domain, server.as_deref()),
@@ -101,7 +105,9 @@ fn parse_hosts() -> Vec<HostEntry> {
         }
         let (comment, effective) = if let Some(stripped) = trimmed.strip_prefix('#') {
             (true, stripped.trim())
-        } else { (false, trimmed) };
+        } else {
+            (false, trimmed)
+        };
         let parts: Vec<&str> = effective.split_whitespace().collect();
         if parts.len() >= 2 {
             entries.push(HostEntry {
@@ -115,42 +121,70 @@ fn parse_hosts() -> Vec<HostEntry> {
 }
 
 fn uptime() -> String {
-    Command::new("uptime").output().ok()
+    Command::new("uptime")
+        .output()
+        .ok()
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .unwrap_or_default()
 }
 
 fn disk_usage_root() -> String {
-    Command::new("df").args(["-h", "/"]).output().ok()
+    Command::new("df")
+        .args(["-h", "/"])
+        .output()
+        .ok()
         .map(|o| {
             let s = String::from_utf8_lossy(&o.stdout);
-            s.lines().nth(1).map(|l| {
-                let p: Vec<&str> = l.split_whitespace().collect();
-                if p.len() >= 5 {
-                    format!("{} used / {} total ({})", p[2], p[1], p[4])
-                } else { l.to_string() }
-            }).unwrap_or_default()
+            s.lines()
+                .nth(1)
+                .map(|l| {
+                    let p: Vec<&str> = l.split_whitespace().collect();
+                    if p.len() >= 5 {
+                        format!("{} used / {} total ({})", p[2], p[1], p[4])
+                    } else {
+                        l.to_string()
+                    }
+                })
+                .unwrap_or_default()
         })
         .unwrap_or_default()
 }
 
 fn memory_summary() -> String {
     let out = Command::new("vm_stat").output().ok();
-    let Some(o) = out else { return String::new(); };
+    let Some(o) = out else {
+        return String::new();
+    };
     let text = String::from_utf8_lossy(&o.stdout);
-    let mut free = 0u64; let mut active = 0u64; let mut wired = 0u64; let mut compressed = 0u64;
+    let mut free = 0u64;
+    let mut active = 0u64;
+    let mut wired = 0u64;
+    let mut compressed = 0u64;
     let parse = |s: &str| s.trim().trim_end_matches('.').parse::<u64>().ok();
     for line in text.lines() {
-        if let Some(v) = line.strip_prefix("Pages free:").and_then(parse) { free = v; }
-        else if let Some(v) = line.strip_prefix("Pages active:").and_then(parse) { active = v; }
-        else if let Some(v) = line.strip_prefix("Pages wired down:").and_then(parse) { wired = v; }
-        else if let Some(v) = line.strip_prefix("Pages occupied by compressor:").and_then(parse) { compressed = v; }
+        if let Some(v) = line.strip_prefix("Pages free:").and_then(parse) {
+            free = v;
+        } else if let Some(v) = line.strip_prefix("Pages active:").and_then(parse) {
+            active = v;
+        } else if let Some(v) = line.strip_prefix("Pages wired down:").and_then(parse) {
+            wired = v;
+        } else if let Some(v) = line
+            .strip_prefix("Pages occupied by compressor:")
+            .and_then(parse)
+        {
+            compressed = v;
+        }
     }
     // Apple Silicon 페이지 크기 16KB.
     let page = 16384u64;
     let mb = |p: u64| (p * page) / 1_000_000;
-    format!("free {}MB, active {}MB, wired {}MB, compressed {}MB",
-        mb(free), mb(active), mb(wired), mb(compressed))
+    format!(
+        "free {}MB, active {}MB, wired {}MB, compressed {}MB",
+        mb(free),
+        mb(active),
+        mb(wired),
+        mb(compressed)
+    )
 }
 
 fn cmd_status() {
@@ -192,19 +226,27 @@ fn cmd_search(query: &str) {
             hits += 1;
         }
     }
-    if hits == 0 { println!("매칭 없음"); }
+    if hits == 0 {
+        println!("매칭 없음");
+    }
 }
 
 fn print_tui_spec() {
     use mac_common::tui_spec::{self, TuiSpec};
 
     let entries = parse_hosts();
-    let host_items: Vec<serde_json::Value> = entries.iter().map(|e| {
-        tui_spec::kv_item_data(&e.ip, &e.hostname,
-            if e.comment { "warn" } else { "ok" },
-            serde_json::json!({ "ip": e.ip, "hostname": e.hostname,
-                      "commented": e.comment.to_string() }))
-    }).collect();
+    let host_items: Vec<serde_json::Value> = entries
+        .iter()
+        .map(|e| {
+            tui_spec::kv_item_data(
+                &e.ip,
+                &e.hostname,
+                if e.comment { "warn" } else { "ok" },
+                serde_json::json!({ "ip": e.ip, "hostname": e.hostname,
+                      "commented": e.comment.to_string() }),
+            )
+        })
+        .collect();
 
     TuiSpec::new("host")
         .refresh(30)
@@ -260,7 +302,9 @@ fn dns_status_items() -> Vec<serde_json::Value> {
             (servers.join(", "), "ok")
         };
         items.push(tui_spec::kv_item_data(
-            &format!("DNS ({})", iface), &value, status,
+            &format!("DNS ({})", iface),
+            &value,
+            status,
             serde_json::json!({ "name": iface, "interface": iface }),
         ));
     }
@@ -286,7 +330,11 @@ fn dns_status() {
     let scutil = cmd::stdout("scutil", &["--dns"]);
     // resolver 요약만
     for line in scutil.lines() {
-        if line.contains("nameserver") || line.contains("domain") || line.contains("search") || line.starts_with("resolver") {
+        if line.contains("nameserver")
+            || line.contains("domain")
+            || line.contains("search")
+            || line.starts_with("resolver")
+        {
             println!("  {}", line.trim());
         }
     }
@@ -322,8 +370,12 @@ fn dns_set(interface: &str, value: &str, secondary: Option<&str>) {
             println!("✓ DNS 설정 완료");
             println!("  적용 확인: mai run host dns status");
             // 자동 플러시
-            let _ = Command::new("sudo").args(["dscacheutil", "-flushcache"]).status();
-            let _ = Command::new("sudo").args(["killall", "-HUP", "mDNSResponder"]).status();
+            let _ = Command::new("sudo")
+                .args(["dscacheutil", "-flushcache"])
+                .status();
+            let _ = Command::new("sudo")
+                .args(["killall", "-HUP", "mDNSResponder"])
+                .status();
             println!("✓ DNS 캐시 플러시 완료");
         }
         _ => eprintln!("✗ DNS 설정 실패 (sudo 권한 확인)"),
@@ -338,8 +390,12 @@ fn dns_reset(interface: &str) {
     match status {
         Ok(s) if s.success() => {
             println!("✓ DNS 초기화 완료");
-            let _ = Command::new("sudo").args(["dscacheutil", "-flushcache"]).status();
-            let _ = Command::new("sudo").args(["killall", "-HUP", "mDNSResponder"]).status();
+            let _ = Command::new("sudo")
+                .args(["dscacheutil", "-flushcache"])
+                .status();
+            let _ = Command::new("sudo")
+                .args(["killall", "-HUP", "mDNSResponder"])
+                .status();
             println!("✓ DNS 캐시 플러시 완료");
         }
         _ => eprintln!("✗ DNS 초기화 실패"),
@@ -348,8 +404,12 @@ fn dns_reset(interface: &str) {
 
 fn dns_flush() {
     println!("DNS 캐시 플러시 중...");
-    let r1 = Command::new("sudo").args(["dscacheutil", "-flushcache"]).status();
-    let r2 = Command::new("sudo").args(["killall", "-HUP", "mDNSResponder"]).status();
+    let r1 = Command::new("sudo")
+        .args(["dscacheutil", "-flushcache"])
+        .status();
+    let r2 = Command::new("sudo")
+        .args(["killall", "-HUP", "mDNSResponder"])
+        .status();
     match (r1, r2) {
         (Ok(s1), Ok(s2)) if s1.success() && s2.success() => {
             println!("✓ DNS 캐시 플러시 완료");
@@ -368,7 +428,10 @@ fn dns_test(domain: &str, server: Option<&str>) {
     } else {
         vec![domain]
     };
-    let out = cmd::output("nslookup", &args.iter().map(|s| s.as_ref()).collect::<Vec<&str>>());
+    let out = cmd::output(
+        "nslookup",
+        &args.iter().map(|s| s.as_ref()).collect::<Vec<&str>>(),
+    );
     for line in out.lines() {
         println!("  {}", line);
     }
@@ -377,17 +440,25 @@ fn dns_test(domain: &str, server: Option<&str>) {
 fn dns_presets() {
     let presets = mac_common::locale::dns_presets();
     if presets.is_empty() {
-        println!("프리셋 없음 (locale.json 확인: nickel export ncl/domains.ncl > ~/.mac-app-init/locale.json)");
+        println!(
+            "프리셋 없음 (locale.json 확인: nickel export ncl/domains.ncl > ~/.mac-app-init/locale.json)"
+        );
         return;
     }
     println!("=== DNS 프리셋 ===\n");
-    println!("  {:<20} {:<18} {:<18} {}", "이름", "Primary", "Secondary", "설명");
+    println!(
+        "  {:<20} {:<18} {:<18} {}",
+        "이름", "Primary", "Secondary", "설명"
+    );
     println!("  {}", "─".repeat(75));
     let mut names: Vec<&String> = presets.keys().collect();
     names.sort();
     for name in names {
         let p = &presets[name];
-        println!("  {:<20} {:<18} {:<18} {}", name, p.primary, p.secondary, p.description);
+        println!(
+            "  {:<20} {:<18} {:<18} {}",
+            name, p.primary, p.secondary, p.description
+        );
     }
     println!("\n  사용법: mai run host dns set Wi-Fi cloudflare");
     println!("  초기화: mai run host dns reset Wi-Fi");

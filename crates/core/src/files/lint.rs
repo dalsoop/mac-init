@@ -6,19 +6,20 @@ use super::home;
 // 폴더 → 필수 frontmatter 필드
 const FOLDER_RULES: &[(&str, &[&str], &str)] = &[
     // (폴더, 필수 필드, source 제한)
-    ("00-Inbox",    &["created", "tags"],                   ""),
-    ("01-Daily",    &["created", "tags"],                   ""),
-    ("02-Projects", &["created", "tags", "project"],        ""),
-    ("03-Areas",    &["created", "tags"],                   ""),
-    ("04-Tasks",    &["created", "tags"],                   ""),
-    ("05-Collections", &["created", "tags"],                ""),
-    ("06-Notes",    &["created", "tags", "source"],         ""),
-    ("CLAUDE",      &["created", "tags", "source"],         "ai"),
+    ("00-Inbox", &["created", "tags"], ""),
+    ("01-Daily", &["created", "tags"], ""),
+    ("02-Projects", &["created", "tags", "project"], ""),
+    ("03-Areas", &["created", "tags"], ""),
+    ("04-Tasks", &["created", "tags"], ""),
+    ("05-Collections", &["created", "tags"], ""),
+    ("06-Notes", &["created", "tags", "source"], ""),
+    ("CLAUDE", &["created", "tags", "source"], "ai"),
 ];
 
 pub fn lint() {
     let h = home();
-    let vault = std::env::var("OBSIDIAN_VAULT").unwrap_or_else(|_| format!("{h}/문서/프로젝트/mac-host-commands/옵시디언"));
+    let vault = std::env::var("OBSIDIAN_VAULT")
+        .unwrap_or_else(|_| format!("{h}/문서/프로젝트/mac-host-commands/옵시디언"));
 
     println!("=== 노트 Lint ===\n");
 
@@ -53,7 +54,9 @@ pub fn lint() {
             if !source_must.is_empty() {
                 if let Some(source) = fm.get("source") {
                     if source != source_must {
-                        println!("  ✗ {folder}/{filename} — source가 '{source_must}'이어야 함 (현재: '{source}')");
+                        println!(
+                            "  ✗ {folder}/{filename} — source가 '{source_must}'이어야 함 (현재: '{source}')"
+                        );
                         errors += 1;
                     }
                 }
@@ -71,7 +74,11 @@ pub fn lint() {
 
     // 파일명 포맷 체크 (미디어)
     println!();
-    let media_dirs = ["문서/미디어/사진", "문서/미디어/스크린샷", "문서/미디어/영상"];
+    let media_dirs = [
+        "문서/미디어/사진",
+        "문서/미디어/스크린샷",
+        "문서/미디어/영상",
+    ];
     for dir_name in media_dirs {
         let dir = format!("{h}/{dir_name}");
         if !Path::new(&dir).exists() {
@@ -157,7 +164,11 @@ fn parse_frontmatter(content: &str) -> std::collections::HashMap<String, String>
     for line in yaml.lines() {
         if let Some((key, value)) = line.split_once(':') {
             let key = key.trim().to_string();
-            let value = value.trim().trim_matches('"').trim_matches('\'').to_string();
+            let value = value
+                .trim()
+                .trim_matches('"')
+                .trim_matches('\'')
+                .to_string();
             fm.insert(key, value);
         }
     }

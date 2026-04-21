@@ -15,8 +15,11 @@ pub fn status() {
     }
 
     // 시스템 정보
-    let (_, info) = common::ssh_cmd(host, user,
-        "hostname; echo '---'; pveversion 2>/dev/null; echo '---'; uptime");
+    let (_, info) = common::ssh_cmd(
+        host,
+        user,
+        "hostname; echo '---'; pveversion 2>/dev/null; echo '---'; uptime",
+    );
     let parts: Vec<&str> = info.split("---").collect();
     if parts.len() >= 3 {
         println!("[호스트] {}", parts[0].trim());
@@ -25,8 +28,11 @@ pub fn status() {
     }
 
     // CPU/메모리
-    let (_, resources) = common::ssh_cmd(host, user,
-        r#"echo "CPU: $(nproc) cores, $(cat /proc/loadavg | cut -d' ' -f1-3)"; free -h | awk '/^Mem:/{printf "MEM: %s / %s (%s used)\n", $3, $2, $5}'; df -h / | awk 'NR==2{printf "DISK: %s / %s (%s)\n", $3, $2, $5}'"#);
+    let (_, resources) = common::ssh_cmd(
+        host,
+        user,
+        r#"echo "CPU: $(nproc) cores, $(cat /proc/loadavg | cut -d' ' -f1-3)"; free -h | awk '/^Mem:/{printf "MEM: %s / %s (%s used)\n", $3, $2, $5}'; df -h / | awk 'NR==2{printf "DISK: %s / %s (%s)\n", $3, $2, $5}'"#,
+    );
     println!("\n[리소스]");
     for line in resources.lines() {
         if !line.trim().is_empty() {
@@ -35,8 +41,7 @@ pub fn status() {
     }
 
     // LXC 목록
-    let (_, lxc_list) = common::ssh_cmd(host, user,
-        "pct list 2>/dev/null | tail -n +2 | head -20");
+    let (_, lxc_list) = common::ssh_cmd(host, user, "pct list 2>/dev/null | tail -n +2 | head -20");
     println!("\n[LXC 컨테이너]");
     if lxc_list.trim().is_empty() {
         println!("  (없음)");
@@ -57,8 +62,7 @@ pub fn exec(cmd: &str) {
 
 pub fn lxc_list() {
     let cfg = Config::load();
-    let (_, output) = common::ssh_cmd(&cfg.proxmox.host, &cfg.proxmox.user,
-        "pct list 2>/dev/null");
+    let (_, output) = common::ssh_cmd(&cfg.proxmox.host, &cfg.proxmox.user, "pct list 2>/dev/null");
     print!("{output}");
 }
 
@@ -66,7 +70,10 @@ pub fn lxc_enter(vmid: &str) {
     let cfg = Config::load();
     println!("[proxmox] LXC {vmid} 접속...");
     let _ = std::process::Command::new("ssh")
-        .args(["-t", &format!("{}@{}", cfg.proxmox.user, cfg.proxmox.host),
-            &format!("pct enter {vmid}")])
+        .args([
+            "-t",
+            &format!("{}@{}", cfg.proxmox.user, cfg.proxmox.host),
+            &format!("pct enter {vmid}"),
+        ])
         .status();
 }

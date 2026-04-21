@@ -23,17 +23,32 @@ pub fn status() {
 
     // Proxmox SSH 연결
     let (ok, _) = common::ssh_cmd(&cfg.proxmox.host, &cfg.proxmox.user, "echo ok");
-    println!("\n[Proxmox SSH] {}@{}: {}", cfg.proxmox.user, cfg.proxmox.host,
-        if ok { "✓ 연결 가능" } else { "✗ 연결 불가" });
+    println!(
+        "\n[Proxmox SSH] {}@{}: {}",
+        cfg.proxmox.user,
+        cfg.proxmox.host,
+        if ok {
+            "✓ 연결 가능"
+        } else {
+            "✗ 연결 불가"
+        }
+    );
 
     // 로컬 root SSH 키
     let root_key = std::path::Path::new("/var/root/.ssh/id_ed25519").exists();
-    println!("\n[로컬 root SSH 키] {}", if root_key { "✓ 존재" } else { "✗ 없음" });
+    println!(
+        "\n[로컬 root SSH 키] {}",
+        if root_key { "✓ 존재" } else { "✗ 없음" }
+    );
 }
 
 pub fn copy_key(host: &str) {
     let cfg = Config::load();
-    let target_host = if host.is_empty() { &cfg.proxmox.host } else { host };
+    let target_host = if host.is_empty() {
+        &cfg.proxmox.host
+    } else {
+        host
+    };
     let user = &cfg.proxmox.user;
 
     let home = std::env::var("HOME").unwrap_or_default();
@@ -45,7 +60,10 @@ pub fn copy_key(host: &str) {
         std::process::exit(1);
     }
 
-    let pub_key = std::fs::read_to_string(&pub_key_path).unwrap_or_default().trim().to_string();
+    let pub_key = std::fs::read_to_string(&pub_key_path)
+        .unwrap_or_default()
+        .trim()
+        .to_string();
 
     // sshpass로 키 복사 시도
     let (has_sshpass, _) = common::run_cmd_quiet("which", &["sshpass"]);
@@ -64,17 +82,25 @@ pub fn copy_key(host: &str) {
 
         println!("[ssh] {user}@{target_host}에 SSH 키 등록 중...");
         let output = Command::new("sshpass")
-            .args(["-p", &password, "ssh",
-                "-o", "StrictHostKeyChecking=accept-new",
+            .args([
+                "-p",
+                &password,
+                "ssh",
+                "-o",
+                "StrictHostKeyChecking=accept-new",
                 &format!("{user}@{target_host}"),
-                &remote_cmd])
+                &remote_cmd,
+            ])
             .output()
             .expect("sshpass 실행 실패");
 
         if output.status.success() {
             println!("[ssh] SSH 키 등록 완료");
         } else {
-            eprintln!("[ssh] SSH 키 등록 실패: {}", String::from_utf8_lossy(&output.stderr));
+            eprintln!(
+                "[ssh] SSH 키 등록 실패: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
         }
     } else {
         println!("[ssh] 아래 명령을 대상 서버에서 실행하세요:");
@@ -84,7 +110,11 @@ pub fn copy_key(host: &str) {
 
 pub fn test(host: &str) {
     let cfg = Config::load();
-    let target_host = if host.is_empty() { &cfg.proxmox.host } else { host };
+    let target_host = if host.is_empty() {
+        &cfg.proxmox.host
+    } else {
+        host
+    };
     let user = &cfg.proxmox.user;
 
     println!("[ssh] {}@{} 연결 테스트...", user, target_host);

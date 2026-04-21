@@ -1,9 +1,9 @@
 //! Background operations — spec loading and action execution.
 
+use super::types::DomainId;
 use crate::registry::Registry;
 use crate::spec::DomainSpec;
-use super::types::DomainId;
-use std::sync::{mpsc, Arc};
+use std::sync::{Arc, mpsc};
 
 /// Start a background spec load for a single domain.
 pub fn spawn_spec_load(

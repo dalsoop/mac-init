@@ -8,7 +8,7 @@ use mac_host_tui::registry::Registry;
 use mac_host_tui::spec::*;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use ratatui::{backend::TestBackend, Terminal};
+use ratatui::{Terminal, backend::TestBackend};
 use std::sync::Arc;
 
 // ── MockRegistry ──
@@ -20,39 +20,69 @@ struct MockRegistry {
 
 impl MockRegistry {
     fn new() -> Self {
-        let mount_keybindings = vec![
-            KeyBinding {
-                key: "T".to_string(),
-                label: "토글".to_string(),
-                command: "auto-toggle".to_string(),
-                args: vec!["${selected.name}".to_string()],
-                confirm: false,
-                reload: true,
-            },
-        ];
+        let mount_keybindings = vec![KeyBinding {
+            key: "T".to_string(),
+            label: "토글".to_string(),
+            command: "auto-toggle".to_string(),
+            args: vec!["${selected.name}".to_string()],
+            confirm: false,
+            reload: true,
+        }];
         let specs = vec![
-            fixture_spec_full("mount", "infra", "마운트", "💾", true, "마운트 2개",
-                mount_keybindings, Some("Status".to_string())),
-            fixture_spec("env",      "infra", "서비스 카드", "🔑", true,  "카드 3개"),
-            fixture_spec("host",     "infra", "시스템 상태", "🖥",  true,  "항상 활성"),
-            fixture_spec("cron",     "auto",  "크론(스케줄)","⏰", true,  "3개 활성"),
-            fixture_spec("files",    "auto",  "파일정리",    "📁", false, "꺼짐"),
-            fixture_spec("sd-backup","auto",  "SD 미디어 백업","📸",true,"자동백업 켜짐"),
-            fixture_spec("git",      "dev",   "Git 설정",    "🔱", true,  "프로필: test"),
-            fixture_spec("vscode",   "dev",   "VSCode",      "💻", true,  "VS Code 사용 가능"),
-            fixture_spec("container","dev",   "컨테이너",    "📦", false, "미설치"),
-            fixture_spec("keyboard", "system","키보드 재매핑","⌨",  true,  "F18 적용됨"),
-            fixture_spec("shell",    "system","PATH+Alias",  "🐚", true,  "PATH 5개, alias 2개"),
-            fixture_spec("wireguard","system","VPN",         "🔒", true,  "2개 활성"),
-            fixture_spec("bootstrap","init",  "의존성 설치", "🚀", true,  "7/7 설치됨"),
-            fixture_spec("quickaction","finder","빠른동작",  "⚡", true,  "3개 설치"),
+            fixture_spec_full(
+                "mount",
+                "infra",
+                "마운트",
+                "💾",
+                true,
+                "마운트 2개",
+                mount_keybindings,
+                Some("Status".to_string()),
+            ),
+            fixture_spec("env", "infra", "서비스 카드", "🔑", true, "카드 3개"),
+            fixture_spec("host", "infra", "시스템 상태", "🖥", true, "항상 활성"),
+            fixture_spec("cron", "auto", "크론(스케줄)", "⏰", true, "3개 활성"),
+            fixture_spec("files", "auto", "파일정리", "📁", false, "꺼짐"),
+            fixture_spec(
+                "sd-backup",
+                "auto",
+                "SD 미디어 백업",
+                "📸",
+                true,
+                "자동백업 켜짐",
+            ),
+            fixture_spec("git", "dev", "Git 설정", "🔱", true, "프로필: test"),
+            fixture_spec("vscode", "dev", "VSCode", "💻", true, "VS Code 사용 가능"),
+            fixture_spec("container", "dev", "컨테이너", "📦", false, "미설치"),
+            fixture_spec(
+                "keyboard",
+                "system",
+                "키보드 재매핑",
+                "⌨",
+                true,
+                "F18 적용됨",
+            ),
+            fixture_spec(
+                "shell",
+                "system",
+                "PATH+Alias",
+                "🐚",
+                true,
+                "PATH 5개, alias 2개",
+            ),
+            fixture_spec("wireguard", "system", "VPN", "🔒", true, "2개 활성"),
+            fixture_spec("bootstrap", "init", "의존성 설치", "🚀", true, "7/7 설치됨"),
+            fixture_spec("quickaction", "finder", "빠른동작", "⚡", true, "3개 설치"),
         ];
         let domains = specs.iter().map(|(name, _)| name.clone()).collect();
         Self { domains, specs }
     }
 
     fn empty() -> Self {
-        Self { domains: vec![], specs: vec![] }
+        Self {
+            domains: vec![],
+            specs: vec![],
+        }
     }
 }
 
@@ -64,7 +94,10 @@ impl Registry for MockRegistry {
         self.domains.clone()
     }
     fn fetch_spec(&self, domain: &str) -> Option<DomainSpec> {
-        self.specs.iter().find(|(n, _)| n == domain).map(|(_, s)| s.clone())
+        self.specs
+            .iter()
+            .find(|(n, _)| n == domain)
+            .map(|(_, s)| s.clone())
     }
     fn run_action(&self, domain: &str, command: &str, _args: &[String]) -> String {
         format!("[mock] {} {}: OK\n", domain, command)
@@ -77,55 +110,83 @@ impl Registry for MockRegistry {
     }
 }
 
-fn fixture_spec(name: &str, group: &str, label_ko: &str, icon: &str, active: bool, summary: &str) -> (String, DomainSpec) {
+fn fixture_spec(
+    name: &str,
+    group: &str,
+    label_ko: &str,
+    icon: &str,
+    active: bool,
+    summary: &str,
+) -> (String, DomainSpec) {
     fixture_spec_full(name, group, label_ko, icon, active, summary, vec![], None)
 }
 
 fn fixture_spec_full(
-    name: &str, group: &str, label_ko: &str, icon: &str,
-    active: bool, summary: &str,
-    keybindings: Vec<KeyBinding>, list_section: Option<String>,
+    name: &str,
+    group: &str,
+    label_ko: &str,
+    icon: &str,
+    active: bool,
+    summary: &str,
+    keybindings: Vec<KeyBinding>,
+    list_section: Option<String>,
 ) -> (String, DomainSpec) {
-    (name.to_string(), DomainSpec {
-        tab: TabInfo {
-            label: name.to_string(),
-            label_ko: Some(label_ko.to_string()),
-            icon: Some(icon.to_string()),
-            description: None,
-        },
-        group: Some(group.to_string()),
-        sections: vec![
-            Section::KeyValue {
-                title: "Status".to_string(),
-                items: vec![
-                    KvItem {
+    (
+        name.to_string(),
+        DomainSpec {
+            tab: TabInfo {
+                label: name.to_string(),
+                label_ko: Some(label_ko.to_string()),
+                icon: Some(icon.to_string()),
+                description: None,
+            },
+            group: Some(group.to_string()),
+            sections: vec![
+                Section::KeyValue {
+                    title: "Status".to_string(),
+                    items: vec![KvItem {
                         key: "상태".to_string(),
-                        value: if active { "✓ 정상".to_string() } else { "○ 비활성".to_string() },
+                        value: if active {
+                            "✓ 정상".to_string()
+                        } else {
+                            "○ 비활성".to_string()
+                        },
                         status: Some(if active { "ok" } else { "warn" }.to_string()),
                         data: {
                             let mut m = std::collections::HashMap::new();
                             m.insert("name".to_string(), name.to_string());
                             m
                         },
-                    },
-                ],
-            },
-            Section::Buttons {
-                title: "Actions".to_string(),
-                items: vec![
-                    Button { label: "Status".to_string(), command: "status".to_string(), args: vec![], key: Some("s".to_string()) },
-                    Button { label: "List".to_string(), command: "list".to_string(), args: vec![], key: Some("l".to_string()) },
-                ],
-            },
-        ],
-        keybindings,
-        list_section,
-        refresh_interval: 0, editables: vec![],
-        usage: Some(UsageInfo {
-            active,
-            summary: Some(summary.to_string()),
-        }),
-    })
+                    }],
+                },
+                Section::Buttons {
+                    title: "Actions".to_string(),
+                    items: vec![
+                        Button {
+                            label: "Status".to_string(),
+                            command: "status".to_string(),
+                            args: vec![],
+                            key: Some("s".to_string()),
+                        },
+                        Button {
+                            label: "List".to_string(),
+                            command: "list".to_string(),
+                            args: vec![],
+                            key: Some("l".to_string()),
+                        },
+                    ],
+                },
+            ],
+            keybindings,
+            list_section,
+            refresh_interval: 0,
+            editables: vec![],
+            usage: Some(UsageInfo {
+                active,
+                summary: Some(summary.to_string()),
+            }),
+        },
+    )
 }
 
 fn make_app() -> App {
@@ -144,9 +205,13 @@ fn navigate_to_mount(app: &mut App) {
     loop {
         app.handle_key(key(KeyCode::Down));
         if let Some(SidebarItem::Domain { label, .. }) = app.sidebar_items.get(app.sidebar_cursor) {
-            if label.contains("마운트") { break; }
+            if label.contains("마운트") {
+                break;
+            }
         }
-        if app.sidebar_cursor > 25 { panic!("mount 도메인 못 찾음"); }
+        if app.sidebar_cursor > 25 {
+            panic!("mount 도메인 못 찾음");
+        }
     }
     app.handle_key(key(KeyCode::Enter)); // → SectionMenu
 }
@@ -178,9 +243,17 @@ fn initial_state() {
 #[test]
 fn sidebar_has_all_groups() {
     let app = make_app();
-    let group_headers: Vec<&str> = app.sidebar_items.iter().filter_map(|item| {
-        if let SidebarItem::GroupHeader(label) = item { Some(label.as_str()) } else { None }
-    }).collect();
+    let group_headers: Vec<&str> = app
+        .sidebar_items
+        .iter()
+        .filter_map(|item| {
+            if let SidebarItem::GroupHeader(label) = item {
+                Some(label.as_str())
+            } else {
+                None
+            }
+        })
+        .collect();
     // 14개 도메인이 6개 그룹에 걸쳐있고, "기타"는 비어있어 안 나옴
     assert!(group_headers.contains(&"인입"));
     assert!(group_headers.contains(&"인프라"));
@@ -196,12 +269,18 @@ fn sidebar_cursor_skips_group_headers() {
     // 아래로 이동하면 GroupHeader를 건너뜀
     app.handle_key(key(KeyCode::Down));
     let pos = app.sidebar_cursor;
-    assert!(!matches!(app.sidebar_items[pos], SidebarItem::GroupHeader(_)));
+    assert!(!matches!(
+        app.sidebar_items[pos],
+        SidebarItem::GroupHeader(_)
+    ));
 
     // 한 번 더 이동
     app.handle_key(key(KeyCode::Down));
     let next = app.sidebar_cursor;
-    assert!(!matches!(app.sidebar_items[next], SidebarItem::GroupHeader(_)));
+    assert!(!matches!(
+        app.sidebar_items[next],
+        SidebarItem::GroupHeader(_)
+    ));
     assert_ne!(pos, next);
 }
 
@@ -525,19 +604,18 @@ fn content_jk_moves_focus_button() {
     assert_eq!(app.focus_button, 0);
 }
 
-
-
-
 #[test]
 fn mouse_click_selects_domain() {
-    use crossterm::event::{MouseEvent, MouseEventKind, MouseButton};
+    use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
     let mut app = make_app();
     // 사이드바 영역 (column < 24)에서 도메인 행 클릭
     // row 1 = 첫 사이드바 항목 (border 빼기)
     // 먼저 sidebar_items 에서 첫 Domain 항목의 인덱스 찾기
-    let domain_row = app.sidebar_items.iter().position(|item| {
-        matches!(item, SidebarItem::Domain { .. })
-    }).unwrap();
+    let domain_row = app
+        .sidebar_items
+        .iter()
+        .position(|item| matches!(item, SidebarItem::Domain { .. }))
+        .unwrap();
     // mouse row = domain_row + 1 (border 보정)
     app.handle_mouse(MouseEvent {
         kind: MouseEventKind::Down(MouseButton::Left),
@@ -551,15 +629,17 @@ fn mouse_click_selects_domain() {
 
 #[test]
 fn mouse_click_on_group_header_ignored() {
-    use crossterm::event::{MouseEvent, MouseEventKind, MouseButton};
+    use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
     let mut app = make_app();
     let initial_focus = app.focus;
     let initial_tab = app.selected_tab;
 
     // 첫 GroupHeader 행 찾기
-    let header_row = app.sidebar_items.iter().position(|item| {
-        matches!(item, SidebarItem::GroupHeader(_))
-    }).unwrap();
+    let header_row = app
+        .sidebar_items
+        .iter()
+        .position(|item| matches!(item, SidebarItem::GroupHeader(_)))
+        .unwrap();
     app.handle_mouse(MouseEvent {
         kind: MouseEventKind::Down(MouseButton::Left),
         column: 5,
@@ -582,7 +662,9 @@ fn install_tab_jk_moves_focus() {
             break;
         }
         app.handle_key(key(KeyCode::Down));
-        if app.sidebar_cursor > 20 { break; } // 안전장치
+        if app.sidebar_cursor > 20 {
+            break;
+        } // 안전장치
     }
     app.handle_key(key(KeyCode::Enter));
     assert_eq!(app.selected_tab, 0);
@@ -718,23 +800,38 @@ fn install_tab_partial_install() {
             vec!["mount".into(), "env".into()]
         }
         fn available_domains(&self) -> Vec<String> {
-            vec!["mount".into(), "env".into(), "cron".into(), "git".into(), "keyboard".into()]
+            vec![
+                "mount".into(),
+                "env".into(),
+                "cron".into(),
+                "git".into(),
+                "keyboard".into(),
+            ]
         }
         fn fetch_spec(&self, domain: &str) -> Option<DomainSpec> {
             // mount만 usage 있고, env는 usage 없음 (spec 로드 실패 시뮬)
             match domain {
-                "mount" => Some(fixture_spec("mount", "infra", "마운트", "💾", true, "마운트 2개").1),
+                "mount" => {
+                    Some(fixture_spec("mount", "infra", "마운트", "💾", true, "마운트 2개").1)
+                }
                 "env" => {
-                    let mut s = fixture_spec("env", "infra", "서비스 카드", "🔑", true, "카드 1개").1;
+                    let mut s =
+                        fixture_spec("env", "infra", "서비스 카드", "🔑", true, "카드 1개").1;
                     s.usage = None; // usage 없는 상태
                     Some(s)
                 }
                 _ => None,
             }
         }
-        fn run_action(&self, _: &str, _: &str, _: &[String]) -> String { String::new() }
-        fn install_domain(&self, _: &str) -> String { String::new() }
-        fn remove_domain(&self, _: &str) -> String { String::new() }
+        fn run_action(&self, _: &str, _: &str, _: &[String]) -> String {
+            String::new()
+        }
+        fn install_domain(&self, _: &str) -> String {
+            String::new()
+        }
+        fn remove_domain(&self, _: &str) -> String {
+            String::new()
+        }
     }
 
     let mut app = App::with_registry(Arc::new(PartialRegistry));
@@ -804,9 +901,15 @@ fn domain_with_special_chars_no_crash() {
         fn fetch_spec(&self, domain: &str) -> Option<DomainSpec> {
             Some(fixture_spec(domain, "auto", domain, "📦", true, "OK").1)
         }
-        fn run_action(&self, _: &str, _: &str, _: &[String]) -> String { String::new() }
-        fn install_domain(&self, _: &str) -> String { String::new() }
-        fn remove_domain(&self, _: &str) -> String { String::new() }
+        fn run_action(&self, _: &str, _: &str, _: &[String]) -> String {
+            String::new()
+        }
+        fn install_domain(&self, _: &str) -> String {
+            String::new()
+        }
+        fn remove_domain(&self, _: &str) -> String {
+            String::new()
+        }
     }
 
     let mut app = App::with_registry(Arc::new(SpecialRegistry));
@@ -819,22 +922,38 @@ fn domain_with_special_chars_no_crash() {
 fn empty_sections_no_crash() {
     struct EmptySectionsRegistry;
     impl Registry for EmptySectionsRegistry {
-        fn installed_domains(&self) -> Vec<String> { vec!["test".into()] }
-        fn available_domains(&self) -> Vec<String> { vec!["test".into()] }
+        fn installed_domains(&self) -> Vec<String> {
+            vec!["test".into()]
+        }
+        fn available_domains(&self) -> Vec<String> {
+            vec!["test".into()]
+        }
         fn fetch_spec(&self, _: &str) -> Option<DomainSpec> {
             Some(DomainSpec {
-                tab: TabInfo { label: "Test".into(), label_ko: None, icon: None, description: None },
+                tab: TabInfo {
+                    label: "Test".into(),
+                    label_ko: None,
+                    icon: None,
+                    description: None,
+                },
                 group: Some("other".into()),
                 sections: vec![], // 빈 sections
                 keybindings: vec![],
                 list_section: None,
-                refresh_interval: 0, editables: vec![],
+                refresh_interval: 0,
+                editables: vec![],
                 usage: None,
             })
         }
-        fn run_action(&self, _: &str, _: &str, _: &[String]) -> String { String::new() }
-        fn install_domain(&self, _: &str) -> String { String::new() }
-        fn remove_domain(&self, _: &str) -> String { String::new() }
+        fn run_action(&self, _: &str, _: &str, _: &[String]) -> String {
+            String::new()
+        }
+        fn install_domain(&self, _: &str) -> String {
+            String::new()
+        }
+        fn remove_domain(&self, _: &str) -> String {
+            String::new()
+        }
     }
 
     let mut app = App::with_registry(Arc::new(EmptySectionsRegistry));
@@ -875,14 +994,24 @@ fn load_fast_specs_none_renders() {
 fn installed_available_mismatch() {
     struct MismatchRegistry;
     impl Registry for MismatchRegistry {
-        fn installed_domains(&self) -> Vec<String> { vec!["alpha".into(), "beta".into()] }
-        fn available_domains(&self) -> Vec<String> { vec!["gamma".into(), "delta".into()] }
+        fn installed_domains(&self) -> Vec<String> {
+            vec!["alpha".into(), "beta".into()]
+        }
+        fn available_domains(&self) -> Vec<String> {
+            vec!["gamma".into(), "delta".into()]
+        }
         fn fetch_spec(&self, domain: &str) -> Option<DomainSpec> {
             Some(fixture_spec(domain, "other", domain, "?", false, "?").1)
         }
-        fn run_action(&self, _: &str, _: &str, _: &[String]) -> String { String::new() }
-        fn install_domain(&self, _: &str) -> String { String::new() }
-        fn remove_domain(&self, _: &str) -> String { String::new() }
+        fn run_action(&self, _: &str, _: &str, _: &[String]) -> String {
+            String::new()
+        }
+        fn install_domain(&self, _: &str) -> String {
+            String::new()
+        }
+        fn remove_domain(&self, _: &str) -> String {
+            String::new()
+        }
     }
 
     let mut app = App::with_registry(Arc::new(MismatchRegistry));
@@ -923,7 +1052,10 @@ fn resolve_template_basic() {
     data.insert("readonly".to_string(), "true".to_string());
 
     // ${selected.name}
-    assert_eq!(app.resolve_template("--card ${selected.name}", &data), "--card synology");
+    assert_eq!(
+        app.resolve_template("--card ${selected.name}", &data),
+        "--card synology"
+    );
     // ${toggle:readonly}
     assert_eq!(app.resolve_template("${toggle:readonly}", &data), "false");
     // ${toggle:missing} → default "false" → 토글 → "true"
@@ -933,7 +1065,10 @@ fn resolve_template_basic() {
     // 템플릿 없으면 그대로
     assert_eq!(app.resolve_template("plain text", &data), "plain text");
     // 닫는 } 없으면 그대로 출력
-    assert_eq!(app.resolve_template("${selected.name", &data), "${selected.name");
+    assert_eq!(
+        app.resolve_template("${selected.name", &data),
+        "${selected.name"
+    );
     // 빈 문자열
     assert_eq!(app.resolve_template("", &data), "");
     // 연속 치환
@@ -968,9 +1103,11 @@ fn install_focus_beyond_available() {
 fn enter_on_group_header_ignored() {
     let mut app = make_app();
     // 첫 GroupHeader 위치로 강제 이동
-    let header_pos = app.sidebar_items.iter().position(|item| {
-        matches!(item, SidebarItem::GroupHeader(_))
-    }).unwrap();
+    let header_pos = app
+        .sidebar_items
+        .iter()
+        .position(|item| matches!(item, SidebarItem::GroupHeader(_)))
+        .unwrap();
     app.sidebar_cursor = header_pos;
     let tab_before = app.selected_tab;
     let focus_before = app.focus;
@@ -1097,9 +1234,13 @@ fn toggle_install_via_space() {
     let mut app = make_app();
     // Install 탭 진입
     loop {
-        if let Some(SidebarItem::Install) = app.sidebar_items.get(app.sidebar_cursor) { break; }
+        if let Some(SidebarItem::Install) = app.sidebar_items.get(app.sidebar_cursor) {
+            break;
+        }
         app.handle_key(key(KeyCode::Down));
-        if app.sidebar_cursor > 25 { panic!("Install 못 찾음"); }
+        if app.sidebar_cursor > 25 {
+            panic!("Install 못 찾음");
+        }
     }
     app.handle_key(key(KeyCode::Enter));
     assert_eq!(app.selected_tab, 0);
@@ -1108,7 +1249,11 @@ fn toggle_install_via_space() {
     // Space로 토글
     app.handle_key(key(KeyCode::Char(' ')));
     // mock에서는 install/remove 결과 반환
-    assert!(app.output.contains("[mock]") || app.output.contains("Removing") || app.output.contains("Installing"));
+    assert!(
+        app.output.contains("[mock]")
+            || app.output.contains("Removing")
+            || app.output.contains("Installing")
+    );
 }
 
 /// Install 탭에서 Enter로도 토글 동작
@@ -1116,9 +1261,13 @@ fn toggle_install_via_space() {
 fn toggle_install_via_enter() {
     let mut app = make_app();
     loop {
-        if let Some(SidebarItem::Install) = app.sidebar_items.get(app.sidebar_cursor) { break; }
+        if let Some(SidebarItem::Install) = app.sidebar_items.get(app.sidebar_cursor) {
+            break;
+        }
         app.handle_key(key(KeyCode::Down));
-        if app.sidebar_cursor > 25 { panic!("Install 못 찾음"); }
+        if app.sidebar_cursor > 25 {
+            panic!("Install 못 찾음");
+        }
     }
     app.handle_key(key(KeyCode::Enter));
     app.handle_key(key(KeyCode::Enter)); // 토글
@@ -1134,28 +1283,45 @@ fn toggle_install_via_enter() {
 fn render_table_section() {
     struct TableRegistry;
     impl Registry for TableRegistry {
-        fn installed_domains(&self) -> Vec<String> { vec!["test".into()] }
-        fn available_domains(&self) -> Vec<String> { vec!["test".into()] }
+        fn installed_domains(&self) -> Vec<String> {
+            vec!["test".into()]
+        }
+        fn available_domains(&self) -> Vec<String> {
+            vec!["test".into()]
+        }
         fn fetch_spec(&self, _: &str) -> Option<DomainSpec> {
             Some(DomainSpec {
-                tab: TabInfo { label: "Test".into(), label_ko: None, icon: None, description: None },
+                tab: TabInfo {
+                    label: "Test".into(),
+                    label_ko: None,
+                    icon: None,
+                    description: None,
+                },
                 group: Some("other".into()),
-                sections: vec![
-                    Section::Table {
-                        title: "데이터".to_string(),
-                        headers: vec!["NAME".into(), "VALUE".into(), "STATUS".into()],
-                        rows: vec![
-                            vec!["alpha".into(), "100".into(), "ok".into()],
-                            vec!["beta".into(), "200".into(), "warn".into()],
-                        ],
-                    },
-                ],
-                keybindings: vec![], list_section: None, refresh_interval: 0, editables: vec![], usage: None,
+                sections: vec![Section::Table {
+                    title: "데이터".to_string(),
+                    headers: vec!["NAME".into(), "VALUE".into(), "STATUS".into()],
+                    rows: vec![
+                        vec!["alpha".into(), "100".into(), "ok".into()],
+                        vec!["beta".into(), "200".into(), "warn".into()],
+                    ],
+                }],
+                keybindings: vec![],
+                list_section: None,
+                refresh_interval: 0,
+                editables: vec![],
+                usage: None,
             })
         }
-        fn run_action(&self, _: &str, _: &str, _: &[String]) -> String { String::new() }
-        fn install_domain(&self, _: &str) -> String { String::new() }
-        fn remove_domain(&self, _: &str) -> String { String::new() }
+        fn run_action(&self, _: &str, _: &str, _: &[String]) -> String {
+            String::new()
+        }
+        fn install_domain(&self, _: &str) -> String {
+            String::new()
+        }
+        fn remove_domain(&self, _: &str) -> String {
+            String::new()
+        }
     }
     let mut app = App::with_registry(Arc::new(TableRegistry));
     app.load();
@@ -1171,25 +1337,42 @@ fn render_table_section() {
 fn render_empty_table() {
     struct EmptyTableRegistry;
     impl Registry for EmptyTableRegistry {
-        fn installed_domains(&self) -> Vec<String> { vec!["test".into()] }
-        fn available_domains(&self) -> Vec<String> { vec!["test".into()] }
+        fn installed_domains(&self) -> Vec<String> {
+            vec!["test".into()]
+        }
+        fn available_domains(&self) -> Vec<String> {
+            vec!["test".into()]
+        }
         fn fetch_spec(&self, _: &str) -> Option<DomainSpec> {
             Some(DomainSpec {
-                tab: TabInfo { label: "Test".into(), label_ko: None, icon: None, description: None },
+                tab: TabInfo {
+                    label: "Test".into(),
+                    label_ko: None,
+                    icon: None,
+                    description: None,
+                },
                 group: Some("other".into()),
-                sections: vec![
-                    Section::Table {
-                        title: "빈 테이블".to_string(),
-                        headers: vec!["A".into(), "B".into()],
-                        rows: vec![],
-                    },
-                ],
-                keybindings: vec![], list_section: None, refresh_interval: 0, editables: vec![], usage: None,
+                sections: vec![Section::Table {
+                    title: "빈 테이블".to_string(),
+                    headers: vec!["A".into(), "B".into()],
+                    rows: vec![],
+                }],
+                keybindings: vec![],
+                list_section: None,
+                refresh_interval: 0,
+                editables: vec![],
+                usage: None,
             })
         }
-        fn run_action(&self, _: &str, _: &str, _: &[String]) -> String { String::new() }
-        fn install_domain(&self, _: &str) -> String { String::new() }
-        fn remove_domain(&self, _: &str) -> String { String::new() }
+        fn run_action(&self, _: &str, _: &str, _: &[String]) -> String {
+            String::new()
+        }
+        fn install_domain(&self, _: &str) -> String {
+            String::new()
+        }
+        fn remove_domain(&self, _: &str) -> String {
+            String::new()
+        }
     }
     let mut app = App::with_registry(Arc::new(EmptyTableRegistry));
     app.load();
@@ -1203,8 +1386,12 @@ fn render_empty_table() {
 fn render_long_text_section() {
     struct TextRegistry;
     impl Registry for TextRegistry {
-        fn installed_domains(&self) -> Vec<String> { vec!["test".into()] }
-        fn available_domains(&self) -> Vec<String> { vec!["test".into()] }
+        fn installed_domains(&self) -> Vec<String> {
+            vec!["test".into()]
+        }
+        fn available_domains(&self) -> Vec<String> {
+            vec!["test".into()]
+        }
         fn fetch_spec(&self, _: &str) -> Option<DomainSpec> {
             Some(DomainSpec {
                 tab: TabInfo { label: "Test".into(), label_ko: None, icon: None, description: None },
@@ -1218,9 +1405,15 @@ fn render_long_text_section() {
                 keybindings: vec![], list_section: None, refresh_interval: 0, editables: vec![], usage: None,
             })
         }
-        fn run_action(&self, _: &str, _: &str, _: &[String]) -> String { String::new() }
-        fn install_domain(&self, _: &str) -> String { String::new() }
-        fn remove_domain(&self, _: &str) -> String { String::new() }
+        fn run_action(&self, _: &str, _: &str, _: &[String]) -> String {
+            String::new()
+        }
+        fn install_domain(&self, _: &str) -> String {
+            String::new()
+        }
+        fn remove_domain(&self, _: &str) -> String {
+            String::new()
+        }
     }
     let mut app = App::with_registry(Arc::new(TextRegistry));
     app.load();
@@ -1235,25 +1428,49 @@ fn render_long_text_section() {
 fn render_many_kv_items() {
     struct ManyItemsRegistry;
     impl Registry for ManyItemsRegistry {
-        fn installed_domains(&self) -> Vec<String> { vec!["test".into()] }
-        fn available_domains(&self) -> Vec<String> { vec!["test".into()] }
+        fn installed_domains(&self) -> Vec<String> {
+            vec!["test".into()]
+        }
+        fn available_domains(&self) -> Vec<String> {
+            vec!["test".into()]
+        }
         fn fetch_spec(&self, _: &str) -> Option<DomainSpec> {
-            let items: Vec<KvItem> = (0..50).map(|i| KvItem {
-                key: format!("key-{}", i),
-                value: format!("value-{}", i),
-                status: Some("ok".into()),
-                data: std::collections::HashMap::new(),
-            }).collect();
+            let items: Vec<KvItem> = (0..50)
+                .map(|i| KvItem {
+                    key: format!("key-{}", i),
+                    value: format!("value-{}", i),
+                    status: Some("ok".into()),
+                    data: std::collections::HashMap::new(),
+                })
+                .collect();
             Some(DomainSpec {
-                tab: TabInfo { label: "Test".into(), label_ko: None, icon: None, description: None },
+                tab: TabInfo {
+                    label: "Test".into(),
+                    label_ko: None,
+                    icon: None,
+                    description: None,
+                },
                 group: Some("other".into()),
-                sections: vec![Section::KeyValue { title: "Big".into(), items }],
-                keybindings: vec![], list_section: None, refresh_interval: 0, editables: vec![], usage: None,
+                sections: vec![Section::KeyValue {
+                    title: "Big".into(),
+                    items,
+                }],
+                keybindings: vec![],
+                list_section: None,
+                refresh_interval: 0,
+                editables: vec![],
+                usage: None,
             })
         }
-        fn run_action(&self, _: &str, _: &str, _: &[String]) -> String { String::new() }
-        fn install_domain(&self, _: &str) -> String { String::new() }
-        fn remove_domain(&self, _: &str) -> String { String::new() }
+        fn run_action(&self, _: &str, _: &str, _: &[String]) -> String {
+            String::new()
+        }
+        fn install_domain(&self, _: &str) -> String {
+            String::new()
+        }
+        fn remove_domain(&self, _: &str) -> String {
+            String::new()
+        }
     }
     let mut app = App::with_registry(Arc::new(ManyItemsRegistry));
     app.load();
@@ -1314,7 +1531,7 @@ fn pending_load_single_spec() {
 /// 사이드바 바깥 클릭 → 무시
 #[test]
 fn mouse_click_outside_sidebar() {
-    use crossterm::event::{MouseEvent, MouseEventKind, MouseButton};
+    use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
     let mut app = make_app();
     let cursor_before = app.sidebar_cursor;
     let focus_before = app.focus;
@@ -1323,7 +1540,8 @@ fn mouse_click_outside_sidebar() {
     app.selected_tab = 1; // domain 탭
     app.handle_mouse(MouseEvent {
         kind: MouseEventKind::Down(MouseButton::Left),
-        column: 50, row: 5,
+        column: 50,
+        row: 5,
         modifiers: KeyModifiers::NONE,
     });
     assert_eq!(app.sidebar_cursor, cursor_before);
@@ -1334,12 +1552,13 @@ fn mouse_click_outside_sidebar() {
 /// row=0 (테두리 위) 클릭 → 무시
 #[test]
 fn mouse_click_on_border() {
-    use crossterm::event::{MouseEvent, MouseEventKind, MouseButton};
+    use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
     let mut app = make_app();
     let focus_before = app.focus;
     app.handle_mouse(MouseEvent {
         kind: MouseEventKind::Down(MouseButton::Left),
-        column: 5, row: 0,
+        column: 5,
+        row: 0,
         modifiers: KeyModifiers::NONE,
     });
     assert_eq!(app.focus, focus_before);
@@ -1348,7 +1567,7 @@ fn mouse_click_on_border() {
 /// 사이드바 범위 밖 행 클릭 → 무시
 #[test]
 fn mouse_click_beyond_sidebar_items() {
-    use crossterm::event::{MouseEvent, MouseEventKind, MouseButton};
+    use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
     let mut app = make_app();
     let items_len = app.sidebar_items.len();
     app.handle_mouse(MouseEvent {
@@ -1363,12 +1582,13 @@ fn mouse_click_beyond_sidebar_items() {
 /// 우클릭 → 무시
 #[test]
 fn mouse_right_click_ignored() {
-    use crossterm::event::{MouseEvent, MouseEventKind, MouseButton};
+    use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
     let mut app = make_app();
     let focus_before = app.focus;
     app.handle_mouse(MouseEvent {
         kind: MouseEventKind::Down(MouseButton::Right),
-        column: 5, row: 3,
+        column: 5,
+        row: 3,
         modifiers: KeyModifiers::NONE,
     });
     assert_eq!(app.focus, focus_before);
@@ -1423,12 +1643,24 @@ fn confirm_quit_ctrl_c_still_quits() {
 fn sidebar_all_group_headers_no_crash() {
     struct HeaderOnlyRegistry;
     impl Registry for HeaderOnlyRegistry {
-        fn installed_domains(&self) -> Vec<String> { vec![] }
-        fn available_domains(&self) -> Vec<String> { vec![] }
-        fn fetch_spec(&self, _: &str) -> Option<DomainSpec> { None }
-        fn run_action(&self, _: &str, _: &str, _: &[String]) -> String { String::new() }
-        fn install_domain(&self, _: &str) -> String { String::new() }
-        fn remove_domain(&self, _: &str) -> String { String::new() }
+        fn installed_domains(&self) -> Vec<String> {
+            vec![]
+        }
+        fn available_domains(&self) -> Vec<String> {
+            vec![]
+        }
+        fn fetch_spec(&self, _: &str) -> Option<DomainSpec> {
+            None
+        }
+        fn run_action(&self, _: &str, _: &str, _: &[String]) -> String {
+            String::new()
+        }
+        fn install_domain(&self, _: &str) -> String {
+            String::new()
+        }
+        fn remove_domain(&self, _: &str) -> String {
+            String::new()
+        }
     }
     let mut app = App::with_registry(Arc::new(HeaderOnlyRegistry));
     app.load();
@@ -1465,19 +1697,38 @@ fn refresh_interval_domain_without_spec() {
 fn refresh_interval_from_spec() {
     struct RefreshRegistry;
     impl Registry for RefreshRegistry {
-        fn installed_domains(&self) -> Vec<String> { vec!["test".into()] }
-        fn available_domains(&self) -> Vec<String> { vec!["test".into()] }
+        fn installed_domains(&self) -> Vec<String> {
+            vec!["test".into()]
+        }
+        fn available_domains(&self) -> Vec<String> {
+            vec!["test".into()]
+        }
         fn fetch_spec(&self, _: &str) -> Option<DomainSpec> {
             Some(DomainSpec {
-                tab: TabInfo { label: "Test".into(), label_ko: None, icon: None, description: None },
+                tab: TabInfo {
+                    label: "Test".into(),
+                    label_ko: None,
+                    icon: None,
+                    description: None,
+                },
                 group: Some("other".into()),
-                sections: vec![], keybindings: vec![],
-                list_section: None, refresh_interval: 30, editables: vec![], usage: None,
+                sections: vec![],
+                keybindings: vec![],
+                list_section: None,
+                refresh_interval: 30,
+                editables: vec![],
+                usage: None,
             })
         }
-        fn run_action(&self, _: &str, _: &str, _: &[String]) -> String { String::new() }
-        fn install_domain(&self, _: &str) -> String { String::new() }
-        fn remove_domain(&self, _: &str) -> String { String::new() }
+        fn run_action(&self, _: &str, _: &str, _: &[String]) -> String {
+            String::new()
+        }
+        fn install_domain(&self, _: &str) -> String {
+            String::new()
+        }
+        fn remove_domain(&self, _: &str) -> String {
+            String::new()
+        }
     }
     let mut app = App::with_registry(Arc::new(RefreshRegistry));
     app.load();
@@ -1562,56 +1813,121 @@ fn load_preserves_valid_tab() {
 fn make_env_app() -> App {
     struct EnvRegistry;
     impl Registry for EnvRegistry {
-        fn installed_domains(&self) -> Vec<String> { vec!["env".into()] }
-        fn available_domains(&self) -> Vec<String> { vec!["env".into()] }
+        fn installed_domains(&self) -> Vec<String> {
+            vec!["env".into()]
+        }
+        fn available_domains(&self) -> Vec<String> {
+            vec!["env".into()]
+        }
         fn fetch_spec(&self, _: &str) -> Option<DomainSpec> {
             Some(DomainSpec {
-                tab: TabInfo { label: "Env".into(), label_ko: Some("서비스 카드".into()), icon: Some("🔑".into()), description: None },
+                tab: TabInfo {
+                    label: "Env".into(),
+                    label_ko: Some("서비스 카드".into()),
+                    icon: Some("🔑".into()),
+                    description: None,
+                },
                 group: Some("infra".into()),
                 sections: vec![
                     Section::KeyValue {
                         title: "Cards".to_string(),
                         items: vec![
-                            KvItem { key: "synology".into(), value: "smb://ai@192.168.2.15:445".into(),
+                            KvItem {
+                                key: "synology".into(),
+                                value: "smb://ai@192.168.2.15:445".into(),
                                 status: Some("ok".into()),
-                                data: [("name".into(),"synology".into()),("readonly".into(),"false".into())].into() },
-                            KvItem { key: "truenas".into(), value: "smb://smb_admin@192.168.2.5:445".into(),
+                                data: [
+                                    ("name".into(), "synology".into()),
+                                    ("readonly".into(), "false".into()),
+                                ]
+                                .into(),
+                            },
+                            KvItem {
+                                key: "truenas".into(),
+                                value: "smb://smb_admin@192.168.2.5:445".into(),
                                 status: Some("ok".into()),
-                                data: [("name".into(),"truenas".into()),("readonly".into(),"true".into())].into() },
-                            KvItem { key: "proxmox".into(), value: "ssh://root@192.168.2.50:22".into(),
+                                data: [
+                                    ("name".into(), "truenas".into()),
+                                    ("readonly".into(), "true".into()),
+                                ]
+                                .into(),
+                            },
+                            KvItem {
+                                key: "proxmox".into(),
+                                value: "ssh://root@192.168.2.50:22".into(),
                                 status: Some("warn".into()),
-                                data: [("name".into(),"proxmox".into()),("readonly".into(),"false".into())].into() },
+                                data: [
+                                    ("name".into(), "proxmox".into()),
+                                    ("readonly".into(), "false".into()),
+                                ]
+                                .into(),
+                            },
                         ],
                     },
                     Section::Buttons {
                         title: "Actions".to_string(),
                         items: vec![
-                            Button { label: "List".into(), command: "list".into(), args: vec![], key: Some("l".into()) },
-                            Button { label: "Test all".into(), command: "test-all".into(), args: vec![], key: Some("T".into()) },
+                            Button {
+                                label: "List".into(),
+                                command: "list".into(),
+                                args: vec![],
+                                key: Some("l".into()),
+                            },
+                            Button {
+                                label: "Test all".into(),
+                                command: "test-all".into(),
+                                args: vec![],
+                                key: Some("T".into()),
+                            },
                         ],
                     },
                     Section::Text {
                         title: "안내".to_string(),
-                        content: "j/k 로 카드 선택. R/N/S/B 로 선택 카드의 mount 옵션 토글. d 로 삭제.".to_string(),
+                        content:
+                            "j/k 로 카드 선택. R/N/S/B 로 선택 카드의 mount 옵션 토글. d 로 삭제."
+                                .to_string(),
                     },
                 ],
                 keybindings: vec![
-                    KeyBinding { key: "d".into(), label: "카드 삭제".into(), command: "rm".into(),
-                        args: vec!["${selected.name}".into()], confirm: true, reload: true },
-                    KeyBinding { key: "R".into(), label: "readonly 토글".into(), command: "set-option".into(),
-                        args: vec!["${selected.name}".into(), "readonly".into(), "${toggle:readonly}".into()],
-                        confirm: false, reload: true },
+                    KeyBinding {
+                        key: "d".into(),
+                        label: "카드 삭제".into(),
+                        command: "rm".into(),
+                        args: vec!["${selected.name}".into()],
+                        confirm: true,
+                        reload: true,
+                    },
+                    KeyBinding {
+                        key: "R".into(),
+                        label: "readonly 토글".into(),
+                        command: "set-option".into(),
+                        args: vec![
+                            "${selected.name}".into(),
+                            "readonly".into(),
+                            "${toggle:readonly}".into(),
+                        ],
+                        confirm: false,
+                        reload: true,
+                    },
                 ],
                 list_section: Some("Cards".into()),
-                refresh_interval: 30, editables: vec![],
-                usage: Some(UsageInfo { active: true, summary: Some("카드 3개".into()) }),
+                refresh_interval: 30,
+                editables: vec![],
+                usage: Some(UsageInfo {
+                    active: true,
+                    summary: Some("카드 3개".into()),
+                }),
             })
         }
         fn run_action(&self, _: &str, cmd: &str, args: &[String]) -> String {
             format!("[mock] {} {}\n", cmd, args.join(" "))
         }
-        fn install_domain(&self, _: &str) -> String { String::new() }
-        fn remove_domain(&self, _: &str) -> String { String::new() }
+        fn install_domain(&self, _: &str) -> String {
+            String::new()
+        }
+        fn remove_domain(&self, _: &str) -> String {
+            String::new()
+        }
     }
     let mut app = App::with_registry(Arc::new(EnvRegistry));
     app.load();
@@ -1667,19 +1983,26 @@ fn env_cards_focus_renders_marker() {
     // "▸"가 synology 줄에 있어야 함
     let lines: Vec<&str> = output.lines().collect();
     let synology_line = lines.iter().find(|l| l.contains("synology")).unwrap();
-    assert!(synology_line.contains("▸"), "synology 줄에 ▸ 마커 없음: {}", synology_line);
+    assert!(
+        synology_line.contains("▸"),
+        "synology 줄에 ▸ 마커 없음: {}",
+        synology_line
+    );
 
     // truenas로 이동
     app.handle_key(key(KeyCode::Down));
     let output = render_to_string(&mut app, 120, 25);
     let lines: Vec<&str> = output.lines().collect();
     let truenas_line = lines.iter().find(|l| l.contains("truenas")).unwrap();
-    assert!(truenas_line.contains("▸"), "truenas 줄에 ▸ 마커 없음: {}", truenas_line);
+    assert!(
+        truenas_line.contains("▸"),
+        "truenas 줄에 ▸ 마커 없음: {}",
+        truenas_line
+    );
     // synology는 더 이상 ▸ 없음
     let synology_line = lines.iter().find(|l| l.contains("synology")).unwrap();
     assert!(!synology_line.contains("▸"), "synology 줄에 아직 ▸ 있음");
 }
-
 
 /// Tab으로 Actions 섹션 이동 후 ↑↓, 다시 Cards로 돌아왔을 때 focus_button 리셋
 #[test]
@@ -1749,11 +2072,17 @@ fn section_menu_reaches_third_section() {
 
     // 렌더링 확인 — 3열에 "안내" 섹션 내용이 표시되어야 함
     let output = render_to_string(&mut app, 120, 20);
-    assert!(output.contains("j/k"), "안내 섹션 텍스트가 3열에 표시되어야 함: 없음");
+    assert!(
+        output.contains("j/k"),
+        "안내 섹션 텍스트가 3열에 표시되어야 함: 없음"
+    );
 
     // ↓ 한 번 더 → 순환해서 Cards로
     app.handle_key(key(KeyCode::Down));
-    assert_eq!(app.content_section, 0, "3번째 ↓ 후 순환해서 Cards로 돌아와야 함");
+    assert_eq!(
+        app.content_section, 0,
+        "3번째 ↓ 후 순환해서 Cards로 돌아와야 함"
+    );
 }
 
 /// 2열 SectionMenu에서 ↑로 역순 이동 (wrap)
@@ -1766,7 +2095,10 @@ fn section_menu_up_wraps_to_last() {
 
     // ↑ → wrap → 마지막 섹션 (안내)
     app.handle_key(key(KeyCode::Up));
-    assert_eq!(app.content_section, 2, "첫 섹션에서 ↑ → 마지막 섹션(안내)으로 wrap");
+    assert_eq!(
+        app.content_section, 2,
+        "첫 섹션에서 ↑ → 마지막 섹션(안내)으로 wrap"
+    );
 }
 
 /// 2열 SectionMenu 3번째 섹션 스냅샷
@@ -1789,32 +2121,53 @@ fn edit_key_opens_modal_on_editable_field() {
     use mac_host_tui::spec::EditableField;
     struct EditRegistry;
     impl Registry for EditRegistry {
-        fn installed_domains(&self) -> Vec<String> { vec!["git".into()] }
-        fn available_domains(&self) -> Vec<String> { vec!["git".into()] }
+        fn installed_domains(&self) -> Vec<String> {
+            vec!["git".into()]
+        }
+        fn available_domains(&self) -> Vec<String> {
+            vec!["git".into()]
+        }
         fn fetch_spec(&self, _: &str) -> Option<DomainSpec> {
             Some(DomainSpec {
-                tab: TabInfo { label: "Git".into(), label_ko: Some("Git 설정".into()), icon: Some("🔱".into()), description: None },
+                tab: TabInfo {
+                    label: "Git".into(),
+                    label_ko: Some("Git 설정".into()),
+                    icon: Some("🔱".into()),
+                    description: None,
+                },
                 group: Some("dev".into()),
-                sections: vec![
-                    Section::KeyValue {
-                        title: "상태".to_string(),
-                        items: vec![
-                            KvItem { key: "user.name".into(), value: "✓ testuser".into(),
-                                status: Some("ok".into()), data: Default::default() },
-                            KvItem { key: "user.email".into(), value: "✓ test@test.com".into(),
-                                status: Some("ok".into()), data: Default::default() },
-                        ],
-                    },
-                ],
-                keybindings: vec![], list_section: None,
-                refresh_interval: 0, editables: vec![
+                sections: vec![Section::KeyValue {
+                    title: "상태".to_string(),
+                    items: vec![
+                        KvItem {
+                            key: "user.name".into(),
+                            value: "✓ testuser".into(),
+                            status: Some("ok".into()),
+                            data: Default::default(),
+                        },
+                        KvItem {
+                            key: "user.email".into(),
+                            value: "✓ test@test.com".into(),
+                            status: Some("ok".into()),
+                            data: Default::default(),
+                        },
+                    ],
+                }],
+                keybindings: vec![],
+                list_section: None,
+                refresh_interval: 0,
+                editables: vec![
                     EditableField {
-                        field: "user.name".into(), label: "Git 사용자 이름".into(),
-                        command: "profile".into(), args: vec!["--name".into(), "${value}".into()],
+                        field: "user.name".into(),
+                        label: "Git 사용자 이름".into(),
+                        command: "profile".into(),
+                        args: vec!["--name".into(), "${value}".into()],
                     },
                     EditableField {
-                        field: "user.email".into(), label: "Git 이메일".into(),
-                        command: "profile".into(), args: vec!["--email".into(), "${value}".into()],
+                        field: "user.email".into(),
+                        label: "Git 이메일".into(),
+                        command: "profile".into(),
+                        args: vec!["--email".into(), "${value}".into()],
                     },
                 ],
                 usage: None,
@@ -1823,8 +2176,12 @@ fn edit_key_opens_modal_on_editable_field() {
         fn run_action(&self, _: &str, cmd: &str, args: &[String]) -> String {
             format!("[mock] {} {}\n", cmd, args.join(" "))
         }
-        fn install_domain(&self, _: &str) -> String { String::new() }
-        fn remove_domain(&self, _: &str) -> String { String::new() }
+        fn install_domain(&self, _: &str) -> String {
+            String::new()
+        }
+        fn remove_domain(&self, _: &str) -> String {
+            String::new()
+        }
     }
 
     let mut app = App::with_registry(Arc::new(EditRegistry));

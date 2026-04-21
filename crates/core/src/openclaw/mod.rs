@@ -3,8 +3,8 @@ use std::process::Command;
 
 use crate::common;
 use crate::constants::{
-    OPENCLAW_DOMAIN, OPENCLAW_SUBDOMAIN, OPENCLAW_ZONE_NAME, OPENCLAW_TUNNEL_NAME,
-    OPENCLAW_GATEWAY_PORT, CF_EMAIL, PLIST_OPENCLAW_GATEWAY, PLIST_CLOUDFLARED, PLIST_OPENCLAW_SYNC,
+    CF_EMAIL, OPENCLAW_DOMAIN, OPENCLAW_GATEWAY_PORT, OPENCLAW_SUBDOMAIN, OPENCLAW_TUNNEL_NAME,
+    OPENCLAW_ZONE_NAME, PLIST_CLOUDFLARED, PLIST_OPENCLAW_GATEWAY, PLIST_OPENCLAW_SYNC,
 };
 
 fn home() -> String {
@@ -16,7 +16,9 @@ fn cf_api_key() -> String {
 }
 
 fn uid() -> String {
-    Command::new("id").args(["-u"]).output()
+    Command::new("id")
+        .args(["-u"])
+        .output()
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .unwrap_or_default()
 }
@@ -36,11 +38,16 @@ fn cf_api(method: &str, endpoint: &str, body: Option<&str>) -> (bool, String) {
     let email_header = format!("X-Auth-Email: {CF_EMAIL}");
     let key_header = format!("X-Auth-Key: {}", cf_api_key());
     let mut args = vec![
-        "-sf", "-X", method,
+        "-sf",
+        "-X",
+        method,
         &url,
-        "-H", &email_header,
-        "-H", &key_header,
-        "-H", "Content-Type: application/json",
+        "-H",
+        &email_header,
+        "-H",
+        &key_header,
+        "-H",
+        "Content-Type: application/json",
     ];
     let body_owned;
     if let Some(b) = body {
@@ -123,35 +130,104 @@ pub fn status() {
 
     // openclaw CLI
     let (has_cli, ver) = common::run_cmd_quiet("openclaw", &["--version"]);
-    println!("[openclaw] {}", if has_cli { format!("✓ {}", ver.trim()) } else { "✗ 미설치".to_string() });
+    println!(
+        "[openclaw] {}",
+        if has_cli {
+            format!("✓ {}", ver.trim())
+        } else {
+            "✗ 미설치".to_string()
+        }
+    );
 
     // 게이트웨이
-    let (_, resp) = common::run_cmd_quiet("curl", &["-s", "-o", "/dev/null", "-w", "%{http_code}",
-        &format!("http://127.0.0.1:{OPENCLAW_GATEWAY_PORT}/")]);
+    let (_, resp) = common::run_cmd_quiet(
+        "curl",
+        &[
+            "-s",
+            "-o",
+            "/dev/null",
+            "-w",
+            "%{http_code}",
+            &format!("http://127.0.0.1:{OPENCLAW_GATEWAY_PORT}/"),
+        ],
+    );
     let gw_ok = resp.trim() == "200";
-    println!("[게이트웨이] 127.0.0.1:{OPENCLAW_GATEWAY_PORT} {}", if gw_ok { "✓ 실행 중" } else { "✗ 미실행" });
+    println!(
+        "[게이트웨이] 127.0.0.1:{OPENCLAW_GATEWAY_PORT} {}",
+        if gw_ok {
+            "✓ 실행 중"
+        } else {
+            "✗ 미실행"
+        }
+    );
 
     // 게이트웨이 LaunchAgent
     let gw_plist = format!("{}/Library/LaunchAgents/{PLIST_OPENCLAW_GATEWAY}", home());
-    println!("[게이트웨이 서비스] {}", if Path::new(&gw_plist).exists() { "✓ LaunchAgent 등록됨" } else { "✗ 미등록" });
+    println!(
+        "[게이트웨이 서비스] {}",
+        if Path::new(&gw_plist).exists() {
+            "✓ LaunchAgent 등록됨"
+        } else {
+            "✗ 미등록"
+        }
+    );
 
     // cloudflared
     let (has_cf, _) = common::run_cmd_quiet("which", &["cloudflared"]);
-    println!("[cloudflared] {}", if has_cf { "✓ 설치됨" } else { "✗ 미설치" });
+    println!(
+        "[cloudflared] {}",
+        if has_cf {
+            "✓ 설치됨"
+        } else {
+            "✗ 미설치"
+        }
+    );
 
     // cloudflared LaunchAgent
     let cf_plist = format!("{}/Library/LaunchAgents/{PLIST_CLOUDFLARED}", home());
-    println!("[cloudflared 서비스] {}", if Path::new(&cf_plist).exists() { "✓ LaunchAgent 등록됨" } else { "✗ 미등록" });
+    println!(
+        "[cloudflared 서비스] {}",
+        if Path::new(&cf_plist).exists() {
+            "✓ LaunchAgent 등록됨"
+        } else {
+            "✗ 미등록"
+        }
+    );
 
     // 터널 상태 (외부 접속)
-    let (_, ext_resp) = common::run_cmd_quiet("curl", &["-s", "-o", "/dev/null", "-w", "%{http_code}",
-        "--connect-timeout", "5", &format!("https://{OPENCLAW_DOMAIN}/")]);
+    let (_, ext_resp) = common::run_cmd_quiet(
+        "curl",
+        &[
+            "-s",
+            "-o",
+            "/dev/null",
+            "-w",
+            "%{http_code}",
+            "--connect-timeout",
+            "5",
+            &format!("https://{OPENCLAW_DOMAIN}/"),
+        ],
+    );
     let ext_ok = ext_resp.trim() == "200";
-    println!("[외부 접속] https://{OPENCLAW_DOMAIN}/ {}", if ext_ok { "✓ 정상" } else { "✗ 연결 불가" });
+    println!(
+        "[외부 접속] https://{OPENCLAW_DOMAIN}/ {}",
+        if ext_ok {
+            "✓ 정상"
+        } else {
+            "✗ 연결 불가"
+        }
+    );
 
     // config 파일
     let cfg_path = format!("{}/openclaw.json", openclaw_dir());
-    println!("[설정] {}", if Path::new(&cfg_path).exists() { "✓ ~/.openclaw/openclaw.json" } else { "✗ 미설정" });
+    println!(
+        "[설정] {}",
+        if Path::new(&cfg_path).exists() {
+            "✓ ~/.openclaw/openclaw.json"
+        } else {
+            "✗ 미설정"
+        }
+    );
 }
 
 // ─── install ─────────────────────────────────────────────
@@ -197,7 +273,10 @@ fn install_cli() {
         println!("[openclaw] 이미 설치됨, 업그레이드 중...");
     }
 
-    let (ok, _, _) = common::run_cmd("bash", &["-c", "curl -fsSL https://openclaw.ai/install.sh | bash"]);
+    let (ok, _, _) = common::run_cmd(
+        "bash",
+        &["-c", "curl -fsSL https://openclaw.ai/install.sh | bash"],
+    );
     if ok {
         println!("[openclaw] CLI 설치 완료");
     } else {
@@ -207,11 +286,24 @@ fn install_cli() {
 }
 
 fn onboard() {
-    let (ok, _, _) = common::run_cmd("openclaw", &[
-        "onboard", "--mode", "local", "--non-interactive", "--accept-risk",
-        "--skip-channels", "--skip-skills", "--skip-search", "--skip-ui",
-        "--skip-health", "--auth-choice", "skip", "--skip-daemon",
-    ]);
+    let (ok, _, _) = common::run_cmd(
+        "openclaw",
+        &[
+            "onboard",
+            "--mode",
+            "local",
+            "--non-interactive",
+            "--accept-risk",
+            "--skip-channels",
+            "--skip-skills",
+            "--skip-search",
+            "--skip-ui",
+            "--skip-health",
+            "--auth-choice",
+            "skip",
+            "--skip-daemon",
+        ],
+    );
     if ok {
         println!("[openclaw] 초기 설정 완료 (로컬 모드)");
     } else {
@@ -226,19 +318,34 @@ fn setup_claude_auth() {
     let home = home();
     // Keychain에서 OAuth 토큰 추출
     if sync_claude_from_keychain(&home) {
-        let (_, _, _) = common::run_cmd("openclaw", &["config", "set", "agents.defaults.model",
-            r#"{"primary":"anthropic/claude-sonnet-4-6"}"#]);
+        let (_, _, _) = common::run_cmd(
+            "openclaw",
+            &[
+                "config",
+                "set",
+                "agents.defaults.model",
+                r#"{"primary":"anthropic/claude-sonnet-4-6"}"#,
+            ],
+        );
         println!("[openclaw] ✓ 모델: anthropic/claude-sonnet-4-6 (구독제 OAuth)");
     } else {
-        println!("[openclaw] Claude Code 로그인 후 `mac-host-commands openclaw sync-auth` 실행하세요");
+        println!(
+            "[openclaw] Claude Code 로그인 후 `mac-host-commands openclaw sync-auth` 실행하세요"
+        );
     }
 }
 
 fn configure_control_ui() {
     let cmds = [
-        ("gateway.controlUi.allowedOrigins", format!("[\"https://{OPENCLAW_DOMAIN}\"]")),
+        (
+            "gateway.controlUi.allowedOrigins",
+            format!("[\"https://{OPENCLAW_DOMAIN}\"]"),
+        ),
         ("gateway.controlUi.allowInsecureAuth", "true".to_string()),
-        ("gateway.controlUi.dangerouslyDisableDeviceAuth", "true".to_string()),
+        (
+            "gateway.controlUi.dangerouslyDisableDeviceAuth",
+            "true".to_string(),
+        ),
     ];
 
     for (key, val) in &cmds {
@@ -293,8 +400,11 @@ fn setup_tunnel() {
     println!("[openclaw] Zone: {OPENCLAW_ZONE_NAME} ({zone_id})");
 
     // 기존 터널 확인 또는 생성
-    let (_, tunnel_resp) = cf_api("GET",
-        &format!("/accounts/{account_id}/cfd_tunnel?name={OPENCLAW_TUNNEL_NAME}&is_deleted=false"), None);
+    let (_, tunnel_resp) = cf_api(
+        "GET",
+        &format!("/accounts/{account_id}/cfd_tunnel?name={OPENCLAW_TUNNEL_NAME}&is_deleted=false"),
+        None,
+    );
     let tunnel_id;
     let tunnel_secret;
 
@@ -307,10 +417,13 @@ fn setup_tunnel() {
         }
         tunnel_secret = secret.trim().to_string();
 
-        let body = format!(
-            r#"{{"name":"{OPENCLAW_TUNNEL_NAME}","tunnel_secret":"{tunnel_secret}"}}"#
+        let body =
+            format!(r#"{{"name":"{OPENCLAW_TUNNEL_NAME}","tunnel_secret":"{tunnel_secret}"}}"#);
+        let (ok, create_resp) = cf_api(
+            "POST",
+            &format!("/accounts/{account_id}/cfd_tunnel"),
+            Some(&body),
         );
-        let (ok, create_resp) = cf_api("POST", &format!("/accounts/{account_id}/cfd_tunnel"), Some(&body));
         if !ok {
             eprintln!("[openclaw] 터널 생성 실패");
             std::process::exit(1);
@@ -328,8 +441,10 @@ fn setup_tunnel() {
     common::ensure_dir(Path::new(&cf_dir));
 
     let cred_path = format!("{cf_dir}/{tunnel_id}.json");
-    let cred = format!(r#"{{"AccountTag":"{}","TunnelID":"{}","TunnelName":"{}","TunnelSecret":"{}"}}"#,
-        account_id, tunnel_id, OPENCLAW_TUNNEL_NAME, tunnel_secret);
+    let cred = format!(
+        r#"{{"AccountTag":"{}","TunnelID":"{}","TunnelName":"{}","TunnelSecret":"{}"}}"#,
+        account_id, tunnel_id, OPENCLAW_TUNNEL_NAME, tunnel_secret
+    );
     std::fs::write(&cred_path, &cred).expect("credentials 파일 생성 실패");
 
     // config.yml
@@ -345,14 +460,22 @@ fn setup_tunnel() {
     println!("[openclaw] cloudflared 설정 파일 생성 완료");
 
     // DNS CNAME 레코드
-    let (_, dns_resp) = cf_api("GET",
-        &format!("/zones/{zone_id}/dns_records?type=CNAME&name={OPENCLAW_DOMAIN}"), None);
+    let (_, dns_resp) = cf_api(
+        "GET",
+        &format!("/zones/{zone_id}/dns_records?type=CNAME&name={OPENCLAW_DOMAIN}"),
+        None,
+    );
 
     if json_result_empty(&dns_resp) {
         let body = format!(
-            r#"{{"type":"CNAME","name":"{}","content":"{}.cfargotunnel.com","proxied":true}}"#, OPENCLAW_SUBDOMAIN, tunnel_id
+            r#"{{"type":"CNAME","name":"{}","content":"{}.cfargotunnel.com","proxied":true}}"#,
+            OPENCLAW_SUBDOMAIN, tunnel_id
         );
-        let (ok, _) = cf_api("POST", &format!("/zones/{zone_id}/dns_records"), Some(&body));
+        let (ok, _) = cf_api(
+            "POST",
+            &format!("/zones/{zone_id}/dns_records"),
+            Some(&body),
+        );
         if ok {
             println!("[openclaw] DNS 레코드 생성: {OPENCLAW_DOMAIN}");
         } else {
@@ -361,9 +484,14 @@ fn setup_tunnel() {
     } else {
         let dns_id = json_extract(&dns_resp, "id");
         let body = format!(
-            r#"{{"type":"CNAME","name":"{}","content":"{}.cfargotunnel.com","proxied":true}}"#, OPENCLAW_SUBDOMAIN, tunnel_id
+            r#"{{"type":"CNAME","name":"{}","content":"{}.cfargotunnel.com","proxied":true}}"#,
+            OPENCLAW_SUBDOMAIN, tunnel_id
         );
-        let _ = cf_api("PUT", &format!("/zones/{zone_id}/dns_records/{dns_id}"), Some(&body));
+        let _ = cf_api(
+            "PUT",
+            &format!("/zones/{zone_id}/dns_records/{dns_id}"),
+            Some(&body),
+        );
         println!("[openclaw] DNS 레코드 업데이트: {OPENCLAW_DOMAIN}");
     }
 
@@ -376,10 +504,15 @@ fn setup_cloudflared_service() {
 
     // 기존 서비스 중지
     let _ = Command::new("launchctl")
-        .args(["bootout", &format!("gui/{}", uid()), "com.cloudflare.cloudflared"])
+        .args([
+            "bootout",
+            &format!("gui/{}", uid()),
+            "com.cloudflare.cloudflared",
+        ])
         .output();
 
-    let plist = format!(r#"<?xml version="1.0" encoding="UTF-8"?>
+    let plist = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -406,7 +539,9 @@ fn setup_cloudflared_service() {
     <key>ThrottleInterval</key>
     <integer>5</integer>
 </dict>
-</plist>"#, home = home());
+</plist>"#,
+        home = home()
+    );
 
     std::fs::write(&plist_path, &plist).expect("cloudflared plist 생성 실패");
 
@@ -420,16 +555,46 @@ fn verify() {
     std::thread::sleep(std::time::Duration::from_secs(3));
 
     // 게이트웨이
-    let (_, resp) = common::run_cmd_quiet("curl", &["-s", "-o", "/dev/null", "-w", "%{http_code}",
-        &format!("http://127.0.0.1:{OPENCLAW_GATEWAY_PORT}/")]);
+    let (_, resp) = common::run_cmd_quiet(
+        "curl",
+        &[
+            "-s",
+            "-o",
+            "/dev/null",
+            "-w",
+            "%{http_code}",
+            &format!("http://127.0.0.1:{OPENCLAW_GATEWAY_PORT}/"),
+        ],
+    );
     let gw_ok = resp.trim() == "200";
-    println!("[검증] 게이트웨이 ... {}", if gw_ok { "OK" } else { "FAIL" });
+    println!(
+        "[검증] 게이트웨이 ... {}",
+        if gw_ok { "OK" } else { "FAIL" }
+    );
 
     // 외부 접속
-    let (_, ext_resp) = common::run_cmd_quiet("curl", &["-s", "-o", "/dev/null", "-w", "%{http_code}",
-        "--connect-timeout", "5", &format!("https://{OPENCLAW_DOMAIN}/")]);
+    let (_, ext_resp) = common::run_cmd_quiet(
+        "curl",
+        &[
+            "-s",
+            "-o",
+            "/dev/null",
+            "-w",
+            "%{http_code}",
+            "--connect-timeout",
+            "5",
+            &format!("https://{OPENCLAW_DOMAIN}/"),
+        ],
+    );
     let ext_ok = ext_resp.trim() == "200";
-    println!("[검증] https://{OPENCLAW_DOMAIN}/ ... {}", if ext_ok { "OK" } else { "FAIL (터널 연결 대기 중일 수 있음)" });
+    println!(
+        "[검증] https://{OPENCLAW_DOMAIN}/ ... {}",
+        if ext_ok {
+            "OK"
+        } else {
+            "FAIL (터널 연결 대기 중일 수 있음)"
+        }
+    );
 }
 
 // ─── uninstall ───────────────────────────────────────────
@@ -455,12 +620,17 @@ pub fn uninstall() {
 fn stop_services() {
     // 게이트웨이 프로세스 종료
     let _ = Command::new("bash")
-        .args(["-c", &format!("kill $(lsof -ti :{OPENCLAW_GATEWAY_PORT}) 2>/dev/null")])
+        .args([
+            "-c",
+            &format!("kill $(lsof -ti :{OPENCLAW_GATEWAY_PORT}) 2>/dev/null"),
+        ])
         .output();
     println!("[openclaw] 게이트웨이 프로세스 종료");
 
     // LaunchAgent 제거
-    let uid = Command::new("id").args(["-u"]).output()
+    let uid = Command::new("id")
+        .args(["-u"])
+        .output()
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .unwrap_or_default();
 
@@ -472,7 +642,11 @@ fn stop_services() {
     println!("[openclaw] 게이트웨이 LaunchAgent 제거");
 
     let _ = Command::new("launchctl")
-        .args(["bootout", &format!("gui/{uid}"), "com.cloudflare.cloudflared"])
+        .args([
+            "bootout",
+            &format!("gui/{uid}"),
+            "com.cloudflare.cloudflared",
+        ])
         .output();
     let cf_plist = format!("{}/Library/LaunchAgents/{PLIST_CLOUDFLARED}", home());
     let _ = std::fs::remove_file(&cf_plist);
@@ -497,24 +671,49 @@ fn cleanup_cloudflare() {
 
     // DNS 레코드 삭제
     if !zone_id.is_empty() {
-        let (_, dns_resp) = cf_api("GET",
-            &format!("/zones/{zone_id}/dns_records?type=CNAME&name={OPENCLAW_DOMAIN}"), None);
+        let (_, dns_resp) = cf_api(
+            "GET",
+            &format!("/zones/{zone_id}/dns_records?type=CNAME&name={OPENCLAW_DOMAIN}"),
+            None,
+        );
         if !json_result_empty(&dns_resp) {
             let dns_id = json_extract(&dns_resp, "id");
-            let (ok, _) = cf_api("DELETE", &format!("/zones/{zone_id}/dns_records/{dns_id}"), None);
-            println!("[openclaw] DNS 레코드 {} {OPENCLAW_DOMAIN}", if ok { "삭제 완료" } else { "삭제 실패" });
+            let (ok, _) = cf_api(
+                "DELETE",
+                &format!("/zones/{zone_id}/dns_records/{dns_id}"),
+                None,
+            );
+            println!(
+                "[openclaw] DNS 레코드 {} {OPENCLAW_DOMAIN}",
+                if ok { "삭제 완료" } else { "삭제 실패" }
+            );
         }
     }
 
     // 터널 삭제
     if !account_id.is_empty() {
-        let (_, tunnel_resp) = cf_api("GET",
-            &format!("/accounts/{account_id}/cfd_tunnel?name={OPENCLAW_TUNNEL_NAME}&is_deleted=false"), None);
+        let (_, tunnel_resp) = cf_api(
+            "GET",
+            &format!(
+                "/accounts/{account_id}/cfd_tunnel?name={OPENCLAW_TUNNEL_NAME}&is_deleted=false"
+            ),
+            None,
+        );
         if !json_result_empty(&tunnel_resp) {
             let tunnel_id = json_extract(&tunnel_resp, "id");
-            let (ok, _) = cf_api("DELETE",
-                &format!("/accounts/{account_id}/cfd_tunnel/{tunnel_id}?cascade=true"), None);
-            println!("[openclaw] 터널 '{OPENCLAW_TUNNEL_NAME}' {}", if ok { "삭제 완료" } else { "삭제 실패 (활성 연결이 있을 수 있음)" });
+            let (ok, _) = cf_api(
+                "DELETE",
+                &format!("/accounts/{account_id}/cfd_tunnel/{tunnel_id}?cascade=true"),
+                None,
+            );
+            println!(
+                "[openclaw] 터널 '{OPENCLAW_TUNNEL_NAME}' {}",
+                if ok {
+                    "삭제 완료"
+                } else {
+                    "삭제 실패 (활성 연결이 있을 수 있음)"
+                }
+            );
         }
     }
 }
@@ -549,19 +748,42 @@ fn cleanup_local() {
 fn uninstall_packages() {
     // openclaw npm 제거
     let (ok, _, _) = common::run_cmd("npm", &["uninstall", "-g", "openclaw"]);
-    println!("[openclaw] npm 패키지 {}", if ok { "제거 완료" } else { "제거 실패 (이미 없거나)" });
+    println!(
+        "[openclaw] npm 패키지 {}",
+        if ok {
+            "제거 완료"
+        } else {
+            "제거 실패 (이미 없거나)"
+        }
+    );
 
     // cloudflared brew 제거
     let (ok, _, _) = common::run_cmd("brew", &["uninstall", "cloudflared"]);
-    println!("[openclaw] cloudflared {}", if ok { "제거 완료" } else { "제거 실패 (이미 없거나)" });
+    println!(
+        "[openclaw] cloudflared {}",
+        if ok {
+            "제거 완료"
+        } else {
+            "제거 실패 (이미 없거나)"
+        }
+    );
 }
 
 // ─── start / stop ────────────────────────────────────────
 
 pub fn start() {
     // 게이트웨이
-    let (_, resp) = common::run_cmd_quiet("curl", &["-s", "-o", "/dev/null", "-w", "%{http_code}",
-        &format!("http://127.0.0.1:{OPENCLAW_GATEWAY_PORT}/")]);
+    let (_, resp) = common::run_cmd_quiet(
+        "curl",
+        &[
+            "-s",
+            "-o",
+            "/dev/null",
+            "-w",
+            "%{http_code}",
+            &format!("http://127.0.0.1:{OPENCLAW_GATEWAY_PORT}/"),
+        ],
+    );
     if resp.trim() == "200" {
         println!("[openclaw] 게이트웨이 이미 실행 중");
     } else {
@@ -589,13 +811,18 @@ pub fn start() {
 
 pub fn stop() {
     let _ = Command::new("bash")
-        .args(["-c", &format!("kill $(lsof -ti :{OPENCLAW_GATEWAY_PORT}) 2>/dev/null")])
+        .args([
+            "-c",
+            &format!("kill $(lsof -ti :{OPENCLAW_GATEWAY_PORT}) 2>/dev/null"),
+        ])
         .output();
     println!("[openclaw] 게이트웨이 중지");
 
     let cf_plist = format!("{}/Library/LaunchAgents/{PLIST_CLOUDFLARED}", home());
     if Path::new(&cf_plist).exists() {
-        let _ = Command::new("launchctl").args(["unload", &cf_plist]).status();
+        let _ = Command::new("launchctl")
+            .args(["unload", &cf_plist])
+            .status();
     } else {
         let _ = Command::new("pkill").args(["-f", "cloudflared"]).status();
     }
@@ -624,8 +851,15 @@ pub fn sync_auth() {
 
     // 3. 모델 설정 (anthropic 직접 호출)
     if synced > 0 {
-        let (_, _, _) = common::run_cmd("openclaw", &["config", "set", "agents.defaults.model",
-            r#"{"primary":"anthropic/claude-sonnet-4-6"}"#]);
+        let (_, _, _) = common::run_cmd(
+            "openclaw",
+            &[
+                "config",
+                "set",
+                "agents.defaults.model",
+                r#"{"primary":"anthropic/claude-sonnet-4-6"}"#,
+            ],
+        );
         println!("\n[sync] 모델: anthropic/claude-sonnet-4-6");
     }
 
@@ -639,8 +873,15 @@ pub fn sync_auth() {
 /// macOS Keychain에서 Claude Code OAuth 토큰을 추출하여 auth-profiles.json에 저장
 fn sync_claude_from_keychain(home: &str) -> bool {
     // Keychain에서 credentials 추출
-    let (ok, cred_json) = common::run_cmd_quiet("security",
-        &["find-generic-password", "-s", "Claude Code-credentials", "-w"]);
+    let (ok, cred_json) = common::run_cmd_quiet(
+        "security",
+        &[
+            "find-generic-password",
+            "-s",
+            "Claude Code-credentials",
+            "-w",
+        ],
+    );
     if !ok || cred_json.trim().is_empty() {
         println!("[sync] ✗ Keychain에 Claude Code 인증 없음 (로그인 필요)");
         return false;
@@ -685,8 +926,8 @@ print(f"OK:{sub_type}:{expires}")
     let profiles_path = format!("{home}/.openclaw/agents/main/agent/auth-profiles.json");
     common::ensure_dir(Path::new(&format!("{home}/.openclaw/agents/main/agent")));
 
-    let (ok, result) = common::run_cmd_quiet("python3",
-        &["-c", script, cred_json.trim(), &profiles_path]);
+    let (ok, result) =
+        common::run_cmd_quiet("python3", &["-c", script, cred_json.trim(), &profiles_path]);
 
     if ok && result.starts_with("OK:") {
         let parts: Vec<&str> = result.trim().split(':').collect();
@@ -753,8 +994,7 @@ print("OK")
 "#;
 
     let profiles_path = format!("{home}/.openclaw/agents/main/agent/auth-profiles.json");
-    let (ok, _) = common::run_cmd_quiet("python3",
-        &["-c", script, &codex_auth, &profiles_path]);
+    let (ok, _) = common::run_cmd_quiet("python3", &["-c", script, &codex_auth, &profiles_path]);
 
     if ok {
         println!("[sync] ✓ Codex OAuth → auth-profiles.json");
@@ -770,7 +1010,8 @@ pub fn sync_auth_auto() {
     let plist_path = format!("{}/Library/LaunchAgents/{}", home(), PLIST_OPENCLAW_SYNC);
     let mac_host_bin = which_mac_host_commands();
 
-    let plist = format!(r#"<?xml version="1.0" encoding="UTF-8"?>
+    let plist = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -796,12 +1037,19 @@ pub fn sync_auth_auto() {
     <key>StandardErrorPath</key>
     <string>{home}/Library/Logs/openclaw-sync.log</string>
 </dict>
-</plist>"#, mac_host_bin = mac_host_bin, home = home());
+</plist>"#,
+        mac_host_bin = mac_host_bin,
+        home = home()
+    );
 
     std::fs::write(&plist_path, &plist).expect("plist 생성 실패");
 
     let _ = Command::new("launchctl")
-        .args(["bootout", &format!("gui/{}", uid()), "com.mac-host.openclaw-sync"])
+        .args([
+            "bootout",
+            &format!("gui/{}", uid()),
+            "com.mac-host.openclaw-sync",
+        ])
         .output();
     let _ = Command::new("launchctl")
         .args(["bootstrap", &format!("gui/{}", uid()), &plist_path])
@@ -812,7 +1060,11 @@ pub fn sync_auth_auto() {
 
 pub fn sync_auth_disable() {
     let _ = Command::new("launchctl")
-        .args(["bootout", &format!("gui/{}", uid()), "com.mac-host.openclaw-sync"])
+        .args([
+            "bootout",
+            &format!("gui/{}", uid()),
+            "com.mac-host.openclaw-sync",
+        ])
         .output();
     let plist_path = format!("{}/Library/LaunchAgents/{}", home(), PLIST_OPENCLAW_SYNC);
     let _ = std::fs::remove_file(&plist_path);
@@ -832,7 +1084,10 @@ fn which_mac_host_commands() -> String {
 // ─── telegram ────────────────────────────────────────────
 
 fn setup_telegram(token: &str) {
-    let (ok, _, _) = common::run_cmd("openclaw", &["channels", "add", "--channel", "telegram", "--token", token]);
+    let (ok, _, _) = common::run_cmd(
+        "openclaw",
+        &["channels", "add", "--channel", "telegram", "--token", token],
+    );
     if ok {
         println!("[openclaw] ✓ 텔레그램 봇 등록 완료");
         println!("[openclaw]   봇에 DM 보내면 페어링 코드가 나옵니다");
@@ -861,19 +1116,30 @@ pub fn telegram_approve(code: &str) {
 fn restart_gateway() {
     println!("[openclaw] 게이트웨이 재시작 중...");
     let _ = Command::new("bash")
-        .args(["-c", &format!("kill $(lsof -ti :{OPENCLAW_GATEWAY_PORT}) 2>/dev/null")])
+        .args([
+            "-c",
+            &format!("kill $(lsof -ti :{OPENCLAW_GATEWAY_PORT}) 2>/dev/null"),
+        ])
         .output();
     std::thread::sleep(std::time::Duration::from_secs(3));
     // LaunchAgent가 자동 재시작
-    let (_, resp) = common::run_cmd_quiet("curl", &["-s", "-o", "/dev/null", "-w", "%{http_code}",
-        &format!("http://127.0.0.1:{OPENCLAW_GATEWAY_PORT}/")]);
+    let (_, resp) = common::run_cmd_quiet(
+        "curl",
+        &[
+            "-s",
+            "-o",
+            "/dev/null",
+            "-w",
+            "%{http_code}",
+            &format!("http://127.0.0.1:{OPENCLAW_GATEWAY_PORT}/"),
+        ],
+    );
     if resp.trim() == "200" {
         println!("[openclaw] ✓ 게이트웨이 재시작 완료");
     } else {
         println!("[openclaw] ! 게이트웨이 재시작 대기 중 (LaunchAgent가 자동 시작)");
     }
 }
-
 
 // ─── exec approvals ─────────────────────────────────────
 
@@ -918,8 +1184,8 @@ pub fn exec_status() {
             return;
         }
     };
-    let json: serde_json::Value = serde_json::from_str(&content)
-        .unwrap_or_else(|_| serde_json::json!({}));
+    let json: serde_json::Value =
+        serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({}));
 
     let security = json["defaults"]["security"].as_str().unwrap_or("미설정");
     let ask = json["defaults"]["ask"].as_str().unwrap_or("미설정");

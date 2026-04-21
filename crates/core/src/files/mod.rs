@@ -3,8 +3,8 @@ pub mod organize;
 pub mod rename;
 pub mod sd;
 
-use std::path::Path;
 use std::fs;
+use std::path::Path;
 
 use crate::common;
 
@@ -15,7 +15,8 @@ pub fn home() -> String {
 pub fn count_files(dir: &str) -> usize {
     fs::read_dir(dir)
         .map(|entries| {
-            entries.filter_map(|e| e.ok())
+            entries
+                .filter_map(|e| e.ok())
                 .filter(|e| !e.file_name().to_string_lossy().starts_with('.'))
                 .count()
         })
@@ -39,10 +40,24 @@ pub fn status() {
     println!("[임시] {}개 파일", tmp_count);
 
     let plist = format!("{h}/Library/LaunchAgents/com.mac-host.file-organizer.plist");
-    println!("[자동 정리] {}", if Path::new(&plist).exists() { "✓ 활성화됨" } else { "✗ 비활성화" });
+    println!(
+        "[자동 정리] {}",
+        if Path::new(&plist).exists() {
+            "✓ 활성화됨"
+        } else {
+            "✗ 비활성화"
+        }
+    );
 
     let sd_plist = format!("{h}/Library/LaunchAgents/{}", sd::SD_PLIST);
-    println!("[SD 백업] {}", if Path::new(&sd_plist).exists() { "✓ 활성화됨" } else { "✗ 비활성화" });
+    println!(
+        "[SD 백업] {}",
+        if Path::new(&sd_plist).exists() {
+            "✓ 활성화됨"
+        } else {
+            "✗ 비활성화"
+        }
+    );
 
     println!("\n[폴더 현황]");
     let folders = [
@@ -67,7 +82,7 @@ pub fn status() {
 }
 
 // re-export
-pub use organize::{organize, cleanup_temp, setup_auto, disable_auto};
-pub use rename::rename_format;
-pub use sd::{sd_status, sd_enable, sd_disable, sd_run};
 pub use lint::lint;
+pub use organize::{cleanup_temp, disable_auto, organize, setup_auto};
+pub use rename::rename_format;
+pub use sd::{sd_disable, sd_enable, sd_run, sd_status};

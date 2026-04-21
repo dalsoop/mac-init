@@ -1,22 +1,34 @@
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::fs;
 
+use super::{count_files, dir_size, home};
 use crate::common;
-use super::{home, count_files, dir_size};
 
 pub const SD_PLIST: &str = "com.mac-host.sd-backup";
 
 const SKIP_VOLUMES: &[&str] = &[
-    "Macintosh HD", "Macintosh HD - Data", "Recovery", "Preboot",
-    "VM", "Update", "proxmox", "synology", "truenas",
+    "Macintosh HD",
+    "Macintosh HD - Data",
+    "Recovery",
+    "Preboot",
+    "VM",
+    "Update",
+    "proxmox",
+    "synology",
+    "truenas",
 ];
 
 const VIDEO_DIRS: &[&str] = &["PRIVATE", "AVCHD", "CLIP"];
 
 const RSYNC_EXCLUDE: &[&str] = &[
-    "DCIM", "PRIVATE", "AVCHD", "CLIP",
-    "System Volume Information", ".Spotlight-V100", ".fseventsd",
+    "DCIM",
+    "PRIVATE",
+    "AVCHD",
+    "CLIP",
+    "System Volume Information",
+    ".Spotlight-V100",
+    ".fseventsd",
 ];
 
 // === Data functions ===
@@ -40,9 +52,10 @@ fn detect_sd_volumes() -> Vec<PathBuf> {
             }
             // Check if removable media via diskutil
             let (ok, stdout, _) = common::run_cmd("diskutil", &["info", &path.to_string_lossy()]);
-            if ok && (stdout.contains("Removable Media: Removable")
-                || stdout.contains("Protocol: USB")
-                || stdout.contains("Protocol: Secure Digital"))
+            if ok
+                && (stdout.contains("Removable Media: Removable")
+                    || stdout.contains("Protocol: USB")
+                    || stdout.contains("Protocol: Secure Digital"))
             {
                 volumes.push(path);
             }
@@ -81,19 +94,30 @@ pub fn sd_run() {
         let vol_name = sd.file_name().unwrap().to_string_lossy().to_string();
         let backup_dir = backup_base().join(format!("{}_{}", date, vol_name));
 
-        append_log(&log, &format!("[{}] SD 카드 감지: {} ({})", date, vol_name, sd.display()));
+        append_log(
+            &log,
+            &format!("[{}] SD 카드 감지: {} ({})", date, vol_name, sd.display()),
+        );
 
         // DCIM
         let dcim = sd.join("DCIM");
         if dcim.is_dir() {
             let dest = backup_dir.join("DCIM");
             fs::create_dir_all(&dest).ok();
-            let (ok, stdout, _) = common::run_cmd("rsync", &[
-                "-av", &format!("{}/", dcim.display()), &format!("{}/", dest.display()),
-            ]);
+            let (ok, stdout, _) = common::run_cmd(
+                "rsync",
+                &[
+                    "-av",
+                    &format!("{}/", dcim.display()),
+                    &format!("{}/", dest.display()),
+                ],
+            );
             if ok {
                 let count = count_files(&dest.to_string_lossy());
-                append_log(&log, &format!("[{}] DCIM 백업 완료: {}개 파일", date, count));
+                append_log(
+                    &log,
+                    &format!("[{}] DCIM 백업 완료: {}개 파일", date, count),
+                );
                 println!("  ✓ DCIM: {}개 파일 → {}", count, dest.display());
             }
             // Synology mirror
@@ -101,10 +125,18 @@ pub fn sd_run() {
             if mirror.is_dir() {
                 let sync_dir = mirror.join(format!("SD_{}_{}", date, vol_name));
                 fs::create_dir_all(&sync_dir).ok();
-                common::run_cmd("rsync", &[
-                    "-av", &format!("{}/", dcim.display()), &format!("{}/", sync_dir.display()),
-                ]);
-                append_log(&log, &format!("[{}] Synology 백업 완료: {}", date, sync_dir.display()));
+                common::run_cmd(
+                    "rsync",
+                    &[
+                        "-av",
+                        &format!("{}/", dcim.display()),
+                        &format!("{}/", sync_dir.display()),
+                    ],
+                );
+                append_log(
+                    &log,
+                    &format!("[{}] Synology 백업 완료: {}", date, sync_dir.display()),
+                );
             }
         }
 
@@ -114,9 +146,14 @@ pub fn sd_run() {
             if src.is_dir() {
                 let dest = backup_dir.join(vdir);
                 fs::create_dir_all(&dest).ok();
-                common::run_cmd("rsync", &[
-                    "-av", &format!("{}/", src.display()), &format!("{}/", dest.display()),
-                ]);
+                common::run_cmd(
+                    "rsync",
+                    &[
+                        "-av",
+                        &format!("{}/", src.display()),
+                        &format!("{}/", dest.display()),
+                    ],
+                );
                 append_log(&log, &format!("[{}] {} 백업 완료", date, vdir));
                 println!("  ✓ {}", vdir);
             }
@@ -156,7 +193,14 @@ pub fn sd_status() {
     let enabled = Path::new(&plist).exists();
 
     println!("=== SD 자동 백업 ===\n");
-    println!("[자동 백업] {}", if enabled { "✓ 활성화" } else { "✗ 비활성화" });
+    println!(
+        "[자동 백업] {}",
+        if enabled {
+            "✓ 활성화"
+        } else {
+            "✗ 비활성화"
+        }
+    );
 
     let backup_dir = backup_base();
     if backup_dir.exists() {
@@ -201,7 +245,8 @@ pub fn sd_enable() {
     // CLI 바이너리 경로
     let bin = which_mac_host_commands();
 
-    let plist = format!(r#"<?xml version="1.0" encoding="UTF-8"?>
+    let plist = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -222,13 +267,19 @@ pub fn sd_enable() {
     <key>StandardErrorPath</key>
     <string>{home}/문서/시스템/로그/sd-backup.log</string>
 </dict>
-</plist>"#, label = SD_PLIST, bin = bin, home = h);
+</plist>"#,
+        label = SD_PLIST,
+        bin = bin,
+        home = h
+    );
 
     common::ensure_dir(Path::new(&format!("{h}/문서/시스템/로그")));
     common::ensure_dir(&backup_base());
     fs::write(&plist_path, plist).expect("LaunchAgent 생성 실패");
 
-    let _ = Command::new("launchctl").args(["load", &plist_path]).status();
+    let _ = Command::new("launchctl")
+        .args(["load", &plist_path])
+        .status();
     println!("[sd] 자동 백업 활성화 완료");
     println!("  SD 카드 삽입 시 자동 백업 (mac-host-commands files sd-run)");
 }
@@ -242,7 +293,9 @@ pub fn sd_disable() {
         return;
     }
 
-    let _ = Command::new("launchctl").args(["unload", &plist_path]).status();
+    let _ = Command::new("launchctl")
+        .args(["unload", &plist_path])
+        .status();
     fs::remove_file(&plist_path).ok();
     println!("[sd] 자동 백업 비활성화 완료");
 }

@@ -47,7 +47,11 @@ fn main() {
     let cli = Cli::parse();
     match cli.command {
         Commands::List => cmd_list(),
-        Commands::Add { name, command, input } => cmd_add(&name, &command, &input),
+        Commands::Add {
+            name,
+            command,
+            input,
+        } => cmd_add(&name, &command, &input),
         Commands::Remove { name } => cmd_remove(&name),
         Commands::InstallDefaults => cmd_install_defaults(),
         Commands::Reload => cmd_reload(),
@@ -77,10 +81,13 @@ fn print_tui_spec() {
 
     TuiSpec::new("quickaction")
         .usage(usage_active, &usage_summary)
-        .kv("상태", vec![
-            tui_spec::kv_item("설치된 Workflow", &format!("{} 개", rows.len()), "ok"),
-            tui_spec::kv_item("Services 경로", &dir.display().to_string(), "ok"),
-        ])
+        .kv(
+            "상태",
+            vec![
+                tui_spec::kv_item("설치된 Workflow", &format!("{} 개", rows.len()), "ok"),
+                tui_spec::kv_item("Services 경로", &dir.display().to_string(), "ok"),
+            ],
+        )
         .table("워크플로우", vec!["NAME", "PATH"], rows)
         .buttons()
         .print();
@@ -144,7 +151,8 @@ fn create_workflow(name: &str, command: &str, input_type: &str) -> Result<(), St
     };
 
     // Info.plist for Service
-    let info_plist = format!(r#"<?xml version="1.0" encoding="UTF-8"?>
+    let info_plist = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -173,10 +181,12 @@ fn create_workflow(name: &str, command: &str, input_type: &str) -> Result<(), St
         </dict>
     </array>
 </dict>
-</plist>"#);
+</plist>"#
+    );
 
     // document.wflow — minimal workflow with shell script action
-    let wflow = format!(r#"<?xml version="1.0" encoding="UTF-8"?>
+    let wflow = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -316,8 +326,15 @@ fn create_workflow(name: &str, command: &str, input_type: &str) -> Result<(), St
     </dict>
 </dict>
 </plist>"#,
-        command_escaped = command.replace('<', "&lt;").replace('>', "&gt;").replace('&', "&amp;"),
-        ignores_input = if input_type == "none" { "true" } else { "false" },
+        command_escaped = command
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('&', "&amp;"),
+        ignores_input = if input_type == "none" {
+            "true"
+        } else {
+            "false"
+        },
     );
 
     fs::write(contents_dir.join("Info.plist"), info_plist).map_err(|e| e.to_string())?;
@@ -334,10 +351,13 @@ fn cmd_add(name: &str, command: &str, input_type: &str) {
 
     // Wrap command so $f = selected file path
     let shell_script = if input_type != "none" {
-        format!(r#"for f in "$@"
+        format!(
+            r#"for f in "$@"
 do
     {}
-done"#, command)
+done"#,
+            command
+        )
     } else {
         command.to_string()
     };
@@ -370,10 +390,22 @@ fn cmd_install_defaults() {
     println!("=== 기본 Quick Actions 설치 ===\n");
 
     let defaults: Vec<(&str, &str, &str)> = vec![
-        ("mac-init: Open in Terminal", r#"open -a Terminal "$f""#, "files"),
+        (
+            "mac-init: Open in Terminal",
+            r#"open -a Terminal "$f""#,
+            "files",
+        ),
         ("mac-init: Copy Path", r#"echo -n "$f" | pbcopy"#, "files"),
-        ("mac-init: Encrypt .env", r#"dotenvx encrypt -f "$f""#, "files"),
-        ("mac-init: Run Scheduler", r#"~/.cargo/bin/mai run scheduler run "$(basename "$f" .sh)""#, "files"),
+        (
+            "mac-init: Encrypt .env",
+            r#"dotenvx encrypt -f "$f""#,
+            "files",
+        ),
+        (
+            "mac-init: Run Scheduler",
+            r#"~/.cargo/bin/mai run scheduler run "$(basename "$f" .sh)""#,
+            "files",
+        ),
     ];
 
     for (name, cmd, input) in &defaults {
@@ -381,10 +413,13 @@ fn cmd_install_defaults() {
             println!("  - {} (이미 있음)", name);
             continue;
         }
-        let shell = format!(r#"for f in "$@"
+        let shell = format!(
+            r#"for f in "$@"
 do
     {}
-done"#, cmd);
+done"#,
+            cmd
+        );
         match create_workflow(name, &shell, input) {
             Ok(_) => println!("  ✓ {}", name),
             Err(e) => println!("  ✗ {}: {}", name, e),
@@ -399,7 +434,9 @@ done"#, cmd);
 fn cmd_reload() {
     println!("Finder/pbs 재시작 중...");
     // Refresh services registry
-    let _ = Command::new("/System/Library/CoreServices/pbs").args(["-update"]).output();
+    let _ = Command::new("/System/Library/CoreServices/pbs")
+        .args(["-update"])
+        .output();
     let _ = Command::new("killall").args(["Finder"]).output();
     println!("✓ Services 메뉴 새로고침됨");
     println!("  Finder → 파일 우클릭 → Quick Actions 확인");

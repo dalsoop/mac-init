@@ -8,12 +8,12 @@ use crate::common;
 pub struct Project {
     pub name: String,
     pub path: PathBuf,
-    pub host: String,       // github, gitlab, gitea, none
+    pub host: String, // github, gitlab, gitea, none
     pub org: String,
     pub repo: String,
     pub url: String,
     pub branch: String,
-    pub status: String,     // active, archived, stale, local-only
+    pub status: String, // active, archived, stale, local-only
     pub lang: Vec<String>,
 }
 
@@ -82,7 +82,10 @@ pub fn sync_ncl() {
             output.push_str(&format!("    \"{}\" = {{\n", p.name));
             output.push_str(&format!("      name = \"{}\",\n", p.name));
             output.push_str(&format!("      path = \"~/문서/프로젝트/{}\",\n", p.name));
-            output.push_str(&format!("      host = '{}',\n", if p.host == "none" { "none" } else { &p.host }));
+            output.push_str(&format!(
+                "      host = '{}',\n",
+                if p.host == "none" { "none" } else { &p.host }
+            ));
             if !p.org.is_empty() {
                 output.push_str(&format!("      org = \"{}\",\n", p.org));
             }
@@ -110,10 +113,13 @@ pub fn sync_ncl() {
         return;
     }
 
-    let counts: std::collections::HashMap<&str, usize> = projects.iter().fold(
-        std::collections::HashMap::new(),
-        |mut acc, p| { *acc.entry(p.host.as_str()).or_default() += 1; acc },
-    );
+    let counts: std::collections::HashMap<&str, usize> =
+        projects
+            .iter()
+            .fold(std::collections::HashMap::new(), |mut acc, p| {
+                *acc.entry(p.host.as_str()).or_default() += 1;
+                acc
+            });
 
     println!(
         "[projects-sync] {} 갱신 ({}개 프로젝트: github={}, gitlab={}, gitea={}, local={})",
@@ -143,7 +149,11 @@ pub fn status() {
             };
             println!("[{}]", label);
         }
-        let lang_str = if p.lang.is_empty() { String::new() } else { format!(" ({})", p.lang.join(", ")) };
+        let lang_str = if p.lang.is_empty() {
+            String::new()
+        } else {
+            format!(" ({})", p.lang.join(", "))
+        };
         println!("  {:<30} {:<8} {}{}", p.name, p.branch, p.status, lang_str);
     }
 }
@@ -172,17 +182,33 @@ fn git_branch(path: &Path) -> String {
 
 fn detect_lang(path: &Path) -> Vec<String> {
     let mut langs = Vec::new();
-    if path.join("Cargo.toml").exists() { langs.push("rust".to_string()); }
-    if path.join("go.mod").exists() { langs.push("go".to_string()); }
-    if path.join("package.json").exists() { langs.push("typescript".to_string()); }
-    if path.join("composer.json").exists() { langs.push("php".to_string()); }
-    if path.join("pyproject.toml").exists() || path.join("setup.py").exists() { langs.push("python".to_string()); }
+    if path.join("Cargo.toml").exists() {
+        langs.push("rust".to_string());
+    }
+    if path.join("go.mod").exists() {
+        langs.push("go".to_string());
+    }
+    if path.join("package.json").exists() {
+        langs.push("typescript".to_string());
+    }
+    if path.join("composer.json").exists() {
+        langs.push("php".to_string());
+    }
+    if path.join("pyproject.toml").exists() || path.join("setup.py").exists() {
+        langs.push("python".to_string());
+    }
     langs
 }
 
 fn parse_remote(remote: &str) -> (String, String, String, String, String) {
     if remote.is_empty() {
-        return ("none".into(), String::new(), String::new(), String::new(), "local-only".into());
+        return (
+            "none".into(),
+            String::new(),
+            String::new(),
+            String::new(),
+            "local-only".into(),
+        );
     }
 
     if remote.contains("github.com") {
@@ -213,7 +239,13 @@ fn parse_remote(remote: &str) -> (String, String, String, String, String) {
         return ("gitea".into(), org, repo, url, "active".into());
     }
 
-    ("none".into(), String::new(), String::new(), remote.to_string(), "active".into())
+    (
+        "none".into(),
+        String::new(),
+        String::new(),
+        remote.to_string(),
+        "active".into(),
+    )
 }
 
 fn find_ncl_path(home: &str) -> PathBuf {
