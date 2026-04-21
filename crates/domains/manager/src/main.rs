@@ -103,10 +103,7 @@ enum CardAction {
     },
     /// 카드 mount entry 제거
     #[command(hide = true)]
-    MountRemove {
-        card: String,
-        share: String,
-    },
+    MountRemove { card: String, share: String },
     /// 카드 bind entry 추가
     #[command(hide = true)]
     BindAdd {
@@ -330,7 +327,10 @@ fn cmd_card_mount_add(card: &str, share: &str, alias: Option<&str>) {
         .or_insert_with(|| serde_json::json!([]))
         .as_array_mut()
         .expect("mount_entries must be array");
-    if arr.iter().any(|v| v.get("share").and_then(|x| x.as_str()) == Some(share)) {
+    if arr
+        .iter()
+        .any(|v| v.get("share").and_then(|x| x.as_str()) == Some(share))
+    {
         println!("이미 존재: {} {}", card, share);
         return;
     }
@@ -918,8 +918,9 @@ fn cmd_ssh(target: &str) {
         return;
     }
     // LXC 이름 → lxc-shell
+    let lxc_target = target.strip_prefix("lxc.").unwrap_or(target);
     let _ = std::os::unix::process::CommandExt::exec(
-        Command::new(&proxmox_bin).args(["lxc-shell", target]),
+        Command::new(&proxmox_bin).args(["lxc-shell", lxc_target]),
     );
 }
 
