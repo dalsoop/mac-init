@@ -1003,6 +1003,24 @@ fn cmd_auto() {
             continue;
         }
 
+        // SSH → sshfs (비번 불필요, 키 인증)
+        if conn.scheme == "ssh" {
+            let remote_path = if a.share.starts_with('/') { a.share.clone() } else { format!("/{}", a.share) };
+            match mount_sshfs(&conn, &remote_path, &mp) {
+                Ok(()) => {
+                    println!("  ✓ {}/{} → {} (sshfs)", a.connection, a.share, mp.display());
+                    mounted_count += 1;
+                    state.shares.remove(&key);
+                }
+                Err(e) => {
+                    eprintln!("  ✗ {}/{}: {}", a.connection, a.share, e);
+                    failed_count += 1;
+                    record_failure(&mut state, &key, now, "sshfs_fail");
+                }
+            }
+            continue;
+        }
+
         let Some(pw) = get_password(&a.connection) else {
             eprintln!("  ✗ {}/{}: 비번 없음 (.env 의 {}_PASSWORD)", a.connection, a.share, a.connection.to_uppercase());
             failed_count += 1;
