@@ -254,7 +254,25 @@ fn ssh_target() -> String {
     format!("{}@{}", proxmox_user(), proxmox_host())
 }
 
+/// 이름 또는 VMID로 LXC VMID 찾기
+fn resolve_vmid(name_or_id: &str) -> String {
+    // 숫자면 그대로 VMID
+    if name_or_id.chars().all(|c| c.is_ascii_digit()) {
+        return name_or_id.to_string();
+    }
+    // 이름으로 검색
+    for line in lxc_lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() >= 3 && parts.last().map(|n| *n == name_or_id).unwrap_or(false) {
+            return parts[0].to_string();
+        }
+    }
+    eprintln!("✗ LXC '{}' 를 찾을 수 없습니다.", name_or_id);
+    std::process::exit(1);
+}
+
 fn cmd_lxc_shell(vmid: &str) {
+    let vmid = resolve_vmid(vmid);
     let target = ssh_target();
     println!("LXC {} 셸 접속 중...", vmid);
     let _ = Command::new("ssh")
@@ -263,6 +281,7 @@ fn cmd_lxc_shell(vmid: &str) {
 }
 
 fn cmd_lxc_exec(vmid: &str, cmd: &[String]) {
+    let vmid = resolve_vmid(vmid);
     let target = ssh_target();
     let remote_cmd = format!("pct exec {} -- {}", vmid, cmd.join(" "));
     let out = Command::new("ssh").args([&target, &remote_cmd]).output();
@@ -277,13 +296,13 @@ fn cmd_lxc_exec(vmid: &str, cmd: &[String]) {
 }
 
 fn cmd_lxc_start(vmid: &str) {
-    let target = ssh_target();
+    let vmid = resolve_vmid(vmid);
     let (ok, out) = common::ssh_cmd(&proxmox_host(), &proxmox_user(), &format!("pct start {}", vmid));
     if ok { println!("✓ LXC {} 시작", vmid); } else { eprintln!("✗ {}", out); }
-    let _ = target;
 }
 
 fn cmd_lxc_stop(vmid: &str) {
+    let vmid = resolve_vmid(vmid);
     let (ok, out) = common::ssh_cmd(&proxmox_host(), &proxmox_user(), &format!("pct stop {}", vmid));
     if ok { println!("✓ LXC {} 정지", vmid); } else { eprintln!("✗ {}", out); }
 }
