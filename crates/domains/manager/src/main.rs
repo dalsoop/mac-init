@@ -122,9 +122,9 @@ fn known_domains() -> Vec<String> {
     if !presets.is_empty() { return presets; }
     // locale.json 없을 때 fallback
     vec![
-        "bootstrap", "env", "mount", "host",
+        "bootstrap", "env", "mount", "host", "proxmox",
         "cron", "files", "sd-backup",
-        "git", "vscode", "container",
+        "git", "vscode", "container", "obsidian",
         "quickaction", "keyboard", "shell", "wireguard", "tmux",
     ].into_iter().map(String::from).collect()
 }
