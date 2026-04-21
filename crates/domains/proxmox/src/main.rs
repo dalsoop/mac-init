@@ -139,19 +139,69 @@ fn ssh_login_ok() -> bool {
     ok
 }
 
-fn lxc_lines() -> Vec<String> {
+/// 클러스터 노드 목록 (pvesh).
+fn cluster_nodes() -> Vec<(String, String)> {
     let host = proxmox_host();
     let user = proxmox_user();
-    let (ok, output) = common::ssh_cmd(&host, &user, "pct list 2>/dev/null | tail -n +2");
-    if !ok {
-        return Vec::new();
+    let (ok, output) = common::ssh_cmd(&host, &user,
+        "pvesh get /nodes --output-format json 2>/dev/null");
+    if !ok { return vec![("pve".into(), "unknown".into())]; }
+    let nodes: Vec<serde_json::Value> = serde_json::from_str(&output).unwrap_or_default();
+    nodes.iter().map(|n| {
+        let name = n.get("node").and_then(|v| v.as_str()).unwrap_or("?").to_string();
+        let status = n.get("status").and_then(|v| v.as_str()).unwrap_or("?").to_string();
+        (name, status)
+    }).collect()
+}
+
+/// 클러스터 전체 LXC (노드별). 반환: (node, vmid, status, name)
+fn all_lxc() -> Vec<(String, String, String, String)> {
+    let host = proxmox_host();
+    let user = proxmox_user();
+    let nodes = cluster_nodes();
+    let mut result = Vec::new();
+    for (node, _) in &nodes {
+        let cmd = format!("pvesh get /nodes/{}/lxc --output-format json 2>/dev/null", node);
+        let (ok, output) = common::ssh_cmd(&host, &user, &cmd);
+        if !ok { continue; }
+        let ctrs: Vec<serde_json::Value> = serde_json::from_str(&output).unwrap_or_default();
+        for c in ctrs {
+            let vmid = c.get("vmid").and_then(|v| v.as_u64()).map(|v| v.to_string()).unwrap_or_default();
+            let status = c.get("status").and_then(|v| v.as_str()).unwrap_or("?").to_string();
+            let name = c.get("name").and_then(|v| v.as_str()).unwrap_or("?").to_string();
+            result.push((node.clone(), vmid, status, name));
+        }
     }
-    output
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(ToString::to_string)
-        .collect()
+    result.sort_by(|a, b| a.1.cmp(&b.1));
+    result
+}
+
+/// 클러스터 전체 VM (노드별).
+fn all_vms() -> Vec<(String, String, String, String)> {
+    let host = proxmox_host();
+    let user = proxmox_user();
+    let nodes = cluster_nodes();
+    let mut result = Vec::new();
+    for (node, _) in &nodes {
+        let cmd = format!("pvesh get /nodes/{}/qemu --output-format json 2>/dev/null", node);
+        let (ok, output) = common::ssh_cmd(&host, &user, &cmd);
+        if !ok { continue; }
+        let vms: Vec<serde_json::Value> = serde_json::from_str(&output).unwrap_or_default();
+        for v in vms {
+            let vmid = v.get("vmid").and_then(|v| v.as_u64()).map(|v| v.to_string()).unwrap_or_default();
+            let status = v.get("status").and_then(|v| v.as_str()).unwrap_or("?").to_string();
+            let name = v.get("name").and_then(|v| v.as_str()).unwrap_or("?").to_string();
+            result.push((node.clone(), vmid, status, name));
+        }
+    }
+    result.sort_by(|a, b| a.1.cmp(&b.1));
+    result
+}
+
+fn lxc_lines() -> Vec<String> {
+    all_lxc().iter().map(|(node, vmid, status, name)| {
+        format!("{:<8} {:<10} {:<10} {}", vmid, status, node, name)
+    }).collect()
 }
 
 fn cmd_status() {
@@ -235,11 +285,9 @@ fn cmd_lxc_list() {
 }
 
 fn vm_lines() -> Vec<String> {
-    let host = proxmox_host();
-    let user = proxmox_user();
-    let (ok, output) = common::ssh_cmd(&host, &user, "qm list 2>/dev/null | tail -n +2");
-    if !ok { return Vec::new(); }
-    output.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect()
+    all_vms().iter().map(|(node, vmid, status, name)| {
+        format!("{:<8} {:<10} {:<10} {}", vmid, status, node, name)
+    }).collect()
 }
 
 fn cmd_vm_list() {
@@ -254,36 +302,52 @@ fn ssh_target() -> String {
     format!("{}@{}", proxmox_user(), proxmox_host())
 }
 
-/// 이름 또는 VMID로 LXC VMID 찾기
+/// 이름 또는 VMID로 LXC VMID 찾기 (클러스터 전체 검색)
 fn resolve_vmid(name_or_id: &str) -> String {
-    // 숫자면 그대로 VMID
     if name_or_id.chars().all(|c| c.is_ascii_digit()) {
         return name_or_id.to_string();
     }
-    // 이름으로 검색
-    for line in lxc_lines() {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() >= 3 && parts.last().map(|n| *n == name_or_id).unwrap_or(false) {
-            return parts[0].to_string();
+    for (_, vmid, _, name) in all_lxc() {
+        if name == name_or_id {
+            return vmid;
         }
     }
     eprintln!("✗ LXC '{}' 를 찾을 수 없습니다.", name_or_id);
     std::process::exit(1);
 }
 
+/// VMID가 어느 노드에 있는지 찾기 (pct enter는 해당 노드에서 실행해야 함)
+fn find_node_for_vmid(vmid: &str) -> Option<String> {
+    for (node, vid, _, _) in all_lxc() {
+        if vid == vmid { return Some(node); }
+    }
+    None
+}
+
 fn cmd_lxc_shell(vmid: &str) {
     let vmid = resolve_vmid(vmid);
     let target = ssh_target();
-    println!("LXC {} 셸 접속 중...", vmid);
+    // 노드가 로컬(pve)이면 pct enter, 원격이면 해당 노드 ssh 경유
+    let node = find_node_for_vmid(&vmid);
+    let cmd = match node.as_deref() {
+        Some("pve") | None => format!("pct enter {}", vmid),
+        Some(remote) => format!("ssh -t {} 'pct enter {}'", remote, vmid),
+    };
+    println!("LXC {} 셸 접속 중... ({})", vmid, node.as_deref().unwrap_or("local"));
     let _ = Command::new("ssh")
-        .args(["-t", &target, &format!("pct enter {}", vmid)])
+        .args(["-t", &target, &cmd])
         .status();
 }
 
 fn cmd_lxc_exec(vmid: &str, cmd: &[String]) {
     let vmid = resolve_vmid(vmid);
     let target = ssh_target();
-    let remote_cmd = format!("pct exec {} -- {}", vmid, cmd.join(" "));
+    let node = find_node_for_vmid(&vmid);
+    let pct_cmd = format!("pct exec {} -- {}", vmid, cmd.join(" "));
+    let remote_cmd = match node.as_deref() {
+        Some("pve") | None => pct_cmd,
+        Some(remote) => format!("ssh {} '{}'", remote, pct_cmd),
+    };
     let out = Command::new("ssh").args([&target, &remote_cmd]).output();
     match out {
         Ok(o) => {
@@ -297,14 +361,26 @@ fn cmd_lxc_exec(vmid: &str, cmd: &[String]) {
 
 fn cmd_lxc_start(vmid: &str) {
     let vmid = resolve_vmid(vmid);
-    let (ok, out) = common::ssh_cmd(&proxmox_host(), &proxmox_user(), &format!("pct start {}", vmid));
-    if ok { println!("✓ LXC {} 시작", vmid); } else { eprintln!("✗ {}", out); }
+    let node = find_node_for_vmid(&vmid);
+    let pct = format!("pct start {}", vmid);
+    let cmd = match node.as_deref() {
+        Some("pve") | None => pct,
+        Some(remote) => format!("ssh {} '{}'", remote, pct),
+    };
+    let (ok, out) = common::ssh_cmd(&proxmox_host(), &proxmox_user(), &cmd);
+    if ok { println!("✓ LXC {} 시작 ({})", vmid, node.as_deref().unwrap_or("local")); } else { eprintln!("✗ {}", out); }
 }
 
 fn cmd_lxc_stop(vmid: &str) {
     let vmid = resolve_vmid(vmid);
-    let (ok, out) = common::ssh_cmd(&proxmox_host(), &proxmox_user(), &format!("pct stop {}", vmid));
-    if ok { println!("✓ LXC {} 정지", vmid); } else { eprintln!("✗ {}", out); }
+    let node = find_node_for_vmid(&vmid);
+    let pct = format!("pct stop {}", vmid);
+    let cmd = match node.as_deref() {
+        Some("pve") | None => pct,
+        Some(remote) => format!("ssh {} '{}'", remote, pct),
+    };
+    let (ok, out) = common::ssh_cmd(&proxmox_host(), &proxmox_user(), &cmd);
+    if ok { println!("✓ LXC {} 정지 ({})", vmid, node.as_deref().unwrap_or("local")); } else { eprintln!("✗ {}", out); }
 }
 
 fn cmd_ssh() {
@@ -329,53 +405,46 @@ fn print_tui_spec() {
         "미등록".to_string()
     };
 
-    // LXC 테이블 (VMID, STATUS, NAME)
-    let lxc_rows: Vec<serde_json::Value> = lxc.iter().map(|line| {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        let (vmid, status, name) = match parts.len() {
-            0 => ("?", "?", "?"),
-            1 => (parts[0], "?", "?"),
-            2 => (parts[0], parts[1], "?"),
-            _ => (parts[0], parts[1], *parts.last().unwrap_or(&"?")),
-        };
-        serde_json::json!([vmid, status, name])
-    }).collect();
+    // 클러스터 전체 데이터
+    let lxc_all = if ssh_ok { all_lxc() } else { Vec::new() };
+    let vm_all = if ssh_ok { all_vms() } else { Vec::new() };
+    let nodes = if ssh_ok { cluster_nodes() } else { Vec::new() };
 
-    // VM 테이블
-    let vms = if ssh_ok { vm_lines() } else { Vec::new() };
-    let vm_rows: Vec<serde_json::Value> = vms.iter().map(|line| {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        let (vmid, name, status) = match parts.len() {
-            0 => ("?", "?", "?"),
-            1 => (parts[0], "?", "?"),
-            2 => (parts[0], parts[1], "?"),
-            _ => (parts[0], parts[1], parts[2]),
-        };
-        serde_json::json!([vmid, name, status])
-    }).collect();
+    let lxc_rows: Vec<serde_json::Value> = lxc_all.iter()
+        .map(|(node, vmid, status, name)| serde_json::json!([vmid, status, node, name]))
+        .collect();
 
-    let lxc_running = lxc.iter().filter(|l| l.contains("running")).count();
-    let lxc_total = lxc.len();
+    let vm_rows: Vec<serde_json::Value> = vm_all.iter()
+        .map(|(node, vmid, status, name)| serde_json::json!([vmid, status, node, name]))
+        .collect();
+
+    let lxc_running = lxc_all.iter().filter(|c| c.2 == "running").count();
+    let lxc_total = lxc_all.len();
+    let node_info = nodes.iter()
+        .map(|(n, s)| format!("{} ({})", n, s))
+        .collect::<Vec<_>>().join(", ");
 
     TuiSpec::new("proxmox")
         .refresh(30)
         .usage(usage_active, &usage_summary)
         .kv("상태", vec![
-            tui_spec::kv_item("등록",
-                if proxmox_card_exists() { "✓ proxmox 카드" } else { "✗ setup 필요" },
-                if proxmox_card_exists() { "ok" } else { "error" }),
+            tui_spec::kv_item("클러스터", &node_info,
+                if !nodes.is_empty() { "ok" } else { "error" }),
             tui_spec::kv_item("Web UI", &proxmox_url(), if web_ok { "ok" } else { "error" }),
             tui_spec::kv_item("SSH", &format!("{}@{}:22", user, host),
                 if ssh_ok { "ok" } else { "warn" }),
             tui_spec::kv_item("LXC",
                 &format!("{}/{} running", lxc_running, lxc_total),
                 if lxc_running > 0 { "ok" } else { "warn" }),
+            tui_spec::kv_item("VM",
+                &format!("{}", vm_all.len()),
+                "ok"),
         ])
         .table("LXC 컨테이너",
-            vec!["VMID", "STATUS", "NAME"],
+            vec!["VMID", "STATUS", "NODE", "NAME"],
             lxc_rows)
         .table("VM",
-            vec!["VMID", "NAME", "STATUS"],
+            vec!["VMID", "STATUS", "NODE", "NAME"],
             vm_rows)
         .buttons()
         .text("안내",
