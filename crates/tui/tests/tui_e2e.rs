@@ -140,23 +140,17 @@ fn key(code: KeyCode) -> KeyEvent {
 }
 
 /// mount 도메인까지 사이드바에서 이동 + Enter → SectionMenu
-fn navigate_to_mount(app: &mut App) {
-    loop {
-        app.handle_key(key(KeyCode::Down));
-        if let Some(SidebarItem::Domain { label, .. }) = app.sidebar_items.get(app.sidebar_cursor) {
-            if label.contains("마운트") { break; }
-        }
-        if app.sidebar_cursor > 25 { panic!("mount 도메인 못 찾음"); }
-    }
-    app.handle_key(key(KeyCode::Enter)); // → SectionMenu
-}
-
 fn render_to_string(app: &mut App, w: u16, h: u16) -> String {
     let backend = TestBackend::new(w, h);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal.draw(|f| app.render(f)).unwrap();
     // TestBackend → Display → 스냅샷
     format!("{}", terminal.backend())
+}
+
+fn normalize_spinner_frames(output: &str) -> String {
+    const SPINNERS: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+    output.chars().map(|ch| if SPINNERS.contains(&ch) { '⠋' } else { ch }).collect()
 }
 
 // ═══════════════════════════════════════
@@ -701,7 +695,7 @@ fn snapshot_spinner_loading() {
     app.specs[0] = None;
     app.selected_tab = 1;
     app.focus = Focus::Content;
-    let output = render_to_string(&mut app, 100, 20);
+    let output = normalize_spinner_frames(&render_to_string(&mut app, 100, 20));
     insta::assert_snapshot!("spinner_loading", output);
 }
 

@@ -26,7 +26,13 @@ fn domains_dir() -> PathBuf {
     PathBuf::from(home()).join(".mac-app-init/domains")
 }
 
-fn mac_bin() -> &'static str { "mac" }
+fn manager_bin() -> PathBuf {
+    let local = PathBuf::from(home()).join(".local/bin/mai");
+    if local.exists() {
+        return local;
+    }
+    PathBuf::from("mai")
+}
 
 fn domain_bin(name: &str) -> PathBuf {
     domains_dir().join(format!("mac-domain-{}", name))
@@ -44,7 +50,7 @@ impl Registry for SystemRegistry {
     }
 
     fn available_domains(&self) -> Vec<String> {
-        let output = Command::new(mac_bin()).arg("available").output();
+        let output = Command::new(manager_bin()).arg("available").output();
         let Ok(o) = output else { return Vec::new(); };
         let stdout = String::from_utf8_lossy(&o.stdout);
         stdout.lines()
@@ -79,7 +85,7 @@ impl Registry for SystemRegistry {
     }
 
     fn install_domain(&self, name: &str) -> String {
-        let output = Command::new(mac_bin()).args(["install", name]).output();
+        let output = Command::new(manager_bin()).args(["install", name]).output();
         match output {
             Ok(o) => format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)),
             Err(e) => format!("Error: {}", e),
@@ -87,7 +93,7 @@ impl Registry for SystemRegistry {
     }
 
     fn remove_domain(&self, name: &str) -> String {
-        let output = Command::new(mac_bin()).args(["remove", name]).output();
+        let output = Command::new(manager_bin()).args(["remove", name]).output();
         match output {
             Ok(o) => format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)),
             Err(e) => format!("Error: {}", e),
