@@ -90,8 +90,10 @@ fn nas_root() -> PathBuf {
 }
 
 /// 마운트 포인트: ~/Documents/WORK/NAS/<conn>/<share>
+/// share가 /mnt/xxx 같은 절대경로면 앞 / 제거해서 상대 경로로 변환.
 fn mount_point(connection: &str, share: &str) -> PathBuf {
-    nas_root().join(connection).join(share)
+    let clean = share.trim_start_matches('/');
+    nas_root().join(connection).join(clean)
 }
 
 /// mount_smbfs 호출. ASCII share 는 직접, 비-ASCII (한글 등) 는 open smb:// fallback.
@@ -196,7 +198,7 @@ struct Connection {
 }
 
 fn is_mountable_scheme(scheme: &str) -> bool {
-    matches!(scheme, "smb" | "nfs" | "afp" | "webdav" | "webdavs" | "rclone")
+    matches!(scheme, "smb" | "nfs" | "afp" | "webdav" | "webdavs" | "rclone" | "ssh")
 }
 
 fn load_connections() -> Vec<Connection> {
