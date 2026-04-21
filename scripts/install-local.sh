@@ -95,9 +95,8 @@ if [[ "${1:-}" == "--all" ]]; then
   build_manager
   for d in "$ROOT"/crates/domains/*/; do
     name="$(basename "$d")"
-    # bootstrap 은 설치 대상 아님
     case "$name" in
-      manager|bootstrap) continue ;;
+      manager) continue ;;
     esac
     build_and_copy "$name" || true
   done
