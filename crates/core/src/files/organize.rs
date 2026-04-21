@@ -133,16 +133,11 @@ pub fn setup_auto() {
     let _ = Command::new("launchctl").args(["load", &plist_path]).status();
 
     println!("[files] 자동 정리 설정 완료");
-    println!("  매일 09:00 실행 (mac-host-commands files organize + cleanup-temp)");
+    println!("  매일 09:00 실행 (mai run files organize + mai run files cleanup-temp)");
 }
 
 fn which_bin() -> String {
-    let (ok, stdout) = common::run_cmd_quiet("which", &["mac-host-commands"]);
-    if ok {
-        stdout.trim().to_string()
-    } else {
-        format!("{}/.cargo/bin/mac-host-commands", home())
-    }
+    common::manager_bin().display().to_string()
 }
 
 pub fn disable_auto() {
