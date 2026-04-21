@@ -54,3 +54,6 @@ jobs:
 
       - name: Eval ncl/domains.ncl
         run: nickel eval ncl/domains.ncl > /dev/null
+
+      - name: Eval ncl/cards.ncl
+        run: nickel eval ncl/cards.ncl > /dev/null

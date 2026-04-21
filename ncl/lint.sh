@@ -5,6 +5,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 NCL="$ROOT/ncl/domains.ncl"
+CARDS_NCL="$ROOT/ncl/cards.ncl"
 FAIL=0
 
 echo "=== ncl 스키마 검증 ==="
@@ -16,6 +17,17 @@ if ! nickel export "$NCL" > /tmp/mac-lint-locale.json 2>/tmp/mac-lint-err.txt; t
   FAIL=1
 else
   echo "✓ contract 통과"
+fi
+
+# 1.5 portable 카드 계약 검증
+echo ""
+echo "=== portable 카드 스키마 검증 ==="
+if ! nickel export "$CARDS_NCL" > /tmp/mac-lint-cards.json 2>/tmp/mac-lint-cards-err.txt; then
+  echo "✗ portable 카드 contract 위반:"
+  cat /tmp/mac-lint-cards-err.txt
+  FAIL=1
+else
+  echo "✓ portable 카드 contract 통과"
 fi
 
 # 2. 모든 crates/domains/*/에 대응하는 ncl 정의가 있는지
