@@ -4,6 +4,7 @@ use mac_common::{
     tui_spec::{self, TuiSpec},
 };
 use mac_host_core::common;
+use serde::Deserialize;
 use std::fs;
 use std::net::ToSocketAddrs;
 use std::path::PathBuf;
@@ -14,8 +15,169 @@ use std::time::Duration;
 #[command(name = "mac-domain-proxmox")]
 #[command(about = "Proxmox VE 웹 UI + 상태 확인")]
 struct Cli {
+    #[arg(long, global = true, default_value = "proxmox50")]
+    card: String,
     #[command(subcommand)]
     command: Commands,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct CardBindMount {
+    lxc: String,
+    source: String,
+    target: String,
+    #[serde(default)]
+    readonly: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ProxmoxCard {
+    name: String,
+    host: String,
+    user: String,
+    #[serde(default)]
+    web_port: u16,
+    #[serde(default)]
+    bind_mounts: Vec<CardBindMount>,
+}
+
+fn active_proxmox_card() -> Option<ProxmoxCard> {
+    let cards = load_proxmox_cards();
+    if let Ok(selected) = std::env::var("MAI_PROXMOX_CARD") {
+        if let Some(card) = cards.iter().find(|card| card.name == selected) {
+            return Some(card.clone());
+        }
+    }
+    cards
+        .iter()
+        .find(|card| card.name == "proxmox50")
+        .cloned()
+        .or_else(|| cards.into_iter().next())
+}
+
+fn active_proxmox_card_name() -> String {
+    active_proxmox_card()
+        .map(|c| c.name)
+        .unwrap_or_else(|| "proxmox50".into())
+}
+
+fn active_proxmox_password_key() -> String {
+    format!("{}_PASSWORD", active_proxmox_card_name().to_uppercase())
+}
+
+fn active_proxmox_web_port_key() -> String {
+    format!("{}_WEB_PORT", active_proxmox_card_name().to_uppercase())
+}
+
+fn active_proxmox_host_key() -> String {
+    format!("{}_HOST", active_proxmox_card_name().to_uppercase())
+}
+
+fn active_proxmox_user_key() -> String {
+    format!("{}_USER", active_proxmox_card_name().to_uppercase())
+}
+
+fn active_proxmox_default_host() -> String {
+    active_proxmox_card()
+        .map(|c| c.host)
+        .unwrap_or_else(|| "192.168.2.50".into())
+}
+
+fn active_proxmox_default_user() -> String {
+    active_proxmox_card()
+        .map(|c| c.user)
+        .unwrap_or_else(|| "root".into())
+}
+
+fn active_proxmox_default_port() -> u16 {
+    22
+}
+
+fn active_proxmox_default_web_port() -> u16 {
+    active_proxmox_card()
+        .map(|c| if c.web_port > 0 { c.web_port } else { 8006 })
+        .unwrap_or(8006)
+}
+
+fn proxmox_host() -> String {
+    common::env_or(&active_proxmox_host_key(), &active_proxmox_default_host())
+}
+
+fn proxmox_user() -> String {
+    common::env_or(&active_proxmox_user_key(), &active_proxmox_default_user())
+}
+
+fn proxmox_web_port() -> u16 {
+    common::env_or(
+        &active_proxmox_web_port_key(),
+        &active_proxmox_default_web_port().to_string(),
+    )
+        .parse()
+        .unwrap_or(active_proxmox_default_web_port())
+}
+
+fn proxmox_password_exists() -> bool {
+    common::env_opt(&active_proxmox_password_key()).is_some()
+}
+
+fn proxmox_url() -> String {
+    format!("https://{}:{}", proxmox_host(), proxmox_web_port())
+}
+
+fn proxmox_card_exists() -> bool {
+    !load_proxmox_cards().is_empty()
+}
+
+#[derive(Debug, Clone)]
+struct BindMountRule {
+    lxc: String,
+    source: String,
+    target: String,
+    readonly: bool,
+}
+
+fn load_bind_mount_rules() -> Vec<BindMountRule> {
+    let active = active_proxmox_card_name();
+    load_proxmox_cards()
+        .into_iter()
+        .filter(|card| card.name == active)
+        .flat_map(|card| {
+            card.bind_mounts.into_iter().map(|bind| BindMountRule {
+                lxc: bind.lxc,
+                source: bind.source,
+                target: bind.target,
+                readonly: bind.readonly,
+            })
+        })
+        .collect()
+}
+
+fn save_bind_mount_rules(rules: &[BindMountRule]) -> Result<(), String> {
+    let active = active_proxmox_card_name();
+    let path = paths::ssot_cards_dir().join(format!("{}.json", active));
+    let content = fs::read_to_string(&path).map_err(|e| format!("{}: {}", path.display(), e))?;
+    let mut json: serde_json::Value =
+        serde_json::from_str(&content).map_err(|e| format!("{}: {}", path.display(), e))?;
+    let obj = json
+        .as_object_mut()
+        .ok_or_else(|| format!("{} 카드 JSON object 아님", active))?;
+    obj.insert(
+        "bind_mounts".into(),
+        serde_json::json!(rules
+            .iter()
+            .map(|rule| serde_json::json!({
+                "lxc": rule.lxc,
+                "source": rule.source,
+                "target": rule.target,
+                "readonly": rule.readonly,
+            }))
+            .collect::<Vec<_>>()),
+    );
+    fs::write(
+        &path,
+        serde_json::to_string_pretty(&json).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())
 }
 
 #[derive(Subcommand)]
@@ -77,6 +239,9 @@ fn main() {
     common::load_env();
 
     let cli = Cli::parse();
+    unsafe {
+        std::env::set_var("MAI_PROXMOX_CARD", &cli.card);
+    }
     match cli.command {
         Commands::Status => cmd_status(),
         Commands::Setup {
@@ -106,106 +271,34 @@ fn main() {
     }
 }
 
-fn load_card() -> Option<serde_json::Value> {
-    let path = PathBuf::from(paths::home()).join(".mac-app-init/cards/proxmox.json");
-    let content = std::fs::read_to_string(&path).ok()?;
-    serde_json::from_str(&content).ok()
-}
-
-fn proxmox_host() -> String {
-    load_card()
-        .and_then(|c| c.get("host").and_then(|v| v.as_str()).map(String::from))
-        .unwrap_or_else(|| "192.168.2.50".into())
-}
-
-fn proxmox_user() -> String {
-    load_card()
-        .and_then(|c| c.get("user").and_then(|v| v.as_str()).map(String::from))
-        .unwrap_or_else(|| "root".into())
-}
-
-fn proxmox_web_port() -> u16 {
-    common::env_or("PROXMOX_WEB_PORT", "8006")
-        .parse()
-        .unwrap_or(8006)
-}
-
-fn proxmox_password_exists() -> bool {
-    common::env_opt("PROXMOX_PASSWORD").is_some()
-}
-
-fn proxmox_url() -> String {
-    format!("https://{}:{}", proxmox_host(), proxmox_web_port())
-}
-
-fn proxmox_card_exists() -> bool {
-    PathBuf::from(paths::home())
-        .join(".mac-app-init/cards/proxmox.json")
-        .exists()
-}
-
-fn bind_mounts_path() -> PathBuf {
-    PathBuf::from(paths::home()).join(".mac-app-init/proxmox-bind-mounts.json")
-}
-
-#[derive(Debug, Clone)]
-struct BindMountRule {
-    lxc: String,
-    source: String,
-    target: String,
-    readonly: bool,
-}
-
-fn load_bind_mount_rules() -> Vec<BindMountRule> {
-    let path = bind_mounts_path();
-    let Ok(content) = fs::read_to_string(&path) else {
+fn load_proxmox_cards() -> Vec<ProxmoxCard> {
+    let dir = paths::ssot_cards_dir();
+    if !dir.exists() {
         return Vec::new();
-    };
-    let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) else {
-        return Vec::new();
-    };
-    let Some(items) = json.get("bind_mounts").and_then(|v| v.as_array()) else {
-        return Vec::new();
-    };
-    items
-        .iter()
-        .filter_map(|item| {
-            Some(BindMountRule {
-                lxc: item.get("lxc")?.as_str()?.to_string(),
-                source: item.get("source")?.as_str()?.to_string(),
-                target: item.get("target")?.as_str()?.to_string(),
-                readonly: item
-                    .get("readonly")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false),
-            })
-        })
-        .collect()
-}
-
-fn save_bind_mount_rules(rules: &[BindMountRule]) -> Result<(), String> {
-    let path = bind_mounts_path();
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    let payload = serde_json::json!({
-        "bind_mounts": rules.iter().map(|rule| serde_json::json!({
-            "lxc": rule.lxc,
-            "source": rule.source,
-            "target": rule.target,
-            "readonly": rule.readonly,
-        })).collect::<Vec<_>>()
-    });
-    fs::write(
-        &path,
-        serde_json::to_string_pretty(&payload).map_err(|e| e.to_string())?,
-    )
-    .map_err(|e| e.to_string())
+    let mut out = Vec::new();
+    if let Ok(it) = fs::read_dir(dir) {
+        for e in it.filter_map(|x| x.ok()) {
+            if e.path().extension().and_then(|s| s.to_str()) != Some("json") {
+                continue;
+            }
+            if let Ok(content) = fs::read_to_string(e.path()) {
+                if let Ok(card) = serde_json::from_str::<ProxmoxCard>(&content) {
+                    if card.name.starts_with("proxmox") {
+                        out.push(card);
+                    }
+                }
+            }
+        }
+    }
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    out
 }
-
 fn ssh_cmd_output(host: &str, user: &str, remote_cmd: &str) -> Result<String, String> {
+    let port = active_proxmox_default_port();
     let out = Command::new("ssh")
-        .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"])
+        .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "-p"])
+        .arg(port.to_string())
         .arg(format!("{user}@{host}"))
         .arg(remote_cmd)
         .output()
@@ -244,8 +337,9 @@ fn probe_tcp(host: &str, port: u16) -> bool {
 fn ssh_login_ok() -> bool {
     let host = proxmox_host();
     let user = proxmox_user();
-    let (ok, _) = common::ssh_cmd(&host, &user, "echo ok");
-    ok
+    ssh_cmd_output(&host, &user, "echo ok")
+        .map(|out| out.trim() == "ok")
+        .unwrap_or(false)
 }
 
 /// 클러스터 노드 목록 (pvesh).
@@ -475,12 +569,13 @@ fn cmd_status() {
 
     println!("=== Proxmox 상태 ===\n");
     println!(
-        "[등록] {}",
+        "[등록] {} ({})",
         if proxmox_card_exists() {
             "✓ proxmox 카드"
         } else {
             "✗ env setup-proxmox 필요"
-        }
+        },
+        active_proxmox_card_name()
     );
     println!(
         "[Web UI] {} {}",
@@ -917,9 +1012,7 @@ fn print_tui_spec() {
     let user = proxmox_user();
     let web_port = proxmox_web_port();
     let web_ok = probe_tcp(&host, web_port);
-    let ssh_port_ok = probe_tcp(&host, 22);
     let ssh_ok = ssh_login_ok();
-    let lxc = if ssh_ok { lxc_lines() } else { Vec::new() };
 
     let usage_active = proxmox_card_exists();
     let usage_summary = if usage_active {
@@ -973,7 +1066,7 @@ fn print_tui_spec() {
                 ),
                 tui_spec::kv_item(
                     "SSH",
-                    &format!("{}@{}:22", user, host),
+                    &format!("{}@{}:{}", user, host, active_proxmox_default_port()),
                     if ssh_ok { "ok" } else { "warn" },
                 ),
                 tui_spec::kv_item(

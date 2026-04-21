@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 const GITHUB_REPO: &str = "dalsoop/mac-app-init";
@@ -81,6 +81,41 @@ fn domains_dir() -> PathBuf {
 
 fn registry_path() -> PathBuf {
     domains_dir().join("registry.json")
+}
+
+fn sync_portable_file(src: &Path, dst: &Path) -> Result<bool, String> {
+    if !src.exists() {
+        return Ok(false);
+    }
+    if let Some(parent) = dst.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    fs::copy(src, dst).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+fn sync_portable_profile() -> Result<Vec<String>, String> {
+    let Some(root) = mac_common::paths::portable_root() else {
+        return Ok(Vec::new());
+    };
+
+    let mut applied = Vec::new();
+    mac_common::paths::record_config_source(&root).map_err(|e| e.to_string())?;
+    applied.push(format!("config-source -> {}", root.display()));
+
+    let env_candidates = ["dotenvx.env", ".env", ".env.encrypted"];
+    let home_env = PathBuf::from(home()).join(".env");
+    if !home_env.exists() {
+        for rel in env_candidates {
+            let src = root.join(rel);
+            if sync_portable_file(&src, &home_env)? {
+                applied.push(format!("env <- {}", rel));
+                break;
+            }
+        }
+    }
+
+    Ok(applied)
 }
 
 fn domain_bin_path(name: &str) -> PathBuf {
@@ -703,6 +738,14 @@ fn cmd_setup() {
         }
     }
     println!("    ✓ 핵심 도메인 확인 완료");
+
+    // 3.5 portable 설정 복원 (repo tracked + dotenvx env seed)
+    println!("[3.5] portable 설정 동기화...");
+    match sync_portable_profile() {
+        Ok(items) if items.is_empty() => println!("    - portable/mai 없음 또는 반영할 설정 없음"),
+        Ok(items) => println!("    ✓ {}", items.join(", ")),
+        Err(e) => println!("    ⚠ {}", e),
+    }
 
     // 4. 의존성 (bootstrap)
     println!("[4] 의존성 확인...");

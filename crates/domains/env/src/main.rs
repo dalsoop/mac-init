@@ -37,6 +37,8 @@ enum Commands {
     },
     /// Proxmox Web UI 기본 카드 + .env 값 등록
     SetupProxmox {
+        #[arg(long, default_value = "proxmox50")]
+        name: String,
         #[arg(long, default_value = "192.168.2.50")]
         host: String,
         #[arg(long, default_value = "root")]
@@ -121,11 +123,12 @@ fn main() {
             description.as_deref(),
         ),
         Commands::SetupProxmox {
+            name,
             host,
             user,
             web_port,
             password,
-        } => cmd_setup_proxmox(&host, &user, web_port, password.as_deref()),
+        } => cmd_setup_proxmox(&name, &host, &user, web_port, password.as_deref()),
         Commands::AddRclone {
             name,
             remote,
@@ -156,6 +159,8 @@ struct Card {
     host: String,
     user: String,
     port: u16,
+    #[serde(default)]
+    web_port: u16,
     /// ssh | smb | nfs | afp | webdav | webdavs | ftp | rclone | …
     /// "rclone" 인 경우 host/user/port 는 무시되고 rclone_remote / rclone_path 사용.
     scheme: String,
@@ -176,6 +181,12 @@ struct Card {
     /// 마운트/접속 옵션. SMB/NFS 마운트 시 mount 도메인이 참조.
     #[serde(default)]
     mount_options: MountOptions,
+    /// 카드 기반 자동 마운트 선언.
+    #[serde(default)]
+    mount_entries: Vec<CardMountEntry>,
+    /// 카드 기반 Proxmox bind mount 선언.
+    #[serde(default)]
+    bind_mounts: Vec<CardBindMount>,
 }
 fn default_pw_ref() -> String {
     "dotenvx:auto".into()
@@ -220,6 +231,24 @@ struct MountOptions {
     #[serde(default)]
     wsize: u32,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CardMountEntry {
+    share: String,
+    #[serde(default = "default_true_opt")]
+    enabled: bool,
+    #[serde(default)]
+    alias: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CardBindMount {
+    lxc: String,
+    source: String,
+    target: String,
+    #[serde(default)]
+    readonly: bool,
+}
 fn default_true_opt() -> bool {
     true
 }
@@ -261,7 +290,7 @@ fn home() -> String {
 }
 
 fn cards_dir() -> PathBuf {
-    paths::cards_dir()
+    paths::ssot_cards_dir()
 }
 
 fn card_path(name: &str) -> PathBuf {
@@ -396,25 +425,37 @@ fn cmd_list() {
         return;
     }
     println!(
-        "{:<14} {:<7} {:<20} {:<22} {}",
-        "NAME", "SCHEME", "USER", "HOST:PORT", "PASSWORD"
+        "{:<14} {:<7} {:<20} {:<22} {:<12} {}",
+        "NAME", "SCHEME", "USER", "HOST:PORT", "AUTH", "FEATURES"
     );
     println!("{}", "─".repeat(80));
     for c in &cards {
         let hp = format!("{}:{}", c.host, c.port);
-        let pw = match dotenvx_key_for(c) {
+        let auth = match dotenvx_key_for(c) {
             Some(k) => {
                 if dotenvx_get(&k).is_some() {
-                    "✓ dotenvx"
+                    "authenticated"
                 } else {
-                    "✗ 없음"
+                    "unauth"
                 }
             }
-            None => "—",
+            None => "n/a",
+        };
+        let mut features = Vec::new();
+        if !c.mount_entries.is_empty() {
+            features.push(format!("mount:{}", c.mount_entries.len()));
+        }
+        if !c.bind_mounts.is_empty() {
+            features.push(format!("bind:{}", c.bind_mounts.len()));
+        }
+        let features = if features.is_empty() {
+            "basic".to_string()
+        } else {
+            features.join(",")
         };
         println!(
-            "{:<14} {:<7} {:<20} {:<22} {}",
-            c.name, c.scheme, c.user, hp, pw
+            "{:<14} {:<7} {:<20} {:<22} {:<12} {}",
+            c.name, c.scheme, c.user, hp, auth, features
         );
     }
 }
@@ -427,14 +468,20 @@ fn cmd_show(name: &str) {
             if let Some(k) = dotenvx_key_for(&c) {
                 let has = dotenvx_get(&k).is_some();
                 eprintln!(
-                    "비번: {} (key={})",
+                    "인증: {} (key={})",
                     if has {
-                        "✓ dotenvx"
+                        "authenticated"
                     } else {
-                        "✗ 없음 (env set-password 필요)"
+                        "unauthenticated (env set-password 필요)"
                     },
                     k
                 );
+            }
+            if !c.mount_entries.is_empty() {
+                eprintln!("mount entries: {}", c.mount_entries.len());
+            }
+            if !c.bind_mounts.is_empty() {
+                eprintln!("bind mounts: {}", c.bind_mounts.len());
             }
         }
         None => {
@@ -462,6 +509,7 @@ fn cmd_add(
         host: host.into(),
         user: user.into(),
         port,
+        web_port: 0,
         scheme: scheme.into(),
         description: description.unwrap_or("").into(),
         tags: Vec::new(),
@@ -469,6 +517,8 @@ fn cmd_add(
         rclone_path: String::new(),
         password_ref: "dotenvx:auto".into(),
         mount_options: MountOptions::default_for_scheme(scheme),
+        mount_entries: Vec::new(),
+        bind_mounts: Vec::new(),
     };
     if let Err(e) = save_card(&card) {
         eprintln!("✗ {}", e);
@@ -484,12 +534,81 @@ fn cmd_add(
     println!("✓ 카드 추가: {}", name);
 }
 
-fn cmd_setup_proxmox(host: &str, user: &str, web_port: u16, password: Option<&str>) {
+fn cmd_setup_proxmox(
+    name: &str,
+    host: &str,
+    user: &str,
+    web_port: u16,
+    password: Option<&str>,
+) {
+    let upper = name.to_uppercase();
+    let (mount_entries, bind_mounts) = if name == "proxmox50" {
+        (
+            vec![
+                CardMountEntry {
+                    share: "/".into(),
+                    enabled: true,
+                    alias: Some("proxmox".into()),
+                },
+                CardMountEntry {
+                    share: "/mnt/synology".into(),
+                    enabled: true,
+                    alias: Some("synology".into()),
+                },
+                CardMountEntry {
+                    share: "/mnt/truenas-organized".into(),
+                    enabled: true,
+                    alias: Some("truenas".into()),
+                },
+            ],
+            vec![
+                CardBindMount {
+                    lxc: "gitlab".into(),
+                    source: "/mnt/truenas-organized".into(),
+                    target: "/mnt/truenas".into(),
+                    readonly: false,
+                },
+                CardBindMount {
+                    lxc: "host-ops".into(),
+                    source: "/mnt/truenas-organized".into(),
+                    target: "/mnt/truenas".into(),
+                    readonly: false,
+                },
+                CardBindMount {
+                    lxc: "infra-control".into(),
+                    source: "/mnt/truenas-organized".into(),
+                    target: "/mnt/truenas".into(),
+                    readonly: false,
+                },
+                CardBindMount {
+                    lxc: "obsidian-bot".into(),
+                    source: "/mnt/truenas-organized".into(),
+                    target: "/mnt/truenas".into(),
+                    readonly: false,
+                },
+                CardBindMount {
+                    lxc: "openclaw".into(),
+                    source: "/mnt/truenas-organized".into(),
+                    target: "/mnt/truenas".into(),
+                    readonly: false,
+                },
+                CardBindMount {
+                    lxc: "outline".into(),
+                    source: "/mnt/truenas-organized".into(),
+                    target: "/mnt/truenas".into(),
+                    readonly: false,
+                },
+            ],
+        )
+    } else {
+        (Vec::new(), Vec::new())
+    };
     let card = Card {
-        name: "proxmox".into(),
+        name: name.into(),
         host: host.into(),
         user: user.into(),
         port: web_port,
+        web_port,
         scheme: "https".into(),
         description: "Proxmox VE Web UI".into(),
         tags: vec!["infra".into(), "proxmox".into()],
@@ -497,6 +616,8 @@ fn cmd_setup_proxmox(host: &str, user: &str, web_port: u16, password: Option<&st
         rclone_path: String::new(),
         password_ref: "dotenvx:auto".into(),
         mount_options: MountOptions::default_for_scheme("https"),
+        mount_entries,
+        bind_mounts,
     };
 
     if let Err(e) = save_card(&card) {
@@ -505,9 +626,9 @@ fn cmd_setup_proxmox(host: &str, user: &str, web_port: u16, password: Option<&st
     }
 
     for (key, value) in [
-        ("PROXMOX_HOST", host),
-        ("PROXMOX_USER", user),
-        ("PROXMOX_WEB_PORT", &web_port.to_string()),
+        (&format!("{}_HOST", upper), host),
+        (&format!("{}_USER", upper), user),
+        (&format!("{}_WEB_PORT", upper), &web_port.to_string()),
     ] {
         if let Err(e) = dotenvx_set(key, value) {
             eprintln!("✗ {} 저장 실패: {}", key, e);
@@ -516,23 +637,22 @@ fn cmd_setup_proxmox(host: &str, user: &str, web_port: u16, password: Option<&st
     }
 
     if let Some(pw) = password {
-        if let Err(e) = dotenvx_set("PROXMOX_PASSWORD", pw) {
-            eprintln!("✗ PROXMOX_PASSWORD 저장 실패: {}", e);
+        let pw_key = format!("{}_PASSWORD", upper);
+        if let Err(e) = dotenvx_set(&pw_key, pw) {
+            eprintln!("✗ {} 저장 실패: {}", pw_key, e);
             std::process::exit(1);
         }
     }
 
-    println!("✓ proxmox 등록 완료");
-    println!("  카드: proxmox (https://{}:{})", host, web_port);
-    println!(
-        "  .env : PROXMOX_HOST / PROXMOX_USER / PROXMOX_WEB_PORT{}",
-        if password.is_some() {
-            " / PROXMOX_PASSWORD"
-        } else {
-            ""
-        }
-    );
-    println!("  열기: mai run env open proxmox");
+    println!("✓ {} 등록 완료", name);
+    println!("  카드: {} (https://{}:{})", name, host, web_port);
+    let pw_suffix = if password.is_some() {
+        format!(" / {}_PASSWORD", upper)
+    } else {
+        String::new()
+    };
+    println!("  .env : {upper}_HOST / {upper}_USER / {upper}_WEB_PORT{pw_suffix}");
+    println!("  열기: mai run env open {}", name);
 }
 
 fn cmd_add_rclone(name: &str, remote: &str, path: &str, description: Option<&str>) {
@@ -565,6 +685,7 @@ fn cmd_add_rclone(name: &str, remote: &str, path: &str, description: Option<&str
         host: format!("rclone:{}", remote),
         user: String::new(),
         port: 0,
+        web_port: 0,
         scheme: "rclone".into(),
         description: description.unwrap_or("").into(),
         tags: vec!["cloud".into()],
@@ -572,6 +693,8 @@ fn cmd_add_rclone(name: &str, remote: &str, path: &str, description: Option<&str
         rclone_path: path.into(),
         password_ref: "none".into(), // rclone config 가 자체 관리
         mount_options: MountOptions::default(),
+        mount_entries: Vec::new(),
+        bind_mounts: Vec::new(),
     };
     if let Err(e) = save_card(&card) {
         eprintln!("✗ {}", e);
@@ -861,6 +984,7 @@ fn cmd_import() {
             host: host.into(),
             user: user.into(),
             port: effective_port,
+            web_port: 0,
             scheme: scheme.into(),
             description: format!("imported from connections.json"),
             tags: vec!["imported".into()],
@@ -868,6 +992,8 @@ fn cmd_import() {
             rclone_path: String::new(),
             password_ref: "dotenvx:auto".into(),
             mount_options: MountOptions::default_for_scheme(scheme),
+            mount_entries: Vec::new(),
+            bind_mounts: Vec::new(),
         };
         if let Err(e) = save_card(&card) {
             eprintln!("✗ {} 카드 저장 실패: {}", name, e);

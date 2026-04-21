@@ -1,0 +1,18 @@
+{
+  "name": "kvm",
+  "host": "192.168.2.16",
+  "user": "root",
+  "port": 22,
+  "scheme": "ssh",
+  "description": "portable default card",
+  "tags": [
+    "portable"
+  ],
+  "password_ref": "dotenvx:auto",
+  "mount_options": {
+    "readonly": false,
+    "noappledouble": true,
+    "soft": true,
+    "nobrowse": true
+  }
+}

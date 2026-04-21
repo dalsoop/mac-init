@@ -248,6 +248,26 @@ struct Connection {
     proxy_jump: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CardMountEntry {
+    share: String,
+    #[serde(default = "default_true")]
+    enabled: bool,
+    #[serde(default)]
+    alias: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CardRecord {
+    name: String,
+    host: String,
+    user: String,
+    port: u16,
+    scheme: String,
+    #[serde(default)]
+    mount_entries: Vec<CardMountEntry>,
+}
+
 fn is_mountable_scheme(scheme: &str) -> bool {
     matches!(
         scheme,
@@ -359,6 +379,71 @@ fn load_all_connections() -> Vec<Connection> {
     }
     cards.sort_by(|a, b| a.name.cmp(&b.name));
     cards
+}
+
+fn load_card_records() -> Vec<CardRecord> {
+    let dir = mac_common::paths::ssot_cards_dir();
+    if !dir.exists() {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    if let Ok(it) = std::fs::read_dir(dir) {
+        for e in it.filter_map(|x| x.ok()) {
+            if e.path().extension().and_then(|s| s.to_str()) != Some("json") {
+                continue;
+            }
+            if let Ok(content) = std::fs::read_to_string(e.path()) {
+                if let Ok(card) = serde_json::from_str::<CardRecord>(&content) {
+                    out.push(card);
+                }
+            }
+        }
+    }
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    out
+}
+
+fn card_path(name: &str) -> PathBuf {
+    mac_common::paths::ssot_cards_dir().join(format!("{}.json", name))
+}
+
+fn load_card_json(name: &str) -> Result<serde_json::Value, String> {
+    let path = card_path(name);
+    let content = fs::read_to_string(&path).map_err(|e| format!("{}: {}", path.display(), e))?;
+    serde_json::from_str(&content).map_err(|e| format!("{}: {}", path.display(), e))
+}
+
+fn save_card_json(name: &str, value: &serde_json::Value) -> Result<(), String> {
+    let path = card_path(name);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    fs::write(
+        &path,
+        serde_json::to_string_pretty(value).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())
+}
+
+fn card_mount_entries(name: &str) -> Result<Vec<CardMountEntry>, String> {
+    let json = load_card_json(name)?;
+    let items = json
+        .get("mount_entries")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!([]));
+    serde_json::from_value(items).map_err(|e| e.to_string())
+}
+
+fn save_card_mount_entries(name: &str, entries: &[CardMountEntry]) -> Result<(), String> {
+    let mut json = load_card_json(name)?;
+    let obj = json
+        .as_object_mut()
+        .ok_or_else(|| format!("{} 카드 JSON object 아님", name))?;
+    obj.insert(
+        "mount_entries".into(),
+        serde_json::to_value(entries).map_err(|e| e.to_string())?,
+    );
+    save_card_json(name, &json)
 }
 
 /// env 도메인 바이너리 경로.
@@ -544,8 +629,14 @@ fn mount_sshfs(conn: &Connection, remote_path: &str, mountpoint: &Path) -> Resul
 }
 
 fn proxmox_connection() -> Option<Connection> {
-    env_card_show("proxmox")
-        .or_else(|| load_connections().into_iter().find(|c| c.name == "proxmox"))
+    for name in ["proxmox50", "proxmox", "proxmox60"] {
+        if let Some(card) = env_card_show(name) {
+            return Some(card);
+        }
+    }
+    load_connections()
+        .into_iter()
+        .find(|c| c.name == "proxmox50" || c.name == "proxmox" || c.name == "proxmox60")
 }
 
 fn ssh_capture(conn: &Connection, remote_cmd: &str) -> Option<String> {
@@ -1028,21 +1119,6 @@ fn sweep_nas_orphans() {
         .map(|a| format!("{}/{}", a.connection, a.share))
         .collect();
     // off 상태 항목은 auto-list 에서도 자동 제거.
-    let disabled: Vec<_> = cfg
-        .auto_mounts
-        .iter()
-        .filter(|a| !a.enabled)
-        .map(|a| format!("{}/{}", a.connection, a.share))
-        .collect();
-    if !disabled.is_empty() {
-        let mut cfg_mut = cfg.clone();
-        cfg_mut.auto_mounts.retain(|a| a.enabled);
-        let _ = save_mount_config(&cfg_mut);
-        for d in &disabled {
-            eprintln!("  ♻ 비활성 자동마운트 자동 제거: {}", d);
-        }
-    }
-
     let active_mounts: std::collections::HashSet<String> = list_current_mounts()
         .into_iter()
         .map(|(_, mp)| mp)
@@ -1239,28 +1315,28 @@ impl Default for MountConfig {
     }
 }
 
-fn mount_config_path() -> PathBuf {
-    PathBuf::from(home()).join(".mac-app-init/mount.json")
-}
-
 fn load_mount_config() -> MountConfig {
-    let path = mount_config_path();
-    if !path.exists() {
-        return MountConfig::default();
+    let card_mounts: Vec<AutoMount> = load_card_records()
+        .into_iter()
+        .flat_map(|card| {
+            card.mount_entries
+                .into_iter()
+                .filter(|entry| entry.enabled)
+                .map(move |entry| AutoMount {
+                    connection: card.name.clone(),
+                    share: entry.share,
+                    enabled: true,
+                    alias: entry.alias,
+                })
+        })
+        .collect();
+    if !card_mounts.is_empty() {
+        return MountConfig {
+            auto_mounts: card_mounts,
+            sweep_enabled: true,
+        };
     }
-    serde_json::from_str(&fs::read_to_string(&path).unwrap_or_default()).unwrap_or_default()
-}
-
-fn save_mount_config(c: &MountConfig) -> Result<(), String> {
-    let path = mount_config_path();
-    if let Some(p) = path.parent() {
-        fs::create_dir_all(p).map_err(|e| e.to_string())?;
-    }
-    fs::write(
-        &path,
-        serde_json::to_string_pretty(c).map_err(|e| e.to_string())?,
-    )
-    .map_err(|e| e.to_string())
+    MountConfig::default()
 }
 
 fn cmd_auto_add(connection: &str, share: &str, alias: Option<&str>) {
@@ -1268,12 +1344,14 @@ fn cmd_auto_add(connection: &str, share: &str, alias: Option<&str>) {
         eprintln!("✗ 연결 '{}' 이(가) 없습니다.", connection);
         return;
     };
-    let mut cfg = load_mount_config();
-    if cfg
-        .auto_mounts
-        .iter()
-        .any(|a| a.connection == connection && a.share == share)
-    {
+    let mut entries = match card_mount_entries(connection) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("✗ {}", e);
+            return;
+        }
+    };
+    if entries.iter().any(|a| a.share == share) {
         println!("이미 등록됨: {}/{}", connection, share);
         return;
     }
@@ -1307,13 +1385,12 @@ fn cmd_auto_add(connection: &str, share: &str, alias: Option<&str>) {
         );
     }
 
-    cfg.auto_mounts.push(AutoMount {
-        connection: connection.into(),
+    entries.push(CardMountEntry {
         share: share.into(),
         enabled: true,
         alias: alias.map(String::from),
     });
-    if let Err(e) = save_mount_config(&cfg) {
+    if let Err(e) = save_card_mount_entries(connection, &entries) {
         eprintln!("✗ {}", e);
         return;
     }
@@ -1343,15 +1420,20 @@ fn cmd_auto_add_lxc(name: &str, path: &str, alias: Option<&str>) {
 }
 
 fn cmd_auto_remove(connection: &str, share: &str) {
-    let mut cfg = load_mount_config();
-    let before = cfg.auto_mounts.len();
-    cfg.auto_mounts
-        .retain(|a| !(a.connection == connection && a.share == share));
-    if cfg.auto_mounts.len() == before {
+    let mut entries = match card_mount_entries(connection) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("✗ {}", e);
+            return;
+        }
+    };
+    let before = entries.len();
+    entries.retain(|a| a.share != share);
+    if entries.len() == before {
         println!("등록되지 않은 항목: {}/{}", connection, share);
         return;
     }
-    if let Err(e) = save_mount_config(&cfg) {
+    if let Err(e) = save_card_mount_entries(connection, &entries) {
         eprintln!("✗ {}", e);
         return;
     }
@@ -1359,18 +1441,20 @@ fn cmd_auto_remove(connection: &str, share: &str) {
 }
 
 fn cmd_auto_toggle(connection: &str, share: &str) {
-    let mut cfg = load_mount_config();
-    let Some(item) = cfg
-        .auto_mounts
-        .iter_mut()
-        .find(|a| a.connection == connection && a.share == share)
-    else {
+    let mut entries = match card_mount_entries(connection) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("✗ {}", e);
+            return;
+        }
+    };
+    let Some(item) = entries.iter_mut().find(|a| a.share == share) else {
         eprintln!("✗ 등록되지 않음: {}/{}", connection, share);
         return;
     };
     item.enabled = !item.enabled;
     let en = item.enabled;
-    if let Err(e) = save_mount_config(&cfg) {
+    if let Err(e) = save_card_mount_entries(connection, &entries) {
         eprintln!("✗ {}", e);
         return;
     }
@@ -1417,68 +1501,9 @@ fn cmd_auto_list() {
     }
 }
 
-fn sync_running_lxc_into_config(cfg: &mut MountConfig) -> usize {
-    let running: Vec<ProxmoxLxc> = proxmox_all_lxc()
-        .into_iter()
-        .filter(|l| l.status == "running")
-        .collect();
-    if running.is_empty() {
-        return 0;
-    }
-
-    let desired: std::collections::HashMap<String, String> = running
-        .iter()
-        .map(|l| (format!("lxc.{}", l.name), l.name.clone()))
-        .collect();
-
-    cfg.auto_mounts.retain(|a| {
-        if !a.connection.starts_with("lxc.") {
-            return true;
-        }
-        desired.contains_key(&a.connection)
-    });
-
-    let mut changed = 0;
-    for (connection, alias) in desired {
-        if let Some(existing) = cfg.auto_mounts.iter_mut().find(|a| a.connection == connection && a.share == "/") {
-            if !existing.enabled {
-                existing.enabled = true;
-                changed += 1;
-            }
-            if existing.alias.as_deref() != Some(alias.as_str()) {
-                existing.alias = Some(alias.clone());
-                changed += 1;
-            }
-            continue;
-        }
-        cfg.auto_mounts.push(AutoMount {
-            connection,
-            share: "/".into(),
-            enabled: true,
-            alias: Some(alias),
-        });
-        changed += 1;
-    }
-
-    cfg.auto_mounts.sort_by(|a, b| {
-        a.connection.cmp(&b.connection).then(a.share.cmp(&b.share))
-    });
-    changed
-}
-
 fn cmd_auto_sync_lxc() {
-    let mut cfg = load_mount_config();
-    let changed = sync_running_lxc_into_config(&mut cfg);
-    if changed == 0 {
-        println!("running LXC direct-mount 설정이 이미 최신입니다.");
-        return;
-    }
-    if let Err(e) = save_mount_config(&cfg) {
-        eprintln!("✗ {}", e);
-        return;
-    }
-    let lxc_count = cfg.auto_mounts.iter().filter(|a| a.connection.starts_with("lxc.")).count();
-    println!("✓ running LXC direct-mount 동기화: {}개", lxc_count);
+    println!("running LXC direct-mount 자동 동기화는 카드 SSOT 모드에서 비활성화되었습니다.");
+    println!("필요한 direct mount는 해당 카드의 mount_entries 에 직접 선언하세요.");
 }
 
 /// macOS 알림 센터에 메시지 표시. LaunchAgent 백그라운드에서도 동작.
@@ -1610,12 +1635,7 @@ fn cmd_auto() {
     // 옛 NAS 경로 마운트 자동 정리 (NAS → MOUNT 마이그레이션)
     migrate_old_nas();
 
-    let mut cfg = load_mount_config();
-    let lxc_synced = sync_running_lxc_into_config(&mut cfg);
-    if lxc_synced > 0 {
-        let _ = save_mount_config(&cfg);
-        eprintln!("  ↻ running LXC direct-mount 동기화: {}건 반영", lxc_synced);
-    }
+    let cfg = load_mount_config();
     if cfg.auto_mounts.is_empty() {
         println!("자동 마운트 설정이 없습니다.");
         return;
@@ -1942,27 +1962,17 @@ fn automount_plist_path() -> PathBuf {
 }
 
 fn cmd_sweep(toggle: &str) {
-    let mut cfg = load_mount_config();
     match toggle.to_lowercase().as_str() {
         "on" | "true" | "1" => {
-            cfg.sweep_enabled = true;
-            let _ = save_mount_config(&cfg);
-            println!("✓ NAS 잔재 자동 격리 켜짐 (auto 실행 시마다 ~/Documents/WORK/MOUNT/ 스캔)");
+            println!("카드 SSOT 모드에서는 sweep 토글을 카드 밖에 저장하지 않습니다.");
+            println!("현재 sweep은 기본적으로 켜진 상태로 동작합니다.");
         }
         "off" | "false" | "0" => {
-            cfg.sweep_enabled = false;
-            let _ = save_mount_config(&cfg);
-            println!("✓ NAS 잔재 자동 격리 꺼짐");
+            println!("카드 SSOT 모드에서는 sweep 토글을 카드 밖에 저장하지 않습니다.");
+            println!("필요하면 코드 레벨 정책으로 바꾸는 쪽이 안전합니다.");
         }
         "status" => {
-            println!(
-                "sweep: {}",
-                if cfg.sweep_enabled {
-                    "켜짐 (auto 실행 시마다)"
-                } else {
-                    "꺼짐"
-                }
-            );
+            println!("sweep: 켜짐 (카드 SSOT 모드 기본값)");
             let trash = nas_root().join(".mountless-trash");
             if trash.exists() {
                 let count = fs::read_dir(&trash).map(|it| it.count()).unwrap_or(0);

@@ -1,0 +1,20 @@
+{
+  "name": "synology",
+  "host": "192.168.2.15",
+  "user": "ai",
+  "port": 445,
+  "scheme": "smb",
+  "description": "portable default card",
+  "tags": [
+    "portable"
+  ],
+  "password_ref": "dotenvx:auto",
+  "mount_options": {
+    "readonly": false,
+    "noappledouble": true,
+    "soft": false,
+    "nobrowse": true,
+    "rsize": 0,
+    "wsize": 0
+  }
+}

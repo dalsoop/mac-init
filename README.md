@@ -33,16 +33,33 @@ mai run tmux setup
 mai run tmux topbar
 mai run keyboard status
 mai run cron list
-mai run connect add proxmox
+mai run env setup-proxmox --name proxmox50 --host 192.168.2.50 --user root --realm pam --web-port 8006
+mai run env setup-proxmox --name proxmox60 --host 192.168.2.60 --user root --realm pam --web-port 8006
 mai run mount lxc-list
-mai run mount auto-add-lxc gitlab /
-mai run proxmox bind-list
-mai run proxmox bind-add gitlab /mnt/truenas-organized/gitlab /srv/gitlab
-mai run proxmox bind-sync
+mai run proxmox --card proxmox50 bind-list
+mai run proxmox --card proxmox50 bind-add gitlab /mnt/truenas-organized/gitlab /srv/gitlab
+mai run proxmox --card proxmox50 bind-sync
 
 # TUI
 mac-host-tui               # 시각적 관리
 ```
+
+## 다른 맥 자동 복원
+
+repo 안의 `portable/mai/` 는 `mai` 설정의 SSOT 이다.
+
+- `portable/mai/cards/*.json`: 연결 카드 메타데이터 SSOT
+- `portable/mai/cards/*.json`: 카드 1장 안에 연결 메타 + mount 선언 + bind 선언을 함께 저장
+- `portable/mai/dotenvx.env`: 암호화된 dotenvx secrets seed
+
+새 맥에서는 repo를 받은 뒤 `mai setup` 을 실행하면 현재 repo의 `portable/mai/` 를 설정 원본으로 기록한다.
+이후 `env`, `mount`, `proxmox` 도메인은 `portable/mai/` 를 직접 읽고 쓰며, `~/.mac-app-init/` 는 런타임 상태와 캐시만 유지한다.
+
+즉:
+
+- 구조/경로/연결 메타데이터 = repo tracked 카드 SSOT
+- 비밀번호/API 키 = dotenvx-managed `.env`
+- retry state / logs / history = `~/.mac-app-init/` 런타임 파일
 
 ## 도메인
 
