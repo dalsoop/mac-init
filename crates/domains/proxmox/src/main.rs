@@ -22,6 +22,8 @@ struct Cli {
 enum Commands {
     /// 상태 확인
     Status,
+    /// Proxmox SSH 상태 확인
+    SshStatus,
     /// Proxmox 기본 연결정보 등록 (.env + env 카드)
     Setup {
         #[arg(long, default_value = "192.168.2.50")]
@@ -40,6 +42,10 @@ enum Commands {
         #[arg(long)]
         password: Option<String>,
     },
+    /// 로컬 공개키 출력 (없으면 생성)
+    SshPubkey,
+    /// Proxmox 셸에서 실행할 authorized_keys 등록 명령 출력
+    SshAuthorizeCommand,
     /// Proxmox 웹 UI 열기
     Open,
     /// LXC 목록
@@ -66,6 +72,7 @@ fn main() {
     let cli = Cli::parse();
     match cli.command {
         Commands::Status => cmd_status(),
+        Commands::SshStatus => cmd_ssh_status(),
         Commands::Setup {
             host,
             user,
@@ -74,6 +81,8 @@ fn main() {
             password,
         } => cmd_setup(&host, &user, &realm, web_port, password.as_deref()),
         Commands::SshSetup { password } => cmd_ssh_setup(password.as_deref()),
+        Commands::SshPubkey => cmd_ssh_pubkey(),
+        Commands::SshAuthorizeCommand => cmd_ssh_authorize_command(),
         Commands::Open => cmd_open(),
         Commands::LxcList => cmd_lxc_list(),
         Commands::VmList => cmd_vm_list(),
@@ -93,12 +102,14 @@ fn load_card() -> Option<serde_json::Value> {
 }
 
 fn proxmox_host() -> String {
-    load_card().and_then(|c| c.get("host").and_then(|v| v.as_str()).map(String::from))
+    load_card()
+        .and_then(|c| c.get("host").and_then(|v| v.as_str()).map(String::from))
         .unwrap_or_else(|| "192.168.2.50".into())
 }
 
 fn proxmox_user() -> String {
-    load_card().and_then(|c| c.get("user").and_then(|v| v.as_str()).map(String::from))
+    load_card()
+        .and_then(|c| c.get("user").and_then(|v| v.as_str()).map(String::from))
         .unwrap_or_else(|| "root".into())
 }
 
@@ -171,8 +182,8 @@ fn api_login() -> Result<ApiSession, String> {
     let host = proxmox_host();
     let port = proxmox_web_port();
     let user = proxmox_login_user();
-    let password = common::env_opt("PROXMOX_PASSWORD")
-        .ok_or_else(|| "PROXMOX_PASSWORD 미설정".to_string())?;
+    let password =
+        common::env_opt("PROXMOX_PASSWORD").ok_or_else(|| "PROXMOX_PASSWORD 미설정".to_string())?;
 
     let url = format!("https://{}:{}/api2/json/access/ticket", host, port);
     let output = Command::new("curl")
@@ -254,11 +265,11 @@ fn api_lxc_lines() -> Result<Vec<String>, String> {
         let json = api_get(&format!("/nodes/{node}/lxc"), &session.ticket)?;
         if let Some(items) = json.get("data").and_then(|v| v.as_array()) {
             for item in items {
-                let vmid = item.get("vmid").and_then(|v| v.as_i64()).unwrap_or_default();
-                let status = item
-                    .get("status")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("-");
+                let vmid = item
+                    .get("vmid")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or_default();
+                let status = item.get("status").and_then(|v| v.as_str()).unwrap_or("-");
                 let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("-");
                 lines.push(format!("{:<5} {:<8} {:<20} {}", vmid, status, name, node));
             }
@@ -274,6 +285,10 @@ fn ssh_key_path() -> PathBuf {
 
 fn ssh_pub_key_path() -> PathBuf {
     PathBuf::from(paths::home()).join(".ssh/id_ed25519.pub")
+}
+
+fn ssh_key_exists() -> bool {
+    ssh_key_path().exists() && ssh_pub_key_path().exists()
 }
 
 fn proxmox_password(password: Option<&str>) -> Option<String> {
@@ -294,6 +309,70 @@ fn sshpass_exists() -> bool {
         .unwrap_or(false)
 }
 
+fn ssh_pub_key() -> Result<String, String> {
+    let pub_key =
+        fs::read_to_string(ssh_pub_key_path()).map_err(|e| format!("공개키 읽기 실패: {}", e))?;
+    let trimmed = pub_key.trim().to_string();
+    if trimmed.is_empty() {
+        Err("공개키가 비어 있습니다.".into())
+    } else {
+        Ok(trimmed)
+    }
+}
+
+fn ssh_pub_key_fingerprint() -> Option<String> {
+    if !ssh_pub_key_path().exists() {
+        return None;
+    }
+    let output = Command::new("ssh-keygen")
+        .args(["-lf", &ssh_pub_key_path().to_string_lossy()])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Some(stdout.trim().to_string())
+}
+
+fn ssh_authorize_command_for(pub_key: &str) -> String {
+    format!(
+        "install -d -m 700 ~/.ssh && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && grep -qxF {0} ~/.ssh/authorized_keys || printf '%s\\n' {0} >> ~/.ssh/authorized_keys",
+        shell_single_quote(pub_key)
+    )
+}
+
+fn ssh_authorize_command() -> Result<String, String> {
+    Ok(ssh_authorize_command_for(&ssh_pub_key()?))
+}
+
+fn ssh_next_action() -> String {
+    if ssh_login_ok() {
+        return "SSH 준비 완료".into();
+    }
+    if !probe_tcp(&proxmox_host(), 22) {
+        return "22/tcp 열기 또는 VPN/방화벽 확인".into();
+    }
+    if !ssh_key_exists() {
+        return "mai run proxmox ssh-setup".into();
+    }
+    if proxmox_password_exists() && sshpass_exists() {
+        return "mai run proxmox ssh-setup".into();
+    }
+    if !sshpass_exists() {
+        return "mai run bootstrap install  # sshpass 필요".into();
+    }
+    "mai run proxmox ssh-authorize-command".into()
+}
+
+fn print_manual_ssh_help() {
+    println!();
+    println!("수동 SSH 등록 안내:");
+    println!("  1. mai run proxmox ssh-pubkey");
+    println!("  2. mai run proxmox ssh-authorize-command");
+    println!("  3. Proxmox Web UI > Shell 또는 다른 관리 호스트에서 위 명령을 root 셸에 실행");
+}
+
 fn ensure_local_ssh_key() -> Result<bool, String> {
     let ssh_dir = PathBuf::from(paths::home()).join(".ssh");
     let key_path = ssh_key_path();
@@ -301,12 +380,15 @@ fn ensure_local_ssh_key() -> Result<bool, String> {
         return Ok(false);
     }
 
-    fs::create_dir_all(&ssh_dir)
-        .map_err(|e| format!("~/.ssh 생성 실패: {}", e))?;
+    fs::create_dir_all(&ssh_dir).map_err(|e| format!("~/.ssh 생성 실패: {}", e))?;
 
     let comment = common::env_opt("GIT_EMAIL")
         .filter(|s| !s.trim().is_empty())
-        .or_else(|| std::env::var("USER").ok().map(|u| format!("{u}@mac-app-init")))
+        .or_else(|| {
+            std::env::var("USER")
+                .ok()
+                .map(|u| format!("{u}@mac-app-init"))
+        })
         .unwrap_or_else(|| "mac-app-init".to_string());
 
     let status = Command::new("ssh-keygen")
@@ -333,26 +415,19 @@ fn ensure_local_ssh_key() -> Result<bool, String> {
 fn reset_known_host(host: &str) {
     let _ = Command::new("ssh-keygen").args(["-R", host]).status();
     let bracket_host = format!("[{host}]:22");
-    let _ = Command::new("ssh-keygen").args(["-R", &bracket_host]).status();
+    let _ = Command::new("ssh-keygen")
+        .args(["-R", &bracket_host])
+        .status();
 }
 
 fn install_pubkey_via_password(password: &str) -> Result<(), String> {
     let host = proxmox_host();
     let user = proxmox_user();
-    let pub_key = fs::read_to_string(ssh_pub_key_path())
-        .map_err(|e| format!("공개키 읽기 실패: {}", e))?
-        .trim()
-        .to_string();
-    if pub_key.is_empty() {
-        return Err("공개키가 비어 있습니다.".into());
-    }
+    let pub_key = ssh_pub_key()?;
 
     reset_known_host(&host);
 
-    let remote_cmd = format!(
-        "mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && grep -qxF {0} ~/.ssh/authorized_keys || echo {0} >> ~/.ssh/authorized_keys",
-        shell_single_quote(&pub_key)
-    );
+    let remote_cmd = ssh_authorize_command_for(&pub_key);
 
     let output = Command::new("sshpass")
         .args([
@@ -382,7 +457,10 @@ fn install_pubkey_via_password(password: &str) -> Result<(), String> {
     }
 
     if stderr.contains("Permission denied") {
-        return Err("SSH 비밀번호 인증 실패입니다. PROXMOX_PASSWORD 또는 SSH 사용자 설정을 확인하세요.".into());
+        return Err(
+            "SSH 비밀번호 인증 실패입니다. PROXMOX_PASSWORD 또는 SSH 사용자 설정을 확인하세요."
+                .into(),
+        );
     }
 
     Err(format!("SSH 공개키 등록 실패: {}", stderr.trim()))
@@ -391,15 +469,31 @@ fn install_pubkey_via_password(password: &str) -> Result<(), String> {
 fn cluster_nodes() -> Vec<(String, String)> {
     let host = proxmox_host();
     let user = proxmox_user();
-    let (ok, output) = common::ssh_cmd(&host, &user,
-        "pvesh get /nodes --output-format json 2>/dev/null");
-    if !ok { return vec![("pve".into(), "unknown".into())]; }
+    let (ok, output) = common::ssh_cmd(
+        &host,
+        &user,
+        "pvesh get /nodes --output-format json 2>/dev/null",
+    );
+    if !ok {
+        return vec![("pve".into(), "unknown".into())];
+    }
     let nodes: Vec<serde_json::Value> = serde_json::from_str(&output).unwrap_or_default();
-    nodes.iter().map(|n| {
-        let name = n.get("node").and_then(|v| v.as_str()).unwrap_or("?").to_string();
-        let status = n.get("status").and_then(|v| v.as_str()).unwrap_or("?").to_string();
-        (name, status)
-    }).collect()
+    nodes
+        .iter()
+        .map(|n| {
+            let name = n
+                .get("node")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?")
+                .to_string();
+            let status = n
+                .get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?")
+                .to_string();
+            (name, status)
+        })
+        .collect()
 }
 
 /// 클러스터 전체 LXC (노드별). 반환: (node, vmid, status, name)
@@ -409,14 +503,31 @@ fn all_lxc() -> Vec<(String, String, String, String)> {
     let nodes = cluster_nodes();
     let mut result = Vec::new();
     for (node, _) in &nodes {
-        let cmd = format!("pvesh get /nodes/{}/lxc --output-format json 2>/dev/null", node);
+        let cmd = format!(
+            "pvesh get /nodes/{}/lxc --output-format json 2>/dev/null",
+            node
+        );
         let (ok, output) = common::ssh_cmd(&host, &user, &cmd);
-        if !ok { continue; }
+        if !ok {
+            continue;
+        }
         let ctrs: Vec<serde_json::Value> = serde_json::from_str(&output).unwrap_or_default();
         for c in ctrs {
-            let vmid = c.get("vmid").and_then(|v| v.as_u64()).map(|v| v.to_string()).unwrap_or_default();
-            let status = c.get("status").and_then(|v| v.as_str()).unwrap_or("?").to_string();
-            let name = c.get("name").and_then(|v| v.as_str()).unwrap_or("?").to_string();
+            let vmid = c
+                .get("vmid")
+                .and_then(|v| v.as_u64())
+                .map(|v| v.to_string())
+                .unwrap_or_default();
+            let status = c
+                .get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?")
+                .to_string();
+            let name = c
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?")
+                .to_string();
             result.push((node.clone(), vmid, status, name));
         }
     }
@@ -431,14 +542,31 @@ fn all_vms() -> Vec<(String, String, String, String)> {
     let nodes = cluster_nodes();
     let mut result = Vec::new();
     for (node, _) in &nodes {
-        let cmd = format!("pvesh get /nodes/{}/qemu --output-format json 2>/dev/null", node);
+        let cmd = format!(
+            "pvesh get /nodes/{}/qemu --output-format json 2>/dev/null",
+            node
+        );
         let (ok, output) = common::ssh_cmd(&host, &user, &cmd);
-        if !ok { continue; }
+        if !ok {
+            continue;
+        }
         let vms: Vec<serde_json::Value> = serde_json::from_str(&output).unwrap_or_default();
         for v in vms {
-            let vmid = v.get("vmid").and_then(|v| v.as_u64()).map(|v| v.to_string()).unwrap_or_default();
-            let status = v.get("status").and_then(|v| v.as_str()).unwrap_or("?").to_string();
-            let name = v.get("name").and_then(|v| v.as_str()).unwrap_or("?").to_string();
+            let vmid = v
+                .get("vmid")
+                .and_then(|v| v.as_u64())
+                .map(|v| v.to_string())
+                .unwrap_or_default();
+            let status = v
+                .get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?")
+                .to_string();
+            let name = v
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?")
+                .to_string();
             result.push((node.clone(), vmid, status, name));
         }
     }
@@ -447,9 +575,12 @@ fn all_vms() -> Vec<(String, String, String, String)> {
 }
 
 fn lxc_lines() -> Vec<String> {
-    all_lxc().iter().map(|(node, vmid, status, name)| {
-        format!("{:<8} {:<10} {:<10} {}", vmid, status, node, name)
-    }).collect()
+    all_lxc()
+        .iter()
+        .map(|(node, vmid, status, name)| {
+            format!("{:<8} {:<10} {:<10} {}", vmid, status, node, name)
+        })
+        .collect()
 }
 
 fn lxc_lines_with_source() -> Result<(Vec<String>, &'static str), String> {
@@ -475,16 +606,126 @@ fn cmd_status() {
     let lxc_state = lxc_lines_with_source();
 
     println!("=== Proxmox 상태 ===\n");
-    println!("[등록] {}", if proxmox_card_exists() { "✓ proxmox 카드" } else { "✗ env setup-proxmox 필요" });
-    println!("[Web UI] {} {}", proxmox_url(), if web_ok { "✓ 연결 가능" } else { "✗ 연결 불가" });
-    println!("[계정] {} {}", user, if proxmox_password_exists() { "✓ dotenvx 비번 있음" } else { "✗ 비번 없음" });
-    println!("[API 로그인] {} {}", api_user, if api_ok { "✓ 가능" } else { "✗ 실패" });
-    println!("[SSH 포트] {}:22 {}", host, if ssh_port_ok { "✓ 열림" } else { "✗ 닫힘" });
-    println!("[SSH 로그인] {}", if ssh_ok { "✓ 키 기반 접속 가능" } else { "✗ 미설정/실패" });
+    println!(
+        "[등록] {}",
+        if proxmox_card_exists() {
+            "✓ proxmox 카드"
+        } else {
+            "✗ env setup-proxmox 필요"
+        }
+    );
+    println!(
+        "[Web UI] {} {}",
+        proxmox_url(),
+        if web_ok {
+            "✓ 연결 가능"
+        } else {
+            "✗ 연결 불가"
+        }
+    );
+    println!(
+        "[계정] {} {}",
+        user,
+        if proxmox_password_exists() {
+            "✓ dotenvx 비번 있음"
+        } else {
+            "✗ 비번 없음"
+        }
+    );
+    println!(
+        "[API 로그인] {} {}",
+        api_user,
+        if api_ok { "✓ 가능" } else { "✗ 실패" }
+    );
+    match ssh_pub_key_fingerprint() {
+        Some(fp) => println!("[로컬 SSH 키] {} ({})", ssh_pub_key_path().display(), fp),
+        None => println!("[로컬 SSH 키] ✗ 없음"),
+    }
+    println!(
+        "[SSH 포트] {}:22 {}",
+        host,
+        if ssh_port_ok {
+            "✓ 열림"
+        } else {
+            "✗ 닫힘"
+        }
+    );
+    println!(
+        "[SSH 로그인] {}",
+        if ssh_ok {
+            "✓ 키 기반 접속 가능"
+        } else {
+            "✗ 미설정/실패"
+        }
+    );
+    println!("[SSH 다음 단계] {}", ssh_next_action());
     match lxc_state {
         Ok((lines, source)) => println!("[LXC] {} 개 ({})", lines.len(), source),
         Err(_) if api_ok => println!("[LXC] API 연결됨, 목록 조회 실패"),
         Err(_) => println!("[LXC] API 또는 SSH 로그인 필요"),
+    }
+}
+
+fn cmd_ssh_status() {
+    let host = proxmox_host();
+    let user = proxmox_user();
+    let ssh_port_ok = probe_tcp(&host, 22);
+    let ssh_ok = ssh_login_ok();
+
+    println!("=== Proxmox SSH 상태 ===\n");
+    println!("[대상] {}@{}", user, host);
+    println!(
+        "[SSH 포트] {}",
+        if ssh_port_ok {
+            "✓ 열림"
+        } else {
+            "✗ 닫힘"
+        }
+    );
+    println!(
+        "[SSH 로그인] {}",
+        if ssh_ok {
+            "✓ 키 기반 접속 가능"
+        } else {
+            "✗ 아직 불가"
+        }
+    );
+    println!(
+        "[dotenvx 비번] {}",
+        if proxmox_password_exists() {
+            "✓ 있음"
+        } else {
+            "✗ 없음"
+        }
+    );
+    println!(
+        "[sshpass] {}",
+        if sshpass_exists() {
+            "✓ 있음"
+        } else {
+            "✗ 없음"
+        }
+    );
+
+    match ensure_local_ssh_key() {
+        Ok(true) => println!("[로컬 키] ✓ 새로 생성: {}", ssh_key_path().display()),
+        Ok(false) => println!("[로컬 키] ✓ 존재: {}", ssh_key_path().display()),
+        Err(err) => {
+            println!("[로컬 키] ✗ {}", err);
+            std::process::exit(1);
+        }
+    }
+
+    if let Some(fp) = ssh_pub_key_fingerprint() {
+        println!("[지문] {}", fp);
+    }
+
+    println!("[다음 단계] {}", ssh_next_action());
+    if !ssh_port_ok {
+        println!("[주의] SSH 포트가 닫혀 있으면 키 등록 여부와 무관하게 SSH 접속은 되지 않습니다.");
+    }
+    if !ssh_ok {
+        print_manual_ssh_help();
     }
 }
 
@@ -526,6 +767,7 @@ fn cmd_setup(host: &str, user: &str, realm: &str, web_port: u16, password: Optio
                 } else {
                     eprintln!("  API 로그인도 실패하므로 이후 Proxmox 작업이 제한될 수 있습니다.");
                 }
+                print_manual_ssh_help();
             }
         }
     } else {
@@ -564,7 +806,11 @@ fn ssh_setup_result(password: Option<&str>) -> Result<(), String> {
             println!("✓ SSH 키 등록 완료");
             return Ok(());
         }
-        return Err(format!("{} (공개키: {})", err, ssh_pub_key_path().display()));
+        return Err(format!(
+            "{} (공개키: {})",
+            err,
+            ssh_pub_key_path().display()
+        ));
     }
 
     if ssh_login_ok() {
@@ -578,19 +824,55 @@ fn ssh_setup_result(password: Option<&str>) -> Result<(), String> {
 fn cmd_ssh_setup(password: Option<&str>) {
     if let Err(err) = ssh_setup_result(password) {
         eprintln!("✗ {}", err);
+        print_manual_ssh_help();
         std::process::exit(1);
+    }
+}
+
+fn cmd_ssh_pubkey() {
+    match ensure_local_ssh_key() {
+        Ok(true) => eprintln!("✓ 로컬 SSH 키 생성: {}", ssh_key_path().display()),
+        Ok(false) => {}
+        Err(err) => {
+            eprintln!("✗ {}", err);
+            std::process::exit(1);
+        }
+    }
+
+    match ssh_pub_key() {
+        Ok(pub_key) => println!("{}", pub_key),
+        Err(err) => {
+            eprintln!("✗ {}", err);
+            std::process::exit(1);
+        }
+    }
+}
+
+fn cmd_ssh_authorize_command() {
+    match ensure_local_ssh_key() {
+        Ok(true) => eprintln!("✓ 로컬 SSH 키 생성: {}", ssh_key_path().display()),
+        Ok(false) => {}
+        Err(err) => {
+            eprintln!("✗ {}", err);
+            std::process::exit(1);
+        }
+    }
+
+    match ssh_authorize_command() {
+        Ok(cmd) => println!("{}", cmd),
+        Err(err) => {
+            eprintln!("✗ {}", err);
+            std::process::exit(1);
+        }
     }
 }
 
 fn cmd_open() {
     let url = proxmox_url();
-    let out = Command::new("open")
-        .arg(&url)
-        .output()
-        .unwrap_or_else(|e| {
-            eprintln!("✗ open 실행 실패: {}", e);
-            std::process::exit(1);
-        });
+    let out = Command::new("open").arg(&url).output().unwrap_or_else(|e| {
+        eprintln!("✗ open 실행 실패: {}", e);
+        std::process::exit(1);
+    });
     if !out.status.success() {
         eprintln!("✗ {}", String::from_utf8_lossy(&out.stderr).trim());
         std::process::exit(1);
@@ -618,17 +900,28 @@ fn cmd_lxc_list() {
 }
 
 fn vm_lines() -> Vec<String> {
-    all_vms().iter().map(|(node, vmid, status, name)| {
-        format!("{:<8} {:<10} {:<10} {}", vmid, status, node, name)
-    }).collect()
+    all_vms()
+        .iter()
+        .map(|(node, vmid, status, name)| {
+            format!("{:<8} {:<10} {:<10} {}", vmid, status, node, name)
+        })
+        .collect()
 }
 
 fn cmd_vm_list() {
-    if !ssh_login_ok() { eprintln!("✗ SSH 접속 불가"); std::process::exit(1); }
+    if !ssh_login_ok() {
+        eprintln!("✗ SSH 접속 불가");
+        std::process::exit(1);
+    }
     let lines = vm_lines();
-    if lines.is_empty() { println!("VM 없음"); return; }
+    if lines.is_empty() {
+        println!("VM 없음");
+        return;
+    }
     println!("=== Proxmox VM ===\n");
-    for line in lines { println!("  {}", line); }
+    for line in lines {
+        println!("  {}", line);
+    }
 }
 
 fn ssh_target() -> String {
@@ -652,7 +945,9 @@ fn resolve_vmid(name_or_id: &str) -> String {
 /// VMID가 어느 노드에 있는지 찾기 (pct enter는 해당 노드에서 실행해야 함)
 fn find_node_for_vmid(vmid: &str) -> Option<String> {
     for (node, vid, _, _) in all_lxc() {
-        if vid == vmid { return Some(node); }
+        if vid == vmid {
+            return Some(node);
+        }
     }
     None
 }
@@ -666,10 +961,12 @@ fn cmd_lxc_shell(vmid: &str) {
         Some("pve") | None => format!("pct enter {}", vmid),
         Some(remote) => format!("ssh -t {} 'pct enter {}'", remote, vmid),
     };
-    println!("LXC {} 셸 접속 중... ({})", vmid, node.as_deref().unwrap_or("local"));
-    let _ = Command::new("ssh")
-        .args(["-t", &target, &cmd])
-        .status();
+    println!(
+        "LXC {} 셸 접속 중... ({})",
+        vmid,
+        node.as_deref().unwrap_or("local")
+    );
+    let _ = Command::new("ssh").args(["-t", &target, &cmd]).status();
 }
 
 fn cmd_lxc_exec(vmid: &str, cmd: &[String]) {
@@ -688,7 +985,10 @@ fn cmd_lxc_exec(vmid: &str, cmd: &[String]) {
             eprint!("{}", String::from_utf8_lossy(&o.stderr));
             std::process::exit(o.status.code().unwrap_or(1));
         }
-        Err(e) => { eprintln!("✗ {}", e); std::process::exit(1); }
+        Err(e) => {
+            eprintln!("✗ {}", e);
+            std::process::exit(1);
+        }
     }
 }
 
@@ -701,7 +1001,15 @@ fn cmd_lxc_start(vmid: &str) {
         Some(remote) => format!("ssh {} '{}'", remote, pct),
     };
     let (ok, out) = common::ssh_cmd(&proxmox_host(), &proxmox_user(), &cmd);
-    if ok { println!("✓ LXC {} 시작 ({})", vmid, node.as_deref().unwrap_or("local")); } else { eprintln!("✗ {}", out); }
+    if ok {
+        println!(
+            "✓ LXC {} 시작 ({})",
+            vmid,
+            node.as_deref().unwrap_or("local")
+        );
+    } else {
+        eprintln!("✗ {}", out);
+    }
 }
 
 fn cmd_lxc_stop(vmid: &str) {
@@ -713,7 +1021,15 @@ fn cmd_lxc_stop(vmid: &str) {
         Some(remote) => format!("ssh {} '{}'", remote, pct),
     };
     let (ok, out) = common::ssh_cmd(&proxmox_host(), &proxmox_user(), &cmd);
-    if ok { println!("✓ LXC {} 정지 ({})", vmid, node.as_deref().unwrap_or("local")); } else { eprintln!("✗ {}", out); }
+    if ok {
+        println!(
+            "✓ LXC {} 정지 ({})",
+            vmid,
+            node.as_deref().unwrap_or("local")
+        );
+    } else {
+        eprintln!("✗ {}", out);
+    }
 }
 
 fn cmd_ssh() {
@@ -754,7 +1070,12 @@ fn print_tui_spec() {
         } else {
             "auth down"
         };
-        format!("{} / web {} / {}", proxmox_url(), if web_ok { "ok" } else { "down" }, auth)
+        format!(
+            "{} / web {} / {}",
+            proxmox_url(),
+            if web_ok { "ok" } else { "down" },
+            auth
+        )
     } else {
         "미등록".to_string()
     };
@@ -763,19 +1084,23 @@ fn print_tui_spec() {
     let vm_all = if ssh_ok { all_vms() } else { Vec::new() };
     let nodes = if ssh_ok { cluster_nodes() } else { Vec::new() };
 
-    let lxc_rows: Vec<serde_json::Value> = lxc_all.iter()
+    let lxc_rows: Vec<serde_json::Value> = lxc_all
+        .iter()
         .map(|(node, vmid, status, name)| serde_json::json!([vmid, status, node, name]))
         .collect();
 
-    let vm_rows: Vec<serde_json::Value> = vm_all.iter()
+    let vm_rows: Vec<serde_json::Value> = vm_all
+        .iter()
         .map(|(node, vmid, status, name)| serde_json::json!([vmid, status, node, name]))
         .collect();
 
     let lxc_running = lxc_all.iter().filter(|c| c.2 == "running").count();
     let lxc_total = lxc_all.len();
-    let node_info = nodes.iter()
+    let node_info = nodes
+        .iter()
         .map(|(n, s)| format!("{} ({})", n, s))
-        .collect::<Vec<_>>().join(", ");
+        .collect::<Vec<_>>()
+        .join(", ");
 
     TuiSpec::new("proxmox")
         .refresh(30)
@@ -792,7 +1117,31 @@ fn print_tui_spec() {
             tui_spec::kv_item("계정", &user, if proxmox_password_exists() { "ok" } else { "warn" }),
             tui_spec::kv_item("API 로그인", &api_user, if api_ok { "ok" } else { "warn" }),
             tui_spec::kv_item("API 쓰기", if api_csrf { "✓ 가능" } else { "✗ 불가" }, if api_csrf { "ok" } else { "warn" }),
-            tui_spec::kv_item("SSH", &format!("{}@{}:22", user, host),
+            tui_spec::kv_item(
+                "로컬 SSH 키",
+                &match ssh_pub_key_fingerprint() {
+                    Some(fp) => fp,
+                    None => "✗ 없음".into(),
+                },
+                if ssh_key_exists() { "ok" } else { "warn" },
+            ),
+            tui_spec::kv_item(
+                "SSH",
+                &format!(
+                    "{}@{}:22 ({})",
+                    user,
+                    host,
+                    if ssh_port_ok { "port ok" } else { "port down" }
+                ),
+                if ssh_ok {
+                    "ok"
+                } else if ssh_port_ok {
+                    "warn"
+                } else {
+                    "error"
+                },
+            ),
+            tui_spec::kv_item("SSH 다음 단계", &ssh_next_action(),
                 if ssh_ok { "ok" } else { "warn" }),
             tui_spec::kv_item("LXC",
                 &if ssh_ok {
@@ -819,7 +1168,10 @@ fn print_tui_spec() {
             vec![
                 serde_json::json!({ "label": "기본 등록", "command": "setup", "key": "s" }),
                 serde_json::json!({ "label": "웹 UI 열기", "command": "open", "key": "o" }),
+                serde_json::json!({ "label": "SSH 상태", "command": "ssh-status", "key": "a" }),
                 serde_json::json!({ "label": "SSH 키 등록", "command": "ssh-setup", "key": "k" }),
+                serde_json::json!({ "label": "SSH 공개키", "command": "ssh-pubkey", "key": "p" }),
+                serde_json::json!({ "label": "등록 명령", "command": "ssh-authorize-command", "key": "c" }),
                 serde_json::json!({ "label": "LXC 목록", "command": "lxc-list", "key": "l" }),
                 serde_json::json!({ "label": "호스트 SSH", "command": "ssh", "key": "h" }),
             ],
@@ -827,6 +1179,9 @@ fn print_tui_spec() {
         .text("안내",
             "  mai run proxmox setup --realm pam --password ...\n  \
              SSH가 막혀도 API 인증이 맞으면 LXC 목록은 API fallback 으로 조회합니다.\n  \
+             mai run proxmox ssh-status       SSH 준비 상태/다음 단계 확인\n  \
+             mai run proxmox ssh-pubkey       로컬 공개키 출력\n  \
+             mai run proxmox ssh-authorize-command  Proxmox 셸용 등록 명령 출력\n  \
              mai run proxmox ssh              호스트 SSH 접속\n  \
              mai run proxmox lxc-shell 50063   LXC 셸 접속\n  \
              mai run proxmox lxc-exec 50063 ls 명령 실행\n  \
