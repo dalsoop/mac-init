@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 mod backend;
@@ -376,6 +376,41 @@ fn url_encode(s: &str) -> String {
     }).collect()
 }
 
+/// SSH 카드의 원격 최상위 디렉토리 목록 (sshfs 마운트 대상).
+fn list_ssh_dirs(conn: &Connection) -> Vec<String> {
+    let target = format!("{}@{}", conn.user, conn.host);
+    let out = Command::new("ssh")
+        .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=5",
+               "-p", &conn.port.to_string(), &target,
+               "ls -1d /*/ 2>/dev/null || ls -1 / 2>/dev/null"])
+        .output();
+    let Ok(o) = out else { return Vec::new(); };
+    if !o.status.success() { return Vec::new(); }
+    String::from_utf8_lossy(&o.stdout)
+        .lines()
+        .map(|l| l.trim_end_matches('/').to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+/// SSHFS로 마운트.
+fn mount_sshfs(conn: &Connection, remote_path: &str, mountpoint: &Path) -> Result<(), String> {
+    fs::create_dir_all(mountpoint).map_err(|e| format!("디렉터리 생성 실패: {}", e))?;
+    let source = format!("{}@{}:{}", conn.user, conn.host, remote_path);
+    let status = Command::new("sshfs")
+        .args([
+            &source,
+            &mountpoint.to_string_lossy().to_string(),
+            "-o", &format!("port={}", conn.port),
+            "-o", "follow_symlinks",
+            "-o", "reconnect",
+            "-o", "ServerAliveInterval=15",
+        ])
+        .status()
+        .map_err(|e| format!("sshfs 실행 실패: {} (sshfs 설치: brew install sshfs)", e))?;
+    if status.success() { Ok(()) } else { Err("sshfs 마운트 실패".into()) }
+}
+
 fn list_smb_shares(conn: &Connection, password: &str) -> Vec<String> {
     let url = format!("//{}:{}@{}", conn.user, url_encode(password), conn.host);
     let out = Command::new("smbutil").args(["view", &url]).output();
@@ -480,7 +515,22 @@ fn cmd_shares() {
         return;
     }
     for c in &conns {
-        println!("=== {} ({}) ===", c.name, c.host);
+        println!("=== {} ({} — {}) ===", c.name, c.host, c.scheme);
+
+        if c.scheme == "ssh" {
+            // SSH 카드: 원격 디렉토리 목록
+            let dirs = list_ssh_dirs(c);
+            if dirs.is_empty() {
+                println!("  (접근 불가 또는 디렉토리 없음)");
+            } else {
+                for d in dirs {
+                    println!("  • {}", d);
+                }
+            }
+            println!();
+            continue;
+        }
+
         let Some(pw) = get_password(&c.name) else {
             println!("  (비번 없음 — .env 에 {}_PASSWORD 필요)\n", c.name.to_uppercase());
             continue;
@@ -518,6 +568,17 @@ fn cmd_mount(name: &str, share: &str) {
     let mp = mount_point(name, share);
     let opts = card_mount_opts(name);
 
+    // SSH → sshfs
+    if conn.scheme == "ssh" {
+        let remote_path = if share == "/" || share.is_empty() { "/".to_string() } else { format!("/{}", share.trim_start_matches('/')) };
+        println!("마운트 중 (sshfs): {}@{}:{} → {}", conn.user, conn.host, remote_path, mp.display());
+        match mount_sshfs(&conn, &remote_path, &mp) {
+            Ok(()) => println!("✓ {} (sshfs)", mp.display()),
+            Err(e) => eprintln!("✗ {}", e),
+        }
+        return;
+    }
+
     // rclone 백엔드 분기
     if conn.scheme == "rclone" {
         let (remote, path) = card_rclone_meta(name);
@@ -530,7 +591,7 @@ fn cmd_mount(name: &str, share: &str) {
         return;
     }
 
-    // 기존: SMB / NFS / AFP / WebDAV 등 NetFS 경로
+    // SMB / NFS / AFP / WebDAV 등 NetFS 경로
     let Some(pw) = get_password(name) else {
         eprintln!("✗ {}_PASSWORD 가 .env 에 없습니다.", name.to_uppercase());
         return;
