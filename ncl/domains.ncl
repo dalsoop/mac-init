@@ -148,12 +148,13 @@ in
       description = "Proxmox VE 웹 UI 연결 + 상태 확인",
       tags = { product = 'infra, layer = 'remote },
       requires = ["env"],
-      provides = ["proxmox status", "proxmox setup", "proxmox open", "proxmox lxc-list"],
+      provides = ["proxmox status", "proxmox setup", "proxmox ssh-setup", "proxmox open", "proxmox lxc-list"],
       i18n = {
         label = "Proxmox", icon = "🧱", group = "infra",
         buttons = [
           { command = "status", label = "상태 확인" },
           { command = "setup", label = "기본 등록" },
+          { command = "ssh-setup", label = "SSH 키 등록" },
           { command = "open", label = "웹 UI 열기" },
           { command = "lxc-list", label = "LXC 목록" },
         ],

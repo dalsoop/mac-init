@@ -113,6 +113,15 @@ const DEPS: &[Dep] = &[
         description: "VPN CLI (wireguard 도메인에 필요)",
     },
     Dep {
+        name: "sshpass",
+        check_cmd: "sshpass",
+        check_args: &["-V"],
+        install_steps: &[
+            ("brew", &["install", "sshpass"]),
+        ],
+        description: "비밀번호 기반 SSH 키 등록 (proxmox SSH 초기화)",
+    },
+    Dep {
         name: "iTerm2",
         check_cmd: "brew",
         check_args: &["list", "--cask", "iterm2"],

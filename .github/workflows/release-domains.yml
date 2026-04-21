@@ -18,22 +18,22 @@ jobs:
       matrix:
         domain:
           - bootstrap
-          - keyboard
-          - connect
           - container
           - cron
-          - defaults
-          - dotfiles
+          - env
           - files
           - git
+          - host
+          - keyboard
+          - mount
+          - obsidian
+          - proxmox
           - quickaction
+          - sd-backup
+          - shell
+          - tmux
           - vscode
           - wireguard
-          - projects
-          - worktree
-          - mount
-          - env
-          - host
 
     runs-on: macos-14
 
@@ -81,21 +81,21 @@ jobs:
 
       - name: Build TUI v2
         run: |
-          cargo build --release -p mac-host-tui-v2 --target aarch64-apple-darwin
-          cargo build --release -p mac-host-tui-v2 --target x86_64-apple-darwin
+          cargo build --release -p mac-host-tui --target aarch64-apple-darwin
+          cargo build --release -p mac-host-tui --target x86_64-apple-darwin
 
       - name: Package
         run: |
-          tar czf mac-aarch64-apple-darwin.tar.gz -C target/aarch64-apple-darwin/release mac
-          tar czf mac-x86_64-apple-darwin.tar.gz -C target/x86_64-apple-darwin/release mac
-          tar czf mac-tui-aarch64-apple-darwin.tar.gz -C target/aarch64-apple-darwin/release mac-tui
-          tar czf mac-tui-x86_64-apple-darwin.tar.gz -C target/x86_64-apple-darwin/release mac-tui
+          tar czf mai-aarch64-apple-darwin.tar.gz -C target/aarch64-apple-darwin/release mai
+          tar czf mai-x86_64-apple-darwin.tar.gz -C target/x86_64-apple-darwin/release mai
+          tar czf mai-tui-aarch64-apple-darwin.tar.gz -C target/aarch64-apple-darwin/release mai-tui
+          tar czf mai-tui-x86_64-apple-darwin.tar.gz -C target/x86_64-apple-darwin/release mai-tui
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            mac-aarch64-apple-darwin.tar.gz
-            mac-x86_64-apple-darwin.tar.gz
-            mac-tui-aarch64-apple-darwin.tar.gz
-            mac-tui-x86_64-apple-darwin.tar.gz
+            mai-aarch64-apple-darwin.tar.gz
+            mai-x86_64-apple-darwin.tar.gz
+            mai-tui-aarch64-apple-darwin.tar.gz
+            mai-tui-x86_64-apple-darwin.tar.gz

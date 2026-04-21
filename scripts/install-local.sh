@@ -9,7 +9,9 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEST="$HOME/.mac-app-init/domains"
+MANAGER_DEST="$HOME/.local/bin"
 mkdir -p "$DEST"
+mkdir -p "$MANAGER_DEST"
 
 # ncl 스키마 검증 — 실패 시 빌드 중단
 if command -v nickel &>/dev/null; then
@@ -37,10 +39,26 @@ build_and_copy() {
   echo "  ✓ $DEST/$crate"
 }
 
+build_manager() {
+  local crate="mac-domain-manager"
+  local bin="mai"
+  echo "▶ manager"
+  (cd "$ROOT" && cargo build -p "$crate" --release --quiet)
+  local src="$ROOT/target/release/$bin"
+  if [[ ! -f "$src" ]]; then
+    echo "  ✗ 빌드 산출물 없음: $src" >&2
+    return 1
+  fi
+  cp -f "$src" "$MANAGER_DEST/$bin"
+  chmod +x "$MANAGER_DEST/$bin"
+  echo "  ✓ $MANAGER_DEST/$bin"
+}
+
 if [[ "${1:-}" == "--all" ]]; then
+  build_manager
   for d in "$ROOT"/crates/domains/*/; do
     name="$(basename "$d")"
-    # manager 는 별도로 관리, bootstrap 은 설치 대상 아님
+    # bootstrap 은 설치 대상 아님
     case "$name" in
       manager|bootstrap) continue ;;
     esac
@@ -51,6 +69,10 @@ elif [[ $# -eq 0 ]]; then
   exit 1
 else
   for name in "$@"; do
-    build_and_copy "$name"
+    if [[ "$name" == "manager" ]]; then
+      build_manager
+    else
+      build_and_copy "$name"
+    fi
   done
 fi
