@@ -1031,7 +1031,7 @@ fn spec_parse_real_mount_json() {
             {
                 "kind": "text",
                 "title": "안내",
-                "content": "mac run mount mount <name> <share>"
+                "content": "mai run mount mount <name> <share>"
             }
         ],
         "keybindings": [

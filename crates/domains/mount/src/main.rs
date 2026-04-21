@@ -1236,11 +1236,7 @@ fn cmd_sweep(toggle: &str) {
 }
 
 fn cmd_auto_enable() {
-    let mac_bin = Command::new("which").arg("mac").output()
-        .ok().and_then(|o| if o.status.success() {
-            Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
-        } else { None })
-        .unwrap_or_else(|| "mac".into());
+    let manager_bin = mac_common::paths::manager_bin();
 
     let log_dir = format!("{}/Documents/WORK/logs", home());
     fs::create_dir_all(&log_dir).ok();
@@ -1277,7 +1273,7 @@ fn cmd_auto_enable() {
     <string>{log_dir}/automount.log</string>
 </dict>
 </plist>
-"#, label=AUTOMOUNT_LABEL, bin=mac_bin, log_dir=log_dir, home=home());
+"#, label=AUTOMOUNT_LABEL, bin=manager_bin.display(), log_dir=log_dir, home=home());
 
     let path = automount_plist_path();
     if let Some(p) = path.parent() { fs::create_dir_all(p).ok(); }
