@@ -89,7 +89,7 @@ const DEPS: &[Dep] = &[
         check_cmd: "gh",
         check_args: &["--version"],
         install_steps: &[("brew", &["install", "gh"])],
-        description: "GitHub CLI (mac install에 필요)",
+        description: "GitHub CLI (mai install에 필요)",
     },
     Dep {
         name: "dotenvx",
@@ -517,12 +517,12 @@ fn cmd_status() {
         .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "2")
         .unwrap_or(false);
     println!(
-        "  {} mac CLI Documents 접근: {}",
+        "  {} mai CLI Documents 접근: {}",
         if mac_allowed { "✓" } else { "✗" },
         if mac_allowed {
             "허용됨"
         } else {
-            "미허용 — 터미널에서 mac 실행 시 '접근 허용' 팝업에 허용 필요"
+            "미허용 — 터미널에서 mai 실행 시 '접근 허용' 팝업에 허용 필요"
         }
     );
     println!("  ℹ 도메인 바이너리는 `mac run` 경유로 실행하면 TCC 상속됨.");

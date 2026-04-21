@@ -402,7 +402,7 @@ pub fn ai_setup() {
     println!(
         "\n[ai] 현재 Mac에는 Claude/Codex 로컬 인증 파일이 있지만, OpenCode auth는 별도 로그인 상태입니다."
     );
-    println!("[ai] 자세한 상태는 `mac-host-commands workspace ai-status`로 확인하세요.");
+    println!("[ai] 자세한 상태는 `mai workspace ai-status`로 확인하세요.");
 }
 
 pub fn ai_reinstall_opencode() {

@@ -128,12 +128,14 @@ fn known_domains() -> Vec<String> {
         "env",
         "mount",
         "host",
+        "proxmox",
         "cron",
         "files",
         "sd-backup",
         "git",
         "vscode",
         "container",
+        "obsidian",
         "quickaction",
         "keyboard",
         "shell",
@@ -437,8 +439,8 @@ fn cmd_self_update() {
 
     // Replace current binary
     let new_bin = dest_dir.join("mai");
-    let current_bin =
-        std::env::current_exe().unwrap_or_else(|_| PathBuf::from("/usr/local/bin/mac"));
+    let current_bin = std::env::current_exe()
+        .unwrap_or_else(|_| PathBuf::from(format!("{}/.local/bin/mai", home())));
 
     if let Err(e) = fs::copy(&new_bin, &current_bin) {
         eprintln!("✗ 바이너리 교체 실패: {}", e);

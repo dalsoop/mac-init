@@ -9,7 +9,10 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEST="$HOME/.mac-app-init/domains"
+MANAGER_DEST="$HOME/.local/bin"
+LOCAL_VERSION="local-$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo dev)"
 mkdir -p "$DEST"
+mkdir -p "$MANAGER_DEST"
 
 # ncl 스키마 검증 — 실패 시 빌드 중단
 if command -v nickel &>/dev/null; then
@@ -34,15 +37,66 @@ build_and_copy() {
   fi
   cp -f "$src" "$DEST/$crate"
   chmod +x "$DEST/$crate"
+  update_registry "$name"
   echo "  ✓ $DEST/$crate"
 }
 
+update_registry() {
+  local name="$1"
+  local registry="$DEST/registry.json"
+  python3 - "$registry" "$name" "$LOCAL_VERSION" <<'PY'
+import json
+import pathlib
+import sys
+
+registry = pathlib.Path(sys.argv[1])
+name = sys.argv[2]
+version = sys.argv[3]
+
+data = {"installed": []}
+if registry.exists():
+    try:
+        data = json.loads(registry.read_text())
+    except Exception:
+        data = {"installed": []}
+
+installed = data.get("installed")
+if not isinstance(installed, list):
+    installed = []
+    data["installed"] = installed
+
+for item in installed:
+    if isinstance(item, dict) and item.get("name") == name:
+        item["version"] = version
+        break
+else:
+    installed.append({"name": name, "version": version})
+
+registry.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+PY
+}
+
+build_manager() {
+  local crate="mac-domain-manager"
+  local bin="mai"
+  echo "▶ manager"
+  (cd "$ROOT" && cargo build -p "$crate" --release --quiet)
+  local src="$ROOT/target/release/$bin"
+  if [[ ! -f "$src" ]]; then
+    echo "  ✗ 빌드 산출물 없음: $src" >&2
+    return 1
+  fi
+  cp -f "$src" "$MANAGER_DEST/$bin"
+  chmod +x "$MANAGER_DEST/$bin"
+  echo "  ✓ $MANAGER_DEST/$bin"
+}
+
 if [[ "${1:-}" == "--all" ]]; then
+  build_manager
   for d in "$ROOT"/crates/domains/*/; do
     name="$(basename "$d")"
-    # manager 는 별도로 관리, bootstrap 은 설치 대상 아님
     case "$name" in
-      manager|bootstrap) continue ;;
+      manager) continue ;;
     esac
     build_and_copy "$name" || true
   done
@@ -51,6 +105,10 @@ elif [[ $# -eq 0 ]]; then
   exit 1
 else
   for name in "$@"; do
-    build_and_copy "$name"
+    if [[ "$name" == "manager" ]]; then
+      build_manager
+    else
+      build_and_copy "$name"
+    fi
   done
 fi

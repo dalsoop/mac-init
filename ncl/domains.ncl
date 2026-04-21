@@ -66,7 +66,8 @@ in
       name = "bootstrap",
       description = "Homebrew, Rust, gh, dotenvx 등 의존성 설치 + 초기 설정",
       tags = { product = 'init, layer = 'platform },
-      provides = ["bootstrap install", "bootstrap check", "bootstrap status"],
+      provides = ["bootstrap install", "bootstrap check", "bootstrap status",
+                  "bootstrap setup-path", "bootstrap setup-sd", "bootstrap setup-all"],
       i18n = {
         label = "의존성 설치", icon = "🚀", group = "init",
         sections = { initial_setup = "초기 설정" },
@@ -88,7 +89,8 @@ in
       requires = ["env"],
       provides = ["mount status", "mount list", "mount mount", "mount unmount",
                   "mount auto-add", "mount auto-remove", "mount auto-toggle",
-                  "mount auto", "mount auto-enable", "mount auto-disable"],
+                  "mount auto", "mount auto-enable", "mount auto-disable",
+                  "mount shares", "mount auto-list"],
       i18n = {
         label = "NAS 마운트", icon = "💾", group = "infra",
         sections = { auto_mount = "자동 마운트", connections = "연결", mounts = "마운트" },
@@ -108,7 +110,8 @@ in
       name = "env",
       description = "서비스 연결정보(카드) + dotenvx 비번 관리",
       tags = { product = 'infra, layer = 'local },
-      provides = ["env list", "env show", "env add", "env rm", "env test", "env status"],
+      provides = ["env list", "env show", "env add", "env rm", "env test", "env status",
+                  "env import", "env test-all", "env cleanup", "env fix-perms"],
       i18n = {
         label = "서비스 연결정보", icon = "🔑", group = "infra",
         buttons = [
@@ -128,7 +131,7 @@ in
       tags = { product = 'infra, layer = 'platform },
       provides = ["host status", "host hosts", "host add",
                   "host dns status", "host dns set", "host dns reset",
-                  "host dns flush", "host dns test"],
+                  "host dns flush", "host dns test", "host dns presets"],
       i18n = {
         label = "시스템 + DNS", icon = "🖥", group = "infra",
         sections = { dns = "DNS" },
@@ -151,16 +154,22 @@ in
       provides = ["proxmox status", "proxmox setup", "proxmox open",
                   "proxmox lxc-list", "proxmox vm-list",
                   "proxmox lxc-shell", "proxmox lxc-exec",
-                  "proxmox lxc-start", "proxmox lxc-stop", "proxmox ssh"],
+                  "proxmox lxc-start", "proxmox lxc-stop", "proxmox ssh",
+                  "proxmox ssh-status", "proxmox ssh-setup",
+                  "proxmox ssh-pubkey", "proxmox ssh-authorize-command"],
       i18n = {
         label = "Proxmox 서버", icon = "🧱", group = "infra",
         buttons = [
           { command = "status", label = "상태 확인" },
           { command = "ssh", label = "호스트 SSH" },
+          { command = "ssh-status", label = "SSH 상태" },
           { command = "open", label = "웹 UI 열기" },
           { command = "lxc-list", label = "LXC 목록" },
           { command = "vm-list", label = "VM 목록" },
           { command = "setup", label = "기본 등록" },
+          { command = "ssh-setup", label = "SSH 키 등록" },
+          { command = "ssh-pubkey", label = "SSH 공개키" },
+          { command = "ssh-authorize-command", label = "등록 명령" },
         ],
       },
     } | Domain,
@@ -169,7 +178,8 @@ in
       name = "cron",
       description = "mac-app-init 스케줄 관리 (schedule.json)",
       tags = { product = 'auto, layer = 'platform },
-      provides = ["cron status", "cron jobs", "cron add", "cron remove", "cron toggle"],
+      provides = ["cron status", "cron jobs", "cron add", "cron remove", "cron toggle",
+                  "cron setup-scheduler", "cron remove-scheduler"],
       i18n = {
         label = "스케줄 관리", icon = "⏰", group = "auto",
         sections = { schedule = "스케줄" },
@@ -225,7 +235,8 @@ in
       name = "git",
       description = "Git 프로필 + SSH 키 + GitHub CLI 인증",
       tags = { product = 'dev, layer = 'tool, platform = 'any },
-      provides = ["git status", "git ssh-setup", "git gh-auth", "git gh-install"],
+      provides = ["git status", "git ssh-setup", "git gh-auth", "git gh-install",
+                  "git gh-ssh-setup"],
       i18n = {
         label = "Git 설정", icon = "🔱", group = "dev",
         buttons = [
@@ -242,7 +253,8 @@ in
       name = "vscode",
       description = "VS Code 설치 + 확장 관리",
       tags = { product = 'dev, layer = 'tool },
-      provides = ["vscode status", "vscode install", "vscode ext-list", "vscode ext-export", "vscode ext-import"],
+      provides = ["vscode status", "vscode install", "vscode ext-list", "vscode ext-export",
+                  "vscode ext-import", "vscode settings-path"],
       i18n = {
         label = "VS Code 관리", icon = "💻", group = "dev",
         buttons = [
@@ -260,7 +272,8 @@ in
       name = "container",
       description = "Docker + OrbStack 컨테이너/VM 관리",
       tags = { product = 'dev, layer = 'tool },
-      provides = ["container status", "container list", "container vms", "container up", "container down"],
+      provides = ["container status", "container list", "container vms",
+                  "container up", "container down", "container install-orbstack"],
       i18n = {
         label = "Docker/OrbStack", icon = "📦", group = "dev",
         buttons = [
@@ -309,7 +322,8 @@ in
       description = "PATH + alias 선언적 관리 (shell.json → shell.sh)",
       tags = { product = 'system, layer = 'local },
       provides = ["shell path add", "shell path rm", "shell path toggle", "shell path list",
-                  "shell alias add", "shell alias rm", "shell alias list", "shell sync"],
+                  "shell alias add", "shell alias rm", "shell alias list",
+                  "shell sync", "shell path scan", "shell status"],
       i18n = {
         label = "PATH + Alias", icon = "🐚", group = "system",
         sections = { aliases = "별칭" },
@@ -348,7 +362,8 @@ in
       name = "wireguard",
       description = "WireGuard VPN 설정 관리",
       tags = { product = 'system, layer = 'remote },
-      provides = ["wireguard status", "wireguard install", "wireguard list"],
+      provides = ["wireguard status", "wireguard install", "wireguard list",
+                  "wireguard open"],
       i18n = {
         label = "VPN (WireGuard)", icon = "🔒", group = "system",
         buttons = [

@@ -201,21 +201,6 @@ fn key(code: KeyCode) -> KeyEvent {
 }
 
 /// mount 도메인까지 사이드바에서 이동 + Enter → SectionMenu
-fn navigate_to_mount(app: &mut App) {
-    loop {
-        app.handle_key(key(KeyCode::Down));
-        if let Some(SidebarItem::Domain { label, .. }) = app.sidebar_items.get(app.sidebar_cursor) {
-            if label.contains("마운트") {
-                break;
-            }
-        }
-        if app.sidebar_cursor > 25 {
-            panic!("mount 도메인 못 찾음");
-        }
-    }
-    app.handle_key(key(KeyCode::Enter)); // → SectionMenu
-}
-
 fn render_to_string(app: &mut App, w: u16, h: u16) -> String {
     let backend = TestBackend::new(w, h);
     let mut terminal = Terminal::new(backend).unwrap();

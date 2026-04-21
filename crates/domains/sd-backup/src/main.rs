@@ -1317,19 +1317,8 @@ fn cmd_auto(toggle: &str) {
 }
 
 fn install_launchagent() {
-    // mac CLI 경유로 실행 → TCC(Documents 접근) 부모 상속
-    let mac_bin = Command::new("which")
-        .arg("mac")
-        .output()
-        .ok()
-        .and_then(|o| {
-            if o.status.success() {
-                Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
-            } else {
-                None
-            }
-        })
-        .unwrap_or_else(|| format!("{}/.cargo/bin/mac", home()));
+    // mai CLI 경유로 실행 → TCC(Documents 접근) 부모 상속
+    let manager_bin = paths::manager_bin();
     let log_dir = format!("{}/Documents/WORK/logs", home());
     let _ = fs::create_dir_all(&log_dir);
 
@@ -1349,7 +1338,7 @@ fn install_launchagent() {
     </dict>
     <key>ProgramArguments</key>
     <array>
-        <string>{mac_bin}</string>
+        <string>{manager_bin}</string>
         <string>run</string>
         <string>sd-backup</string>
         <string>watch</string>
@@ -1366,7 +1355,7 @@ fn install_launchagent() {
 </plist>
 "#,
         label = LAUNCH_LABEL,
-        mac_bin = mac_bin,
+        manager_bin = manager_bin.display(),
         home = home(),
         log = log_dir
     );

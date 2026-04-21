@@ -203,7 +203,7 @@ pub fn open() {
     let vp = vault_path();
     if !vp.exists() {
         eprintln!("[obsidian] Vault가 없습니다. 먼저 초기화하세요:");
-        eprintln!("  mac-host-commands obsidian install");
+        eprintln!("  mai obsidian install");
         std::process::exit(1);
     }
 

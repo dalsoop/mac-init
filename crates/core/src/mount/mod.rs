@@ -222,7 +222,7 @@ fn mount_sshfs(host: &str, user: &str, remote_path: &str, mount_point: &str, nam
     let (has_sshfs, _) = common::run_cmd_quiet("which", &["sshfs"]);
     if !has_sshfs {
         eprintln!("[mount] sshfs가 설치되어 있지 않습니다.");
-        eprintln!("  설치: mac-host-commands setup install-sshfs");
+        eprintln!("  설치: mai setup install-sshfs");
         std::process::exit(1);
     }
 

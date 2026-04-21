@@ -81,6 +81,7 @@ pub struct DnsPreset {
 struct LocaleFile {
     domains: HashMap<String, DomainEntry>,
     #[serde(default)]
+    #[allow(dead_code)]
     section_names: HashMap<String, String>,
     #[serde(default)]
     dns_presets: HashMap<String, DnsPreset>,

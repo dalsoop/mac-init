@@ -2,6 +2,7 @@
 //! ~/.mac-app-init/ 하위 경로 통합.
 
 use std::path::PathBuf;
+use std::process::Command;
 
 /// $HOME. 없으면 /tmp.
 pub fn home() -> String {
@@ -31,6 +32,30 @@ pub fn launch_agents_dir() -> PathBuf {
 /// ~/Documents/WORK/
 pub fn work_dir() -> PathBuf {
     PathBuf::from(home()).join("Documents/WORK")
+}
+
+/// `mai` 매니저 바이너리 경로.
+pub fn manager_bin() -> PathBuf {
+    let local = PathBuf::from(home()).join(".local/bin/mai");
+    if local.exists() {
+        return local;
+    }
+
+    let cargo = PathBuf::from(home()).join(".cargo/bin/mai");
+    if cargo.exists() {
+        return cargo;
+    }
+
+    if let Ok(output) = Command::new("which").arg("mai").output() {
+        if output.status.success() {
+            let resolved = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !resolved.is_empty() {
+                return PathBuf::from(resolved);
+            }
+        }
+    }
+
+    PathBuf::from("mai")
 }
 
 /// ~ 확장. "~/foo" → "/Users/xxx/foo"

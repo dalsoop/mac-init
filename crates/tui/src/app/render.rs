@@ -267,12 +267,12 @@ impl App {
                 Paragraph::new(vec![
                     Line::from(""),
                     Line::from(Span::styled(
-                        "  `mac` 바이너리를 찾을 수 없거나 사용 가능한 도메인이 없습니다.",
+                        "  `mai` 바이너리를 찾을 수 없거나 사용 가능한 도메인이 없습니다.",
                         Style::default().fg(Color::Yellow),
                     )),
                     Line::from(""),
                     Line::from(Span::styled(
-                        "  터미널에서:  mac available",
+                        "  터미널에서:  mai available",
                         Style::default().fg(Color::Cyan),
                     )),
                 ])
@@ -368,14 +368,22 @@ impl App {
             );
         }
 
+        let output = if self.output.is_empty() {
+            String::from(
+                "Enter/Space: 설치 또는 제거\nr: 새로고침\n\n현재 설치/삭제 결과와 진단 메시지가 여기에 표시됩니다.",
+            )
+        } else {
+            self.output.clone()
+        };
+
         frame.render_widget(
-            Paragraph::new(self.output.as_str())
+            Paragraph::new(output)
                 .wrap(Wrap { trim: true })
                 .block(
                     Block::default()
                         .borders(Borders::ALL)
                         .border_style(Style::default().fg(Color::DarkGray))
-                        .title(" Output — Enter/Space: 설치·삭제 토글 "),
+                        .title(" 설치 / 상태 "),
                 ),
             chunks[1],
         );

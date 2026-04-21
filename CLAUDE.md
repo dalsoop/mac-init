@@ -1,42 +1,58 @@
 # mac-app-init
 
-macOS 설정/인프라/자동화 통합 관리 도구. Rust 모노레포.
+macOS 설정, 인프라 연결, 자동화 작업을 도메인 단위로 나눠 관리하는 Rust 모노레포다.
 
-## 프로젝트 구조
+## 현재 구조
 
-```
+```text
 crates/
-├── core/       # mac-host-core — 공통 로직, 20개 도메인 모듈
-│   ├── models/ # 데이터 구조 (KeyboardStatus, LaunchAgent 등)
-│   └── {도메인}/ # 데이터 함수 + CLI print 래퍼
-├── cli/        # mac-host-commands — clap CLI 바이너리
-└── tui/        # mac-host-tui — ratatui TUI 바이너리
-ncl/            # Nickel 스키마 (도메인 메타데이터, lint, worktree 등)
+├── common/         # TUI spec, 공통 헬퍼
+├── core/           # 공유 로직
+├── locale/         # locale / NCL 메타 로더
+├── tui/            # mai-tui
+└── domains/
+    ├── manager/    # mai
+    ├── bootstrap/
+    ├── env/
+    ├── host/
+    ├── proxmox/
+    ├── shell/
+    └── ...
+ncl/
+└── domains.ncl     # 도메인 메타데이터 SSOT
 ```
 
 ## 빌드
 
 ```bash
-cargo build                          # 전체
-cargo run -p mac-host-commands -- status  # CLI
-cargo run -p mac-host-tui                 # TUI
+cargo build
+cargo build -p mac-domain-manager
+cargo build -p mac-host-tui
 ```
 
-## 도메인 (ncl/domains.ncl 참조)
+## 실행
 
-| 번들 | 도메인 |
-|------|--------|
-| init | keyboard, setup, workspace, github, config |
-| infra | mount, network, ssh, proxmox, synology |
-| auto | cron, files, worktree |
-| vault | veil, openclaw |
-| knowledge | obsidian, dal |
+```bash
+cargo run -p mac-domain-manager -- doctor
+cargo run -p mac-domain-manager -- run proxmox status
+cargo run -p mac-host-tui
+```
 
-## 코드 규칙
+## 도메인 번들
 
-- core: 데이터 함수는 구조체 반환, println 금지 (print_ 래퍼는 CLI 하위 호환용)
-- 도메인별 모듈: `crates/core/src/{domain}/mod.rs`
-- 모델: `crates/core/src/models/{domain}.rs`
-- 상수: `crates/core/src/constants.rs`
-- 스키마: `ncl/` (Nickel)
-- PR 단위로 기능 추가
+실제 도메인 분류는 `ncl/domains.ncl` 을 기준으로 한다.
+
+| Bundle | Domains |
+|--------|---------|
+| `init` | `bootstrap` |
+| `infra` | `mount`, `env`, `host`, `proxmox` |
+| `auto` | `cron`, `files`, `sd-backup` |
+| `dev` | `git`, `vscode`, `container`, `obsidian` |
+| `finder` | `quickaction` |
+| `system` | `keyboard`, `shell`, `tmux`, `wireguard` |
+
+## 문서화 규칙
+
+- 새 도메인을 추가하면 `ncl/domains.ncl` 도 같이 갱신한다.
+- `mai` fallback 목록은 `crates/domains/manager/src/main.rs` 와 맞춰 둔다.
+- 로컬 검증은 `scripts/install-local.sh manager <domain>` 흐름 기준으로 적는다.

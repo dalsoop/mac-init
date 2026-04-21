@@ -30,6 +30,16 @@ jobs:
       - name: cargo check (workspace)
         run: cargo check --workspace
 
+      - name: install-local smoke (manager + proxmox flow)
+        run: |
+          bash scripts/install-local.sh manager env proxmox
+          test -x "$HOME/.local/bin/mai"
+          test -x "$HOME/.mac-app-init/domains/mac-domain-env"
+          test -x "$HOME/.mac-app-init/domains/mac-domain-proxmox"
+          "$HOME/.local/bin/mai" run env setup-proxmox --host 127.0.0.1 --user root --realm pam --web-port 8006 --help > /dev/null
+          "$HOME/.local/bin/mai" run proxmox setup --host 127.0.0.1 --user root --realm pam --web-port 8006 --help > /dev/null
+          "$HOME/.local/bin/mai" run proxmox lxc-list --help > /dev/null
+
   # Nickel 스키마 검증은 ubuntu (분당 단가 1/10).
   ncl-validate:
     runs-on: ubuntu-latest

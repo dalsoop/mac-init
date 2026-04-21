@@ -44,7 +44,7 @@ const FOLDERS: &[(&str, &str)] = &[
 pub fn run(_skip_interactive: bool) {
     let h = home();
 
-    println!("=== mac-host-commands 초기 셋업 ===\n");
+    println!("=== mai 초기 셋업 ===\n");
 
     // 1. 폴더 구조
     println!("--- [1/12] 폴더 구조 생성 ---");
@@ -118,8 +118,8 @@ pub fn run(_skip_interactive: bool) {
     println!();
     println!("다음 단계:");
     println!("  1. 새 터미널 열기 (PATH 반영)");
-    println!("  2. mac-host-commands status  (전체 상태 확인)");
-    println!("  3. mac-host-commands obsidian open  (Obsidian 열기)");
+    println!("  2. mai status  (전체 상태 확인)");
+    println!("  3. mai obsidian open  (Obsidian 열기)");
 }
 
 fn setup_synology_links() {

@@ -1977,18 +1977,7 @@ fn cmd_sweep(toggle: &str) {
 }
 
 fn cmd_auto_enable() {
-    let mac_bin = Command::new("which")
-        .arg("mac")
-        .output()
-        .ok()
-        .and_then(|o| {
-            if o.status.success() {
-                Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
-            } else {
-                None
-            }
-        })
-        .unwrap_or_else(|| "mac".into());
+    let manager_bin = mac_common::paths::manager_bin();
 
     let log_dir = format!("{}/Documents/WORK/logs", home());
     fs::create_dir_all(&log_dir).ok();
@@ -2028,7 +2017,7 @@ fn cmd_auto_enable() {
 </plist>
 "#,
         label = AUTOMOUNT_LABEL,
-        bin = mac_bin,
+        bin = manager_bin.display(),
         log_dir = log_dir,
         home = home()
     );

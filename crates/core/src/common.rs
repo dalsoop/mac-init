@@ -153,17 +153,6 @@ pub fn ssh_cmd(host: &str, user: &str, remote_cmd: &str) -> (bool, String) {
     )
 }
 
-pub fn run_self(args: &[&str]) -> String {
-    match Command::new("mac-host-commands").args(args).output() {
-        Ok(o) => format!(
-            "{}{}",
-            String::from_utf8_lossy(&o.stdout),
-            String::from_utf8_lossy(&o.stderr)
-        ),
-        Err(e) => format!("Error: {}", e),
-    }
-}
-
 pub fn ensure_dir(path: &Path) {
     if !path.exists() {
         fs::create_dir_all(path).unwrap_or_else(|e| {

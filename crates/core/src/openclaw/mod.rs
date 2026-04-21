@@ -329,9 +329,7 @@ fn setup_claude_auth() {
         );
         println!("[openclaw] ✓ 모델: anthropic/claude-sonnet-4-6 (구독제 OAuth)");
     } else {
-        println!(
-            "[openclaw] Claude Code 로그인 후 `mac-host-commands openclaw sync-auth` 실행하세요"
-        );
+        println!("[openclaw] Claude Code 로그인 후 `mai openclaw sync-auth` 실행하세요");
     }
 }
 

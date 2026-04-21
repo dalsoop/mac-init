@@ -17,7 +17,7 @@ pub fn status() {
     );
 
     if !has_gh {
-        println!("  mac-host-commands github install");
+        println!("  mai github install");
         return;
     }
 

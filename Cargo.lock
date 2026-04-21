@@ -1078,14 +1078,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mac-host-commands"
-version = "0.1.0"
-dependencies = [
- "clap",
- "mac-host-core",
-]
-
-[[package]]
 name = "mac-host-core"
 version = "0.1.0"
 dependencies = [
