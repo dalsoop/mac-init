@@ -199,7 +199,7 @@ pub fn sd_enable() {
     }
 
     // CLI 바이너리 경로
-    let bin = which_mac_host_commands();
+    let bin = common::manager_bin().to_string_lossy().to_string();
 
     let plist = format!(r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -230,7 +230,7 @@ pub fn sd_enable() {
 
     let _ = Command::new("launchctl").args(["load", &plist_path]).status();
     println!("[sd] 자동 백업 활성화 완료");
-    println!("  SD 카드 삽입 시 자동 백업 (mac-host-commands files sd-run)");
+    println!("  SD 카드 삽입 시 자동 백업 (mai files sd-run)");
 }
 
 pub fn sd_disable() {
@@ -262,13 +262,4 @@ fn chrono_now() -> String {
         .ok()
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .unwrap_or_else(|| "unknown".to_string())
-}
-
-fn which_mac_host_commands() -> String {
-    let (ok, stdout) = common::run_cmd_quiet("which", &["mac-host-commands"]);
-    if ok {
-        stdout.trim().to_string()
-    } else {
-        format!("{}/.cargo/bin/mac-host-commands", home())
-    }
 }

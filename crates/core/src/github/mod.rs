@@ -10,7 +10,7 @@ pub fn status() {
     println!("[gh CLI] {}", if has_gh { "✓ 설치됨" } else { "✗ 미설치" });
 
     if !has_gh {
-        println!("  mac-host-commands github install");
+        println!("  mai github install");
         return;
     }
 

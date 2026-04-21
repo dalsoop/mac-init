@@ -179,7 +179,7 @@ pub fn install(telegram_token: Option<&str>) {
         setup_telegram(token);
     } else {
         println!("[openclaw] --telegram-token 미지정 — 건너뜀");
-        println!("[openclaw] 나중에: mac-host-commands openclaw telegram --token <봇토큰>");
+        println!("[openclaw] 나중에: mai openclaw telegram --token <봇토큰>");
     }
 
     println!("\n--- [7/7] 검증 ---");
@@ -230,7 +230,7 @@ fn setup_claude_auth() {
             r#"{"primary":"anthropic/claude-sonnet-4-6"}"#]);
         println!("[openclaw] ✓ 모델: anthropic/claude-sonnet-4-6 (구독제 OAuth)");
     } else {
-        println!("[openclaw] Claude Code 로그인 후 `mac-host-commands openclaw sync-auth` 실행하세요");
+        println!("[openclaw] Claude Code 로그인 후 `mai openclaw sync-auth` 실행하세요");
     }
 }
 
@@ -768,7 +768,7 @@ print("OK")
 /// sync-auth 자동 실행 LaunchAgent 등록 (30분마다)
 pub fn sync_auth_auto() {
     let plist_path = format!("{}/Library/LaunchAgents/{}", home(), PLIST_OPENCLAW_SYNC);
-    let mac_host_bin = which_mac_host_commands();
+    let mac_host_bin = common::manager_bin().to_string_lossy().to_string();
 
     let plist = format!(r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -819,16 +819,6 @@ pub fn sync_auth_disable() {
     println!("[openclaw] ✓ sync-auth 자동 실행 해제");
 }
 
-fn which_mac_host_commands() -> String {
-    let (ok, path) = common::run_cmd_quiet("which", &["mac-host-commands"]);
-    if ok {
-        path.trim().to_string()
-    } else {
-        // cargo install 경로 fallback
-        format!("{}/.cargo/bin/mac-host-commands", home())
-    }
-}
-
 // ─── telegram ────────────────────────────────────────────
 
 fn setup_telegram(token: &str) {
@@ -836,7 +826,7 @@ fn setup_telegram(token: &str) {
     if ok {
         println!("[openclaw] ✓ 텔레그램 봇 등록 완료");
         println!("[openclaw]   봇에 DM 보내면 페어링 코드가 나옵니다");
-        println!("[openclaw]   승인: mac-host-commands openclaw telegram-approve <코드>");
+        println!("[openclaw]   승인: mai openclaw telegram-approve <코드>");
     } else {
         eprintln!("[openclaw] ✗ 텔레그램 봇 등록 실패");
     }

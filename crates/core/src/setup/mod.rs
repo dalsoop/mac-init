@@ -34,7 +34,7 @@ pub fn status() {
     println!("[sshpass] {}", if has_sshpass { "✓ 설치됨" } else { "✗ 미설치" });
 
     if !has_macfuse || !has_sshfs {
-        println!("\n  [!] sshfs 마운트를 사용하려면: mac-host-commands setup install-sshfs");
+        println!("\n  [!] sshfs 마운트를 사용하려면: mai setup install-sshfs");
     }
 }
 
@@ -54,7 +54,7 @@ pub fn load_macfuse() {
     let has_macfuse = Path::new("/Library/Filesystems/macfuse.fs").exists();
     if !has_macfuse {
         eprintln!("[setup] macFUSE가 설치되어 있지 않습니다.");
-        eprintln!("  mac-host-commands setup install-sshfs");
+        eprintln!("  mai setup install-sshfs");
         std::process::exit(1);
     }
 
@@ -92,7 +92,7 @@ fn print_macfuse_enable_guide() {
     eprintln!("  │    → 하단에서 macFUSE \"허용\" 클릭                      │");
     eprintln!("  │ 9. 재시작                                               │");
     eprintln!("  │                                                         │");
-    eprintln!("  │ 완료 후: mac-host-commands setup load-macfuse            │");
+    eprintln!("  │ 완료 후: mai setup load-macfuse                          │");
     eprintln!("  └─────────────────────────────────────────────────────────┘");
 }
 
@@ -122,7 +122,7 @@ pub fn install_sshfs() {
             println!();
             print_macfuse_enable_guide();
             println!();
-            println!("  커널 확장 허용 완료 후: mac-host-commands setup install-sshfs");
+            println!("  커널 확장 허용 완료 후: mai setup install-sshfs");
             return;
         } else {
             eprintln!("[setup] macFUSE 설치 실패");
@@ -183,7 +183,7 @@ pub fn install_sshfs() {
     }
 
     println!("\n[setup] sshfs 마운트 준비 완료!");
-    println!("  mac-host-commands mount up proxmox");
+    println!("  mai mount up proxmox");
 }
 
 pub fn install_sshpass() {

@@ -5,20 +5,43 @@ use std::process::Command;
 use crate::common;
 use crate::models::keyboard::KeyboardStatus;
 
-const PLIST_LABEL: &str = "com.mac-host-commands.keyboard-remap";
+const PLIST_LABEL: &str = "com.mai.keyboard-remap";
+const LEGACY_PLIST_LABEL: &str = "com.mac-host-commands.keyboard-remap";
 
-fn plist_path() -> PathBuf {
+fn launch_agents_dir() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_default();
     PathBuf::from(home)
         .join("Library/LaunchAgents")
-        .join(format!("{}.plist", PLIST_LABEL))
+}
+
+fn plist_path_for(label: &str) -> PathBuf {
+    launch_agents_dir().join(format!("{}.plist", label))
+}
+
+fn plist_path() -> PathBuf {
+    plist_path_for(PLIST_LABEL)
+}
+
+fn legacy_plist_path() -> PathBuf {
+    plist_path_for(LEGACY_PLIST_LABEL)
+}
+
+fn cleanup_launch_agent(path: &PathBuf) {
+    if !path.exists() {
+        return;
+    }
+
+    let _ = Command::new("launchctl")
+        .args(["unload", &path.to_string_lossy()])
+        .output();
+    let _ = fs::remove_file(path);
 }
 
 /// Query keyboard mapping status (no side effects)
 pub fn get_status() -> KeyboardStatus {
     let (ok, stdout, _) = common::run_cmd("hidutil", &["property", "--get", "UserKeyMapping"]);
     let mapping_active = ok && stdout.contains("30064771181");
-    let launch_agent_exists = plist_path().exists();
+    let launch_agent_exists = plist_path().exists() || legacy_plist_path().exists();
     let karabiner_installed = std::path::Path::new("/Applications/Karabiner-Elements.app").exists();
 
     KeyboardStatus {
@@ -49,6 +72,7 @@ pub fn setup() -> Result<Vec<String>, String> {
 
     // 2. Create LaunchAgent
     let plist = plist_path();
+    cleanup_launch_agent(&legacy_plist_path());
     let content = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -100,11 +124,14 @@ pub fn remove() -> Result<Vec<String>, String> {
     }
 
     let plist = plist_path();
-    if plist.exists() {
-        let _ = Command::new("launchctl")
-            .args(["unload", &plist.to_string_lossy()])
-            .output();
-        fs::remove_file(&plist).map_err(|e| format!("plist 삭제 실패: {}", e))?;
+    let legacy = legacy_plist_path();
+    let had_current = plist.exists();
+    let had_legacy = legacy.exists();
+
+    cleanup_launch_agent(&plist);
+    cleanup_launch_agent(&legacy);
+
+    if had_current || had_legacy {
         log.push("LaunchAgent 제거됨".to_string());
     } else {
         log.push("LaunchAgent 없음 (이미 제거됨)".to_string());
