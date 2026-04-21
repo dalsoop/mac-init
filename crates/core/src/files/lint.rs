@@ -18,7 +18,7 @@ const FOLDER_RULES: &[(&str, &[&str], &str)] = &[
 
 pub fn lint() {
     let h = home();
-    let vault = std::env::var("OBSIDIAN_VAULT").unwrap_or_else(|_| format!("{h}/문서/프로젝트/mac-host-commands/옵시디언"));
+    let vault = std::env::var("OBSIDIAN_VAULT").unwrap_or_else(|_| format!("{h}/문서/프로젝트/mac-app-init/옵시디언"));
 
     println!("=== 노트 Lint ===\n");
 

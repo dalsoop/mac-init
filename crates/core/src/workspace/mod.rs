@@ -344,7 +344,7 @@ pub fn ai_setup() {
     }
 
     println!("\n[ai] 현재 Mac에는 Claude/Codex 로컬 인증 파일이 있지만, OpenCode auth는 별도 로그인 상태입니다.");
-    println!("[ai] 자세한 상태는 `mac-host-commands workspace ai-status`로 확인하세요.");
+    println!("[ai] 자세한 상태는 `mai workspace ai-status`로 확인하세요.");
 }
 
 pub fn ai_reinstall_opencode() {
@@ -420,7 +420,7 @@ pub fn ai_reinstall_opencode() {
 
     println!("\n[done] OpenCode 재설치 완료");
     println!("[done] 다음 단계: `opencode auth login -p anthropic -m \"Claude Pro/Max\"`");
-    println!("[done] 확인: `mac-host-commands workspace ai-status`");
+    println!("[done] 확인: `mai workspace ai-status`");
 }
 
 pub fn ai_set_provider_keys(google_api_key: Option<&str>, minimax_api_key: Option<&str>) {
@@ -449,7 +449,7 @@ pub fn ai_set_provider_keys(google_api_key: Option<&str>, minimax_api_key: Optio
 
     pairs.sort_by(|a, b| a.0.cmp(&b.0));
 
-    let mut output = String::from("# mac-host-commands environment\n");
+    let mut output = String::from("# mai environment\n");
     for (key, value) in pairs {
         output.push_str(&format!("{key}={value}\n"));
     }

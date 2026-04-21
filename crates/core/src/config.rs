@@ -117,7 +117,7 @@ impl Config {
             return;
         }
 
-        let template = r#"# mac-host-commands 설정 파일
+        let template = r#"# mai 설정 파일
 # 비밀번호/토큰은 .env 파일에서 관리합니다
 
 [proxmox]
