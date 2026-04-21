@@ -8,6 +8,7 @@ use std::path::Path;
 #[derive(Debug, Clone)]
 pub struct MountOpts {
     pub readonly: bool,
+    #[allow(dead_code)]
     pub noappledouble: bool,
     pub soft: bool,
     pub nobrowse: bool,

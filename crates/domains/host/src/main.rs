@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use mac_common::{cmd, paths};
+use mac_common::cmd;
 use std::fs;
 use std::process::Command;
 

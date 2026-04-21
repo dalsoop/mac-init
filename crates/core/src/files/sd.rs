@@ -88,7 +88,7 @@ pub fn sd_run() {
         if dcim.is_dir() {
             let dest = backup_dir.join("DCIM");
             fs::create_dir_all(&dest).ok();
-            let (ok, stdout, _) = common::run_cmd("rsync", &[
+            let (ok, _stdout, _) = common::run_cmd("rsync", &[
                 "-av", &format!("{}/", dcim.display()), &format!("{}/", dest.display()),
             ]);
             if ok {

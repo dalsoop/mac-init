@@ -120,11 +120,11 @@ fn create_workflow(name: &str, command: &str, input_type: &str) -> Result<(), St
     fs::create_dir_all(&contents_dir).map_err(|e| e.to_string())?;
 
     // Input types: 0 = files/folders, 1 = text, 2 = url, -1 = none
-    let (input_class, input_value) = match input_type {
-        "text" => ("NSStringPboardType", "1"),
-        "url" => ("public.url", "2"),
-        "none" => ("", "-1"),
-        "folders" | "files" | _ => ("public.item", "0"),
+    let input_class = match input_type {
+        "text" => "NSStringPboardType",
+        "url" => "public.url",
+        "none" => "",
+        "folders" | "files" | _ => "public.item",
     };
 
     let apply_to = if input_type == "none" {
