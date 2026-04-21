@@ -87,12 +87,12 @@ fn home() -> String {
     paths::home()
 }
 
-/// 통합 마운트 루트 (~/Documents/WORK/NAS)
+/// 통합 마운트 루트 (~/Documents/WORK/MOUNT)
 fn nas_root() -> PathBuf {
-    PathBuf::from(home()).join("Documents/WORK/NAS")
+    PathBuf::from(home()).join("Documents/WORK/MOUNT")
 }
 
-/// 마운트 포인트: ~/Documents/WORK/NAS/<name>/<share>
+/// 마운트 포인트: ~/Documents/WORK/MOUNT/<name>/<share>
 /// share가 /mnt/xxx 같은 절대경로면 앞 / 제거해서 상대 경로로 변환.
 fn mount_point(connection: &str, share: &str) -> PathBuf {
     let clean = share.trim_start_matches('/');
@@ -159,7 +159,7 @@ fn mount_smbfs(user: &str, password: &str, host: &str, share: &str, mp: &PathBuf
         for _ in 0..15 {
             std::thread::sleep(std::time::Duration::from_millis(500));
             if vol_path.exists() {
-                // ~/NAS/<conn>/<share> 가 비어있으면 심볼릭 링크로 연결
+                // ~/MOUNT/<conn>/<share> 가 비어있으면 심볼릭 링크로 연결
                 let _ = fs::remove_dir(mp); // 빈 디렉터리만 지워짐
                 if !mp.exists() {
                     let _ = std::os::unix::fs::symlink(&vol_path, mp);
@@ -640,8 +640,8 @@ fn cmd_mount(name: &str, share: &str) {
     }
 }
 
-/// ~/NAS/ 전체를 재귀적으로 스캔해서 마운트/카드에 속하지 않는 잔재를
-/// ~/NAS/.mountless-trash/YYMMDD-HHMMSS/ 아래에 원래 경로 구조 그대로 격리.
+/// ~/MOUNT/ 전체를 재귀적으로 스캔해서 마운트/카드에 속하지 않는 잔재를
+/// ~/MOUNT/.mountless-trash/YYMMDD-HHMMSS/ 아래에 원래 경로 구조 그대로 격리.
 ///
 /// 보존 대상:
 ///   - .mountless-trash 자체
@@ -807,7 +807,7 @@ fn default_true() -> bool { true }
 struct MountConfig {
     #[serde(default)]
     auto_mounts: Vec<AutoMount>,
-    /// NAS 잔재 자동 격리. auto 실행 시마다 ~/Documents/WORK/NAS/ 스캔.
+    /// NAS 잔재 자동 격리. auto 실행 시마다 ~/Documents/WORK/MOUNT/ 스캔.
     /// false 면 sweep 안 함 (잔재 방치).
     #[serde(default = "default_true")]
     sweep_enabled: bool,
@@ -950,7 +950,7 @@ fn sweep_stale_mounts() -> usize {
     let mut swept = 0;
     for (_, mp, _) in list_all_mounts() {
         let path = PathBuf::from(&mp);
-        if !path.starts_with(format!("{}/Documents/WORK/NAS", home())) { continue; }
+        if !path.starts_with(format!("{}/Documents/WORK/MOUNT", home())) { continue; }
         if is_stale(&path) {
             if unmount_path(&path).is_ok() {
                 eprintln!("  🧹 stale 청소: {}", mp);
@@ -1213,7 +1213,7 @@ fn cmd_sweep(toggle: &str) {
         "on" | "true" | "1" => {
             cfg.sweep_enabled = true;
             let _ = save_mount_config(&cfg);
-            println!("✓ NAS 잔재 자동 격리 켜짐 (auto 실행 시마다 ~/Documents/WORK/NAS/ 스캔)");
+            println!("✓ NAS 잔재 자동 격리 켜짐 (auto 실행 시마다 ~/Documents/WORK/MOUNT/ 스캔)");
         }
         "off" | "false" | "0" => {
             cfg.sweep_enabled = false;
@@ -1309,12 +1309,12 @@ fn cmd_auto_disable() {
 }
 
 fn cmd_unmount(target: &str) {
-    // target 우선순위: 절대경로 > ~/NAS/<target> > /Volumes/<target>
+    // target 우선순위: 절대경로 > ~/MOUNT/<target> > /Volumes/<target>
     let candidates: Vec<PathBuf> = if target.starts_with('/') {
         vec![PathBuf::from(target)]
     } else {
         let mut v = Vec::new();
-        // ~/NAS/<conn>/<share> 형태로 들어왔을 가능성
+        // ~/MOUNT/<conn>/<share> 형태로 들어왔을 가능성
         let nas_path = nas_root().join(target);
         if nas_path.exists() { v.push(nas_path); }
         // 또는 share 만 들어왔으면 ~/NAS 아래에서 검색
@@ -1415,7 +1415,7 @@ fn print_tui_spec() {
                 "ok"),
             tui_spec::kv_item("잔재 자동 정리 (sweep)",
                 if cfg.sweep_enabled {
-                    "✓ 켜짐 (auto 실행 시마다 ~/Documents/WORK/NAS/ 스캔)"
+                    "✓ 켜짐 (auto 실행 시마다 ~/Documents/WORK/MOUNT/ 스캔)"
                 } else {
                     "✗ 꺼짐 (mai run mount sweep on 으로 활성화)"
                 },
@@ -1433,6 +1433,6 @@ fn print_tui_spec() {
                 "key": "w"
             }),
         ])
-        .text("안내", "  자동 마운트 설정:\n    mai run mount auto-add <conn> <share>\n    mai run mount auto-toggle <conn> <share>\n    mai run mount auto-enable      # 로그인 시 + 5분마다 자동 실행\n\n  잔재 정리:\n    mai run mount sweep on|off|status\n    → auto 실행 시마다 ~/Documents/WORK/NAS/ 스캔, 카드/마운트에 없는 항목을\n      ~/NAS/.mountless-trash/YYMMDD-HHMMSS/ 로 격리 (삭제 아님)\n\n  수동:\n    mai run mount mount <name> <share>\n    mai run mount unmount <share>")
+        .text("안내", "  자동 마운트 설정:\n    mai run mount auto-add <conn> <share>\n    mai run mount auto-toggle <conn> <share>\n    mai run mount auto-enable      # 로그인 시 + 5분마다 자동 실행\n\n  잔재 정리:\n    mai run mount sweep on|off|status\n    → auto 실행 시마다 ~/Documents/WORK/MOUNT/ 스캔, 카드/마운트에 없는 항목을\n      ~/MOUNT/.mountless-trash/YYMMDD-HHMMSS/ 로 격리 (삭제 아님)\n\n  수동:\n    mai run mount mount <name> <share>\n    mai run mount unmount <share>")
         .print();
 }
