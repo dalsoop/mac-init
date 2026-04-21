@@ -43,6 +43,9 @@ enum Commands {
         connection: String,
         /// 공유 이름
         share: String,
+        /// 마운트 별칭 (NAS/<alias>/ 에 마운트)
+        #[arg(long)]
+        alias: Option<String>,
     },
     /// 자동 마운트 설정 제거
     AutoRemove {
@@ -89,11 +92,29 @@ fn nas_root() -> PathBuf {
     PathBuf::from(home()).join("Documents/WORK/NAS")
 }
 
-/// 마운트 포인트: ~/Documents/WORK/NAS/<conn>/<share>
+/// 마운트 포인트: ~/Documents/WORK/NAS/<name>/<share>
 /// share가 /mnt/xxx 같은 절대경로면 앞 / 제거해서 상대 경로로 변환.
 fn mount_point(connection: &str, share: &str) -> PathBuf {
     let clean = share.trim_start_matches('/');
     nas_root().join(connection).join(clean)
+}
+
+/// alias가 있으면 alias/<share의 마지막 경로>로 마운트.
+/// 예: alias=truenas, share=/mnt/truenas-organized → NAS/truenas/organized
+fn mount_point_auto(a: &AutoMount) -> PathBuf {
+    match &a.alias {
+        Some(alias) => {
+            let leaf = a.share.rsplit('/').next().unwrap_or(&a.share);
+            // "truenas-organized" → "organized" (하이픈 앞이 alias와 같으면)
+            let clean_leaf = if leaf.starts_with(&format!("{}-", alias)) {
+                &leaf[alias.len() + 1..]
+            } else {
+                leaf
+            };
+            nas_root().join(alias).join(clean_leaf)
+        }
+        None => mount_point(&a.connection, &a.share),
+    }
 }
 
 /// mount_smbfs 호출. ASCII share 는 직접, 비-ASCII (한글 등) 는 open smb:// fallback.
@@ -482,7 +503,7 @@ fn main() {
         Commands::List => cmd_list(),
         Commands::Mount { name, share } => cmd_mount(&name, &share),
         Commands::Unmount { target } => cmd_unmount(&target),
-        Commands::AutoAdd { connection, share } => cmd_auto_add(&connection, &share),
+        Commands::AutoAdd { connection, share, alias } => cmd_auto_add(&connection, &share, alias.as_deref()),
         Commands::AutoRemove { connection, share } => cmd_auto_remove(&connection, &share),
         Commands::AutoToggle { connection, share } => cmd_auto_toggle(&connection, &share),
         Commands::AutoList => cmd_auto_list(),
@@ -775,6 +796,10 @@ struct AutoMount {
     share: String,
     #[serde(default = "default_true")]
     enabled: bool,
+    /// 마운트포인트 별칭. 없으면 connection 이름 사용.
+    /// 예: connection=proxmox, share=/mnt/truenas-organized, alias=truenas → NAS/truenas/organized
+    #[serde(default)]
+    alias: Option<String>,
 }
 fn default_true() -> bool { true }
 
@@ -811,7 +836,7 @@ fn save_mount_config(c: &MountConfig) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
-fn cmd_auto_add(connection: &str, share: &str) {
+fn cmd_auto_add(connection: &str, share: &str, alias: Option<&str>) {
     let Some(conn) = find_connection(connection) else {
         eprintln!("✗ 연결 '{}' 이(가) 없습니다.", connection);
         return;
@@ -847,6 +872,7 @@ fn cmd_auto_add(connection: &str, share: &str) {
         connection: connection.into(),
         share: share.into(),
         enabled: true,
+        alias: alias.map(String::from),
     });
     if let Err(e) = save_mount_config(&cfg) { eprintln!("✗ {}", e); return; }
     println!("✓ 자동 마운트 추가: {}/{}", connection, share);
@@ -886,7 +912,7 @@ fn cmd_auto_list() {
     println!("{:<10} {:<12} {:<20} {}", "STATE", "CONN", "SHARE", "MOUNTPOINT");
     println!("{}", "─".repeat(80));
     for a in &cfg.auto_mounts {
-        let mp = mount_point(&a.connection, &a.share);
+        let mp = mount_point_auto(a);
         let state = if !a.enabled { "✗ off" }
                     else if is_mounted_at(&mp) {
                         if is_stale(&mp) { "⚠ STALE" } else { "✓ ON" }
@@ -959,7 +985,7 @@ fn cmd_auto() {
     for a in &cfg.auto_mounts {
         if !a.enabled { continue; }
         let key = format!("{}/{}", a.connection, a.share);
-        let mp = mount_point(&a.connection, &a.share);
+        let mp = mount_point_auto(a);
 
         // quarantine / backoff 체크
         if let Some(rs) = state.shares.get(&key) {
@@ -1325,7 +1351,7 @@ fn print_tui_spec() {
     // mount 목록 기반으로만 상태 판별.
     let mounted_set: std::collections::HashSet<String> = mounts.iter().map(|(_, m)| m.clone()).collect();
     let auto_items: Vec<serde_json::Value> = cfg.auto_mounts.iter().map(|a| {
-        let mp = mount_point(&a.connection, &a.share);
+        let mp = mount_point_auto(a);
         let mp_str = mp.to_string_lossy().to_string();
         let state = if !a.enabled { "off" }
                     else if mounted_set.contains(&mp_str) { "✓ ON" }
