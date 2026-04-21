@@ -22,7 +22,7 @@ fn sample_mount(connection: &str, share: &str, alias: Option<&str>) -> AutoMount
 fn mount_point_auto_under_maps_root_alias_to_alias_root() {
     let root = PathBuf::from("/tmp/mai-root");
     let auto = sample_mount("proxmox50", "/", Some("proxmox"));
-    assert_eq!(mount_point_auto_under(&root, &auto), root.join("proxmox"));
+    assert_eq!(mount_point_auto_under(&root, &auto), root.join("proxmox50"));
 }
 
 #[test]
@@ -31,7 +31,7 @@ fn mount_point_auto_under_strips_alias_prefix_from_leaf() {
     let auto = sample_mount("proxmox50", "/mnt/truenas-organized", Some("truenas"));
     assert_eq!(
         mount_point_auto_under(&root, &auto),
-        root.join("truenas").join("organized")
+        root.join("proxmox50").join("truenas")
     );
 }
 
@@ -41,7 +41,30 @@ fn mount_point_auto_under_keeps_connection_path_without_alias() {
     let auto = sample_mount("synology", "/mnt/archive", None);
     assert_eq!(
         mount_point_auto_under(&root, &auto),
-        root.join("synology").join("mnt").join("archive")
+        root.join("synology").join("archive")
+    );
+}
+
+#[test]
+fn mount_point_auto_under_uses_lxc_card_name_as_top_level_root() {
+    let root = PathBuf::from("/tmp/mai-root");
+    let auto = sample_mount("lxc.gitlab", "/", None);
+    assert_eq!(
+        mount_point_auto_under(&root, &auto),
+        root.join("lxc.gitlab")
+    );
+}
+
+#[test]
+fn card_root_path_uses_connection_name_directly() {
+    let root = PathBuf::from("/tmp/mai-root");
+    assert_eq!(
+        card_root_path(&root, "proxmox50"),
+        root.join("proxmox50")
+    );
+    assert_eq!(
+        card_root_path(&root, "lxc.gitlab"),
+        root.join("lxc.gitlab")
     );
 }
 
