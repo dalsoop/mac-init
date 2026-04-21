@@ -145,17 +145,22 @@ in
 
     proxmox = {
       name = "proxmox",
-      description = "Proxmox VE 웹 UI 연결 + 상태 확인",
+      description = "Proxmox VE 호스트 + LXC/VM 관리",
       tags = { product = 'infra, layer = 'remote },
       requires = ["env"],
-      provides = ["proxmox status", "proxmox setup", "proxmox open", "proxmox lxc-list"],
+      provides = ["proxmox status", "proxmox setup", "proxmox open",
+                  "proxmox lxc-list", "proxmox vm-list",
+                  "proxmox lxc-shell", "proxmox lxc-exec",
+                  "proxmox lxc-start", "proxmox lxc-stop", "proxmox ssh"],
       i18n = {
-        label = "Proxmox", icon = "🧱", group = "infra",
+        label = "Proxmox 서버", icon = "🧱", group = "infra",
         buttons = [
           { command = "status", label = "상태 확인" },
-          { command = "setup", label = "기본 등록" },
+          { command = "ssh", label = "호스트 SSH" },
           { command = "open", label = "웹 UI 열기" },
           { command = "lxc-list", label = "LXC 목록" },
+          { command = "vm-list", label = "VM 목록" },
+          { command = "setup", label = "기본 등록" },
         ],
       },
     } | Domain,
