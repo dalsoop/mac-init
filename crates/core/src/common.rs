@@ -53,29 +53,6 @@ pub fn env_file() -> PathBuf {
     home_path(".env")
 }
 
-pub fn manager_bin() -> PathBuf {
-    let local = home_path(".local/bin/mai");
-    if local.exists() {
-        return local;
-    }
-
-    let cargo = home_path(".cargo/bin/mai");
-    if cargo.exists() {
-        return cargo;
-    }
-
-    if let Ok(output) = Command::new("which").arg("mai").output() {
-        if output.status.success() {
-            let resolved = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !resolved.is_empty() {
-                return PathBuf::from(resolved);
-            }
-        }
-    }
-
-    PathBuf::from("mai")
-}
-
 /// Load ~/.env via dotenvx (handles encrypted values)
 /// Falls back to plain text parsing if dotenvx not available
 pub fn load_env() {
@@ -101,11 +78,15 @@ fn load_env_dotenvx(path: &Path) -> bool {
     match output {
         Ok(o) if o.status.success() => {
             let stdout = String::from_utf8_lossy(&o.stdout);
-            if let Ok(map) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&stdout) {
+            if let Ok(map) =
+                serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&stdout)
+            {
                 for (key, value) in &map {
                     if std::env::var(key).is_err() {
                         if let Some(val) = value.as_str() {
-                            unsafe { std::env::set_var(key, val); }
+                            unsafe {
+                                std::env::set_var(key, val);
+                            }
                         }
                     }
                 }
@@ -128,8 +109,11 @@ fn load_env_plain(path: &Path) {
         if let Some((key, value)) = trimmed.split_once('=') {
             let key = key.trim();
             let value = value.trim().trim_matches('"');
-            if std::env::var(key).is_err() && !value.is_empty() && !value.starts_with("encrypted:") {
-                unsafe { std::env::set_var(key, value); }
+            if std::env::var(key).is_err() && !value.is_empty() && !value.starts_with("encrypted:")
+            {
+                unsafe {
+                    std::env::set_var(key, value);
+                }
             }
         }
     }
@@ -156,12 +140,17 @@ pub fn run_cmd_quiet(cmd: &str, args: &[&str]) -> (bool, String) {
 }
 
 pub fn ssh_cmd(host: &str, user: &str, remote_cmd: &str) -> (bool, String) {
-    run_cmd_quiet("ssh", &[
-        "-o", "BatchMode=yes",
-        "-o", "ConnectTimeout=5",
-        &format!("{user}@{host}"),
-        remote_cmd,
-    ])
+    run_cmd_quiet(
+        "ssh",
+        &[
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=5",
+            &format!("{user}@{host}"),
+            remote_cmd,
+        ],
+    )
 }
 
 pub fn ensure_dir(path: &Path) {

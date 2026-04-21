@@ -35,7 +35,10 @@ enum Commands {
     TuiSpec,
 }
 
-use mac_common::{cmd, tui_spec::{self, TuiSpec}};
+use mac_common::{
+    cmd,
+    tui_spec::{self, TuiSpec},
+};
 
 fn main() {
     let cli = Cli::parse();
@@ -60,24 +63,49 @@ fn print_tui_spec() {
     let orb_running = orb_installed && cmd::stdout("orbctl", &["status"]).contains("Running");
 
     let usage_active = docker_installed;
-    let usage_summary = if orb_running { "OrbStack 실행 중".to_string() }
-        else if docker_installed { "Docker 설치됨".to_string() }
-        else { "미설치".to_string() };
+    let usage_summary = if orb_running {
+        "OrbStack 실행 중".to_string()
+    } else if docker_installed {
+        "Docker 설치됨".to_string()
+    } else {
+        "미설치".to_string()
+    };
 
     TuiSpec::new("container")
         .refresh(15)
         .usage(usage_active, &usage_summary)
-        .kv("상태", vec![
-            tui_spec::kv_item("Docker CLI",
-                if docker_installed { "✓ 설치됨" } else { "✗ 미설치" },
-                if docker_installed { "ok" } else { "error" }),
-            tui_spec::kv_item("OrbStack",
-                if orb_installed { "✓ 설치됨" } else { "✗ 미설치" },
-                if orb_installed { "ok" } else { "error" }),
-            tui_spec::kv_item("OrbStack 실행",
-                if orb_running { "✓ Running" } else { "✗ 정지" },
-                if orb_running { "ok" } else { "warn" }),
-        ])
+        .kv(
+            "상태",
+            vec![
+                tui_spec::kv_item(
+                    "Docker CLI",
+                    if docker_installed {
+                        "✓ 설치됨"
+                    } else {
+                        "✗ 미설치"
+                    },
+                    if docker_installed { "ok" } else { "error" },
+                ),
+                tui_spec::kv_item(
+                    "OrbStack",
+                    if orb_installed {
+                        "✓ 설치됨"
+                    } else {
+                        "✗ 미설치"
+                    },
+                    if orb_installed { "ok" } else { "error" },
+                ),
+                tui_spec::kv_item(
+                    "OrbStack 실행",
+                    if orb_running {
+                        "✓ Running"
+                    } else {
+                        "✗ 정지"
+                    },
+                    if orb_running { "ok" } else { "warn" },
+                ),
+            ],
+        )
         .buttons()
         .print();
 }
@@ -91,7 +119,15 @@ fn cmd_status() {
         let ver = cmd::stdout("orbctl", &["version"]);
         let running = cmd::stdout("orbctl", &["status"]);
         let is_running = running.contains("Running");
-        println!("[OrbStack] ✓ {} ({})", ver, if is_running { "✓ 실행 중" } else { "✗ 정지" });
+        println!(
+            "[OrbStack] ✓ {} ({})",
+            ver,
+            if is_running {
+                "✓ 실행 중"
+            } else {
+                "✗ 정지"
+            }
+        );
 
         if is_running {
             // VMs
@@ -113,11 +149,25 @@ fn cmd_status() {
 
     // Docker CLI
     let docker = cmd::ok("which", &["docker"]);
-    println!("\n[docker CLI] {}", if docker { "✓ 설치됨" } else { "✗ 미설치" });
+    println!(
+        "\n[docker CLI] {}",
+        if docker {
+            "✓ 설치됨"
+        } else {
+            "✗ 미설치"
+        }
+    );
 
     // Docker Compose
     let compose = cmd::ok("docker", &["compose", "version"]);
-    println!("[docker compose] {}", if compose { "✓ 설치됨" } else { "✗ 미설치" });
+    println!(
+        "[docker compose] {}",
+        if compose {
+            "✓ 설치됨"
+        } else {
+            "✗ 미설치"
+        }
+    );
 }
 
 fn cmd_list() {
@@ -127,7 +177,15 @@ fn cmd_list() {
     }
 
     println!("=== Docker Containers ===\n");
-    let out = cmd::stdout("docker", &["ps", "-a", "--format", "table {{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}"]);
+    let out = cmd::stdout(
+        "docker",
+        &[
+            "ps",
+            "-a",
+            "--format",
+            "table {{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}",
+        ],
+    );
     println!("{}", out);
 }
 
@@ -139,13 +197,19 @@ fn cmd_vms() {
 
 fn cmd_start(name: &str) {
     // Try docker first, then orbctl
-    let docker_ok = Command::new("docker").args(["start", name]).output()
-        .map(|o| o.status.success()).unwrap_or(false);
+    let docker_ok = Command::new("docker")
+        .args(["start", name])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
     if docker_ok {
         println!("✓ {} 시작 (docker)", name);
     } else {
-        let orb_ok = Command::new("orbctl").args(["start", name]).output()
-            .map(|o| o.status.success()).unwrap_or(false);
+        let orb_ok = Command::new("orbctl")
+            .args(["start", name])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
         if orb_ok {
             println!("✓ {} 시작 (orbstack)", name);
         } else {
@@ -155,13 +219,19 @@ fn cmd_start(name: &str) {
 }
 
 fn cmd_stop(name: &str) {
-    let docker_ok = Command::new("docker").args(["stop", name]).output()
-        .map(|o| o.status.success()).unwrap_or(false);
+    let docker_ok = Command::new("docker")
+        .args(["stop", name])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
     if docker_ok {
         println!("✓ {} 정지 (docker)", name);
     } else {
-        let orb_ok = Command::new("orbctl").args(["stop", name]).output()
-            .map(|o| o.status.success()).unwrap_or(false);
+        let orb_ok = Command::new("orbctl")
+            .args(["stop", name])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
         if orb_ok {
             println!("✓ {} 정지 (orbstack)", name);
         } else {
@@ -171,13 +241,19 @@ fn cmd_stop(name: &str) {
 }
 
 fn cmd_restart(name: &str) {
-    let docker_ok = Command::new("docker").args(["restart", name]).output()
-        .map(|o| o.status.success()).unwrap_or(false);
+    let docker_ok = Command::new("docker")
+        .args(["restart", name])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
     if docker_ok {
         println!("✓ {} 재시작 (docker)", name);
     } else {
-        let orb_ok = Command::new("orbctl").args(["restart", name]).output()
-            .map(|o| o.status.success()).unwrap_or(false);
+        let orb_ok = Command::new("orbctl")
+            .args(["restart", name])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
         if orb_ok {
             println!("✓ {} 재시작 (orbstack)", name);
         } else {
@@ -188,8 +264,11 @@ fn cmd_restart(name: &str) {
 
 fn cmd_up() {
     println!("OrbStack 시작 중...");
-    let ok = Command::new("orbctl").args(["start"]).output()
-        .map(|o| o.status.success()).unwrap_or(false);
+    let ok = Command::new("orbctl")
+        .args(["start"])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
     if ok {
         println!("✓ OrbStack 시작됨");
     } else {
@@ -201,9 +280,19 @@ fn cmd_up() {
 
 fn cmd_down() {
     println!("OrbStack 정지 중...");
-    let ok = Command::new("orbctl").args(["stop"]).output()
-        .map(|o| o.status.success()).unwrap_or(false);
-    println!("{}", if ok { "✓ OrbStack 정지됨" } else { "✗ 정지 실패" });
+    let ok = Command::new("orbctl")
+        .args(["stop"])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    println!(
+        "{}",
+        if ok {
+            "✓ OrbStack 정지됨"
+        } else {
+            "✗ 정지 실패"
+        }
+    );
 }
 
 fn cmd_install_orbstack() {
@@ -212,11 +301,23 @@ fn cmd_install_orbstack() {
         return;
     }
     println!("OrbStack 설치 중...");
-    let ok = Command::new("brew").args(["install", "--cask", "orbstack"]).status()
-        .map(|s| s.success()).unwrap_or(false);
-    println!("{}", if ok { "✓ OrbStack 설치 완료" } else { "✗ 설치 실패" });
+    let ok = Command::new("brew")
+        .args(["install", "--cask", "orbstack"])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    println!(
+        "{}",
+        if ok {
+            "✓ OrbStack 설치 완료"
+        } else {
+            "✗ 설치 실패"
+        }
+    );
 }
 
 fn cmd_logs(name: &str) {
-    let _ = Command::new("docker").args(["logs", "--tail", "50", name]).status();
+    let _ = Command::new("docker")
+        .args(["logs", "--tail", "50", name])
+        .status();
 }

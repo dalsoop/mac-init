@@ -55,9 +55,13 @@ pub struct EditableDef {
     pub args: Vec<String>,
 }
 
-fn default_edit_args() -> Vec<String> { vec!["${value}".to_string()] }
+fn default_edit_args() -> Vec<String> {
+    vec!["${value}".to_string()]
+}
 
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 #[derive(Debug, Clone, Deserialize)]
 struct DomainEntry {
@@ -153,16 +157,21 @@ pub fn section(domain: &str, section_key: &str, fallback: &str) -> String {
 pub fn buttons_json(domain: &str) -> Vec<serde_json::Value> {
     get_i18n(domain)
         .map(|i| {
-            i.buttons.iter().map(|b| {
-                let mut obj = serde_json::json!({
-                    "label": b.label,
-                    "command": b.command,
-                });
-                if !b.key.is_empty() {
-                    obj.as_object_mut().unwrap().insert("key".into(), serde_json::json!(b.key));
-                }
-                obj
-            }).collect()
+            i.buttons
+                .iter()
+                .map(|b| {
+                    let mut obj = serde_json::json!({
+                        "label": b.label,
+                        "command": b.command,
+                    });
+                    if !b.key.is_empty() {
+                        obj.as_object_mut()
+                            .unwrap()
+                            .insert("key".into(), serde_json::json!(b.key));
+                    }
+                    obj
+                })
+                .collect()
         })
         .unwrap_or_default()
 }
@@ -171,16 +180,19 @@ pub fn buttons_json(domain: &str) -> Vec<serde_json::Value> {
 pub fn keybindings_json(domain: &str) -> Vec<serde_json::Value> {
     get_i18n(domain)
         .map(|i| {
-            i.keybindings.iter().map(|k| {
-                serde_json::json!({
-                    "key": k.key,
-                    "label": k.label,
-                    "command": k.command,
-                    "args": k.args,
-                    "confirm": k.confirm,
-                    "reload": k.reload,
+            i.keybindings
+                .iter()
+                .map(|k| {
+                    serde_json::json!({
+                        "key": k.key,
+                        "label": k.label,
+                        "command": k.command,
+                        "args": k.args,
+                        "confirm": k.confirm,
+                        "reload": k.reload,
+                    })
                 })
-            }).collect()
+                .collect()
         })
         .unwrap_or_default()
 }
@@ -196,21 +208,25 @@ pub fn editables(domain: &str) -> Vec<EditableDef> {
 pub fn editables_json(domain: &str) -> Vec<serde_json::Value> {
     get_i18n(domain)
         .map(|i| {
-            i.editables.iter().map(|e| {
-                serde_json::json!({
-                    "field": e.field,
-                    "label": e.label,
-                    "command": e.command,
-                    "args": e.args,
+            i.editables
+                .iter()
+                .map(|e| {
+                    serde_json::json!({
+                        "field": e.field,
+                        "label": e.label,
+                        "command": e.command,
+                        "args": e.args,
+                    })
                 })
-            }).collect()
+                .collect()
         })
         .unwrap_or_default()
 }
 
 /// 전체 도메인 이름 목록. locale.json에서 읽음.
 pub fn get_all_domain_names() -> Vec<String> {
-    load_locale().as_ref()
+    load_locale()
+        .as_ref()
         .map(|l| {
             let mut names: Vec<String> = l.domains.keys().cloned().collect();
             names.sort();
@@ -221,7 +237,8 @@ pub fn get_all_domain_names() -> Vec<String> {
 
 /// DNS 프리셋 전체 목록. locale.json의 dns_presets에서 읽음.
 pub fn dns_presets() -> HashMap<String, DnsPreset> {
-    load_locale().as_ref()
+    load_locale()
+        .as_ref()
         .map(|l| l.dns_presets.clone())
         .unwrap_or_default()
 }

@@ -4,6 +4,7 @@ use mac_common::{
     tui_spec::{self, TuiSpec},
 };
 use mac_host_core::common;
+use serde::Deserialize;
 use std::fs;
 use std::net::ToSocketAddrs;
 use std::path::PathBuf;
@@ -14,42 +15,210 @@ use std::time::Duration;
 #[command(name = "mac-domain-proxmox")]
 #[command(about = "Proxmox VE 웹 UI + 상태 확인")]
 struct Cli {
+    #[arg(long, global = true, default_value = "proxmox50")]
+    card: String,
     #[command(subcommand)]
     command: Commands,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct CardBindMount {
+    lxc: String,
+    source: String,
+    target: String,
+    #[serde(default)]
+    readonly: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ProxmoxCard {
+    name: String,
+    host: String,
+    user: String,
+    #[serde(default)]
+    web_port: u16,
+    #[serde(default)]
+    bind_mounts: Vec<CardBindMount>,
+}
+
+fn active_proxmox_card() -> Option<ProxmoxCard> {
+    let cards = load_proxmox_cards();
+    if let Ok(selected) = std::env::var("MAI_PROXMOX_CARD") {
+        if let Some(card) = cards.iter().find(|card| card.name == selected) {
+            return Some(card.clone());
+        }
+    }
+    cards
+        .iter()
+        .find(|card| card.name == "proxmox50")
+        .cloned()
+        .or_else(|| cards.into_iter().next())
+}
+
+fn active_proxmox_card_name() -> String {
+    active_proxmox_card()
+        .map(|c| c.name)
+        .unwrap_or_else(|| "proxmox50".into())
+}
+
+fn active_proxmox_password_key() -> String {
+    format!("{}_PASSWORD", active_proxmox_card_name().to_uppercase())
+}
+
+fn active_proxmox_web_port_key() -> String {
+    format!("{}_WEB_PORT", active_proxmox_card_name().to_uppercase())
+}
+
+fn active_proxmox_host_key() -> String {
+    format!("{}_HOST", active_proxmox_card_name().to_uppercase())
+}
+
+fn active_proxmox_user_key() -> String {
+    format!("{}_USER", active_proxmox_card_name().to_uppercase())
+}
+
+fn active_proxmox_default_host() -> String {
+    active_proxmox_card()
+        .map(|c| c.host)
+        .unwrap_or_else(|| "192.168.2.50".into())
+}
+
+fn active_proxmox_default_user() -> String {
+    active_proxmox_card()
+        .map(|c| c.user)
+        .unwrap_or_else(|| "root".into())
+}
+
+fn active_proxmox_default_port() -> u16 {
+    22
+}
+
+fn active_proxmox_default_web_port() -> u16 {
+    active_proxmox_card()
+        .map(|c| if c.web_port > 0 { c.web_port } else { 8006 })
+        .unwrap_or(8006)
+}
+
+fn proxmox_host() -> String {
+    common::env_or(&active_proxmox_host_key(), &active_proxmox_default_host())
+}
+
+fn proxmox_user() -> String {
+    common::env_or(&active_proxmox_user_key(), &active_proxmox_default_user())
+}
+
+fn proxmox_web_port() -> u16 {
+    common::env_or(
+        &active_proxmox_web_port_key(),
+        &active_proxmox_default_web_port().to_string(),
+    )
+        .parse()
+        .unwrap_or(active_proxmox_default_web_port())
+}
+
+fn proxmox_password_exists() -> bool {
+    common::env_opt(&active_proxmox_password_key()).is_some()
+}
+
+fn proxmox_url() -> String {
+    format!("https://{}:{}", proxmox_host(), proxmox_web_port())
+}
+
+fn proxmox_card_exists() -> bool {
+    !load_proxmox_cards().is_empty()
+}
+
+#[derive(Debug, Clone)]
+struct BindMountRule {
+    lxc: String,
+    source: String,
+    target: String,
+    readonly: bool,
+}
+
+fn load_bind_mount_rules() -> Vec<BindMountRule> {
+    let active = active_proxmox_card_name();
+    load_proxmox_cards()
+        .into_iter()
+        .filter(|card| card.name == active)
+        .flat_map(|card| {
+            card.bind_mounts.into_iter().map(|bind| BindMountRule {
+                lxc: bind.lxc,
+                source: bind.source,
+                target: bind.target,
+                readonly: bind.readonly,
+            })
+        })
+        .collect()
+}
+
+fn save_bind_mount_rules(rules: &[BindMountRule]) -> Result<(), String> {
+    let active = active_proxmox_card_name();
+    let path = paths::ssot_cards_dir().join(format!("{}.json", active));
+    let content = fs::read_to_string(&path).map_err(|e| format!("{}: {}", path.display(), e))?;
+    let mut json: serde_json::Value =
+        serde_json::from_str(&content).map_err(|e| format!("{}: {}", path.display(), e))?;
+    let obj = json
+        .as_object_mut()
+        .ok_or_else(|| format!("{} 카드 JSON object 아님", active))?;
+    obj.insert(
+        "bind_mounts".into(),
+        serde_json::json!(rules
+            .iter()
+            .map(|rule| serde_json::json!({
+                "lxc": rule.lxc,
+                "source": rule.source,
+                "target": rule.target,
+                "readonly": rule.readonly,
+            }))
+            .collect::<Vec<_>>()),
+    );
+    fs::write(
+        &path,
+        serde_json::to_string_pretty(&json).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())
 }
 
 #[derive(Subcommand)]
 enum Commands {
     /// 상태 확인
     Status,
-    /// Proxmox SSH 상태 확인
-    SshStatus,
     /// Proxmox 기본 연결정보 등록 (.env + env 카드)
     Setup {
         #[arg(long, default_value = "192.168.2.50")]
         host: String,
         #[arg(long, default_value = "root")]
         user: String,
-        #[arg(long, default_value = "pam")]
-        realm: String,
         #[arg(long, default_value_t = 8006)]
         web_port: u16,
         #[arg(long)]
         password: Option<String>,
     },
-    /// SSH 키 생성 + Proxmox에 공개키 등록
-    SshSetup {
-        #[arg(long)]
-        password: Option<String>,
-    },
-    /// 로컬 공개키 출력 (없으면 생성)
-    SshPubkey,
-    /// Proxmox 셸에서 실행할 authorized_keys 등록 명령 출력
-    SshAuthorizeCommand,
     /// Proxmox 웹 UI 열기
     Open,
     /// LXC 목록
     LxcList,
+    /// 선언된 bind mount 목록
+    BindList,
+    /// LXC bind mount 선언 추가
+    BindAdd {
+        lxc: String,
+        source: String,
+        target: String,
+        #[arg(long)]
+        readonly: bool,
+    },
+    /// LXC bind mount 선언 제거
+    BindRemove {
+        lxc: String,
+        target: String,
+    },
+    /// 선언된 bind mount를 Proxmox LXC 설정에 동기화
+    BindSync {
+        /// 특정 LXC 또는 VMID만 동기화
+        target: Option<String>,
+    },
     /// VM 목록
     VmList,
     /// LXC 셸 접속 (pct enter)
@@ -70,21 +239,28 @@ fn main() {
     common::load_env();
 
     let cli = Cli::parse();
+    unsafe {
+        std::env::set_var("MAI_PROXMOX_CARD", &cli.card);
+    }
     match cli.command {
         Commands::Status => cmd_status(),
-        Commands::SshStatus => cmd_ssh_status(),
         Commands::Setup {
             host,
             user,
-            realm,
             web_port,
             password,
-        } => cmd_setup(&host, &user, &realm, web_port, password.as_deref()),
-        Commands::SshSetup { password } => cmd_ssh_setup(password.as_deref()),
-        Commands::SshPubkey => cmd_ssh_pubkey(),
-        Commands::SshAuthorizeCommand => cmd_ssh_authorize_command(),
+        } => cmd_setup(&host, &user, web_port, password.as_deref()),
         Commands::Open => cmd_open(),
         Commands::LxcList => cmd_lxc_list(),
+        Commands::BindList => cmd_bind_list(),
+        Commands::BindAdd {
+            lxc,
+            source,
+            target,
+            readonly,
+        } => cmd_bind_add(&lxc, &source, &target, readonly),
+        Commands::BindRemove { lxc, target } => cmd_bind_remove(&lxc, &target),
+        Commands::BindSync { target } => cmd_bind_sync(target.as_deref()),
         Commands::VmList => cmd_vm_list(),
         Commands::LxcShell { vmid } => cmd_lxc_shell(&vmid),
         Commands::LxcExec { vmid, cmd } => cmd_lxc_exec(&vmid, &cmd),
@@ -95,50 +271,43 @@ fn main() {
     }
 }
 
-fn load_card() -> Option<serde_json::Value> {
-    let path = PathBuf::from(paths::home()).join(".mac-app-init/cards/proxmox.json");
-    let content = std::fs::read_to_string(&path).ok()?;
-    serde_json::from_str(&content).ok()
+fn load_proxmox_cards() -> Vec<ProxmoxCard> {
+    let dir = paths::ssot_cards_dir();
+    if !dir.exists() {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    if let Ok(it) = fs::read_dir(dir) {
+        for e in it.filter_map(|x| x.ok()) {
+            if e.path().extension().and_then(|s| s.to_str()) != Some("json") {
+                continue;
+            }
+            if let Ok(content) = fs::read_to_string(e.path()) {
+                if let Ok(card) = serde_json::from_str::<ProxmoxCard>(&content) {
+                    if card.name.starts_with("proxmox") {
+                        out.push(card);
+                    }
+                }
+            }
+        }
+    }
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    out
 }
-
-fn proxmox_host() -> String {
-    load_card()
-        .and_then(|c| c.get("host").and_then(|v| v.as_str()).map(String::from))
-        .unwrap_or_else(|| "192.168.2.50".into())
-}
-
-fn proxmox_user() -> String {
-    load_card()
-        .and_then(|c| c.get("user").and_then(|v| v.as_str()).map(String::from))
-        .unwrap_or_else(|| "root".into())
-}
-
-fn proxmox_realm() -> String {
-    common::env_or("PROXMOX_REALM", "pam")
-}
-
-fn proxmox_web_port() -> u16 {
-    common::env_or("PROXMOX_WEB_PORT", "8006")
-        .parse()
-        .unwrap_or(8006)
-}
-
-fn proxmox_password_exists() -> bool {
-    common::env_opt("PROXMOX_PASSWORD").is_some()
-}
-
-fn proxmox_url() -> String {
-    format!("https://{}:{}", proxmox_host(), proxmox_web_port())
-}
-
-fn proxmox_login_user() -> String {
-    format!("{}@{}", proxmox_user(), proxmox_realm())
-}
-
-fn proxmox_card_exists() -> bool {
-    PathBuf::from(paths::home())
-        .join(".mac-app-init/cards/proxmox.json")
-        .exists()
+fn ssh_cmd_output(host: &str, user: &str, remote_cmd: &str) -> Result<String, String> {
+    let port = active_proxmox_default_port();
+    let out = Command::new("ssh")
+        .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "-p"])
+        .arg(port.to_string())
+        .arg(format!("{user}@{host}"))
+        .arg(remote_cmd)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if out.status.success() {
+        Ok(String::from_utf8_lossy(&out.stdout).to_string())
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+    }
 }
 
 fn env_domain_bin() -> PathBuf {
@@ -168,303 +337,11 @@ fn probe_tcp(host: &str, port: u16) -> bool {
 fn ssh_login_ok() -> bool {
     let host = proxmox_host();
     let user = proxmox_user();
-    let (ok, _) = common::ssh_cmd(&host, &user, "echo ok");
-    ok
-}
-#[derive(Clone, Debug)]
-struct ApiSession {
-    ticket: String,
-    csrf: Option<String>,
-    user: String,
-}
-
-fn api_login() -> Result<ApiSession, String> {
-    let host = proxmox_host();
-    let port = proxmox_web_port();
-    let user = proxmox_login_user();
-    let password =
-        common::env_opt("PROXMOX_PASSWORD").ok_or_else(|| "PROXMOX_PASSWORD 미설정".to_string())?;
-
-    let url = format!("https://{}:{}/api2/json/access/ticket", host, port);
-    let output = Command::new("curl")
-        .args([
-            "-sk",
-            "--connect-timeout",
-            "5",
-            "--data-urlencode",
-            &format!("username={user}"),
-            "--data-urlencode",
-            &format!("password={password}"),
-            &url,
-        ])
-        .output()
-        .map_err(|e| format!("curl 실행 실패: {}", e))?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let json: serde_json::Value =
-        serde_json::from_str(&stdout).map_err(|e| format!("API 응답 파싱 실패: {}", e))?;
-
-    if let Some(ticket) = json
-        .get("data")
-        .and_then(|d| d.get("ticket"))
-        .and_then(|v| v.as_str())
-    {
-        let csrf = json
-            .get("data")
-            .and_then(|d| d.get("CSRFPreventionToken"))
-            .and_then(|v| v.as_str())
-            .map(ToString::to_string);
-        return Ok(ApiSession {
-            ticket: ticket.to_string(),
-            csrf,
-            user,
-        });
-    }
-
-    let message = json
-        .get("message")
-        .and_then(|v| v.as_str())
-        .unwrap_or("API 인증 실패")
-        .trim()
-        .to_string();
-    Err(message)
-}
-
-fn api_get(path: &str, ticket: &str) -> Result<serde_json::Value, String> {
-    let host = proxmox_host();
-    let port = proxmox_web_port();
-    let url = format!("https://{}:{}/api2/json{}", host, port, path);
-    let cookie = format!("PVEAuthCookie={ticket}");
-
-    let output = Command::new("curl")
-        .args(["-sk", "--connect-timeout", "5", "-b", &cookie, &url])
-        .output()
-        .map_err(|e| format!("curl 실행 실패: {}", e))?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    serde_json::from_str(&stdout).map_err(|e| format!("API 응답 파싱 실패: {}", e))
-}
-
-fn api_nodes(ticket: &str) -> Result<Vec<String>, String> {
-    let json = api_get("/nodes", ticket)?;
-    Ok(json
-        .get("data")
-        .and_then(|v| v.as_array())
-        .into_iter()
-        .flatten()
-        .filter_map(|item| item.get("node").and_then(|v| v.as_str()))
-        .map(ToString::to_string)
-        .collect())
-}
-
-fn api_lxc_lines() -> Result<Vec<String>, String> {
-    let session = api_login()?;
-    let nodes = api_nodes(&session.ticket)?;
-    let mut lines = Vec::new();
-
-    for node in nodes {
-        let json = api_get(&format!("/nodes/{node}/lxc"), &session.ticket)?;
-        if let Some(items) = json.get("data").and_then(|v| v.as_array()) {
-            for item in items {
-                let vmid = item
-                    .get("vmid")
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or_default();
-                let status = item.get("status").and_then(|v| v.as_str()).unwrap_or("-");
-                let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("-");
-                lines.push(format!("{:<5} {:<8} {:<20} {}", vmid, status, name, node));
-            }
-        }
-    }
-
-    Ok(lines)
-}
-
-fn ssh_key_path() -> PathBuf {
-    PathBuf::from(paths::home()).join(".ssh/id_ed25519")
-}
-
-fn ssh_pub_key_path() -> PathBuf {
-    PathBuf::from(paths::home()).join(".ssh/id_ed25519.pub")
-}
-
-fn ssh_key_exists() -> bool {
-    ssh_key_path().exists() && ssh_pub_key_path().exists()
-}
-
-fn proxmox_password(password: Option<&str>) -> Option<String> {
-    password
-        .map(ToString::to_string)
-        .or_else(|| common::env_opt("PROXMOX_PASSWORD"))
-}
-
-fn shell_single_quote(text: &str) -> String {
-    format!("'{}'", text.replace('\'', "'\"'\"'"))
-}
-
-fn sshpass_exists() -> bool {
-    Command::new("sshpass")
-        .arg("-V")
-        .output()
-        .map(|o| o.status.success())
+    ssh_cmd_output(&host, &user, "echo ok")
+        .map(|out| out.trim() == "ok")
         .unwrap_or(false)
 }
 
-fn ssh_pub_key() -> Result<String, String> {
-    let pub_key =
-        fs::read_to_string(ssh_pub_key_path()).map_err(|e| format!("공개키 읽기 실패: {}", e))?;
-    let trimmed = pub_key.trim().to_string();
-    if trimmed.is_empty() {
-        Err("공개키가 비어 있습니다.".into())
-    } else {
-        Ok(trimmed)
-    }
-}
-
-fn ssh_pub_key_fingerprint() -> Option<String> {
-    if !ssh_pub_key_path().exists() {
-        return None;
-    }
-    let output = Command::new("ssh-keygen")
-        .args(["-lf", &ssh_pub_key_path().to_string_lossy()])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    Some(stdout.trim().to_string())
-}
-
-fn ssh_authorize_command_for(pub_key: &str) -> String {
-    format!(
-        "install -d -m 700 ~/.ssh && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && grep -qxF {0} ~/.ssh/authorized_keys || printf '%s\\n' {0} >> ~/.ssh/authorized_keys",
-        shell_single_quote(pub_key)
-    )
-}
-
-fn ssh_authorize_command() -> Result<String, String> {
-    Ok(ssh_authorize_command_for(&ssh_pub_key()?))
-}
-
-fn ssh_next_action() -> String {
-    if ssh_login_ok() {
-        return "SSH 준비 완료".into();
-    }
-    if !probe_tcp(&proxmox_host(), 22) {
-        return "22/tcp 열기 또는 VPN/방화벽 확인".into();
-    }
-    if !ssh_key_exists() {
-        return "mai run proxmox ssh-setup".into();
-    }
-    if proxmox_password_exists() && sshpass_exists() {
-        return "mai run proxmox ssh-setup".into();
-    }
-    if !sshpass_exists() {
-        return "mai run bootstrap install  # sshpass 필요".into();
-    }
-    "mai run proxmox ssh-authorize-command".into()
-}
-
-fn print_manual_ssh_help() {
-    println!();
-    println!("수동 SSH 등록 안내:");
-    println!("  1. mai run proxmox ssh-pubkey");
-    println!("  2. mai run proxmox ssh-authorize-command");
-    println!("  3. Proxmox Web UI > Shell 또는 다른 관리 호스트에서 위 명령을 root 셸에 실행");
-}
-
-fn ensure_local_ssh_key() -> Result<bool, String> {
-    let ssh_dir = PathBuf::from(paths::home()).join(".ssh");
-    let key_path = ssh_key_path();
-    if key_path.exists() {
-        return Ok(false);
-    }
-
-    fs::create_dir_all(&ssh_dir).map_err(|e| format!("~/.ssh 생성 실패: {}", e))?;
-
-    let comment = common::env_opt("GIT_EMAIL")
-        .filter(|s| !s.trim().is_empty())
-        .or_else(|| {
-            std::env::var("USER")
-                .ok()
-                .map(|u| format!("{u}@mac-app-init"))
-        })
-        .unwrap_or_else(|| "mac-app-init".to_string());
-
-    let status = Command::new("ssh-keygen")
-        .args([
-            "-t",
-            "ed25519",
-            "-C",
-            &comment,
-            "-f",
-            &key_path.to_string_lossy(),
-            "-N",
-            "",
-        ])
-        .status()
-        .map_err(|e| format!("ssh-keygen 실행 실패: {}", e))?;
-
-    if status.success() {
-        Ok(true)
-    } else {
-        Err("SSH 키 생성 실패".into())
-    }
-}
-
-fn reset_known_host(host: &str) {
-    let _ = Command::new("ssh-keygen").args(["-R", host]).status();
-    let bracket_host = format!("[{host}]:22");
-    let _ = Command::new("ssh-keygen")
-        .args(["-R", &bracket_host])
-        .status();
-}
-
-fn install_pubkey_via_password(password: &str) -> Result<(), String> {
-    let host = proxmox_host();
-    let user = proxmox_user();
-    let pub_key = ssh_pub_key()?;
-
-    reset_known_host(&host);
-
-    let remote_cmd = ssh_authorize_command_for(&pub_key);
-
-    let output = Command::new("sshpass")
-        .args([
-            "-p",
-            password,
-            "ssh",
-            "-o",
-            "StrictHostKeyChecking=accept-new",
-            "-o",
-            "ConnectTimeout=5",
-            &format!("{user}@{host}"),
-            &remote_cmd,
-        ])
-        .output()
-        .map_err(|e| format!("sshpass/ssh 실행 실패: {}", e))?;
-
-    if output.status.success() {
-        return Ok(());
-    }
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    if stderr.contains("Permission denied (publickey)") {
-        return Err(format!(
-            "대상 서버가 {}@{} 비밀번호 SSH 로그인을 허용하지 않습니다. 공개키를 서버에 먼저 등록하거나 SSH 설정(PasswordAuthentication/PermitRootLogin)을 확인해야 합니다.",
-            user, host
-        ));
-    }
-
-    if stderr.contains("Permission denied") {
-        return Err(
-            "SSH 비밀번호 인증 실패입니다. PROXMOX_PASSWORD 또는 SSH 사용자 설정을 확인하세요."
-                .into(),
-        );
-    }
-
-    Err(format!("SSH 공개키 등록 실패: {}", stderr.trim()))
-}
 /// 클러스터 노드 목록 (pvesh).
 fn cluster_nodes() -> Vec<(String, String)> {
     let host = proxmox_host();
@@ -583,11 +460,102 @@ fn lxc_lines() -> Vec<String> {
         .collect()
 }
 
-fn lxc_lines_with_source() -> Result<(Vec<String>, &'static str), String> {
-    if ssh_login_ok() {
-        return Ok((lxc_lines(), "ssh"));
+fn lxc_name_for_vmid(vmid: &str) -> Option<String> {
+    for (_, vid, _, name) in all_lxc() {
+        if vid == vmid {
+            return Some(name);
+        }
     }
-    api_lxc_lines().map(|lines| (lines, "api"))
+    None
+}
+
+fn normalize_lxc_key(name_or_id: &str) -> String {
+    let vmid = resolve_vmid(name_or_id);
+    lxc_name_for_vmid(&vmid).unwrap_or(vmid)
+}
+
+fn pct_remote_cmd(vmid: &str, inner: &str) -> String {
+    let node = find_node_for_vmid(vmid);
+    match node.as_deref() {
+        Some("pve") | None => inner.to_string(),
+        Some(remote) => format!("ssh {} '{}'", remote, inner.replace('\'', "'\\''")),
+    }
+}
+
+fn pct_exec_capture(vmid: &str, inner: &str) -> Result<String, String> {
+    let cmd = pct_remote_cmd(vmid, inner);
+    ssh_cmd_output(&proxmox_host(), &proxmox_user(), &cmd)
+}
+
+#[derive(Debug, Clone)]
+struct CurrentMountPoint {
+    slot: String,
+    source: String,
+    target: String,
+    readonly: bool,
+}
+
+fn parse_current_mount_points(vmid: &str) -> Vec<CurrentMountPoint> {
+    let Ok(output) = pct_exec_capture(vmid, &format!("pct config {}", vmid)) else {
+        return Vec::new();
+    };
+    let mut result = Vec::new();
+    for line in output.lines() {
+        let Some((slot, rest)) = line.split_once(':') else {
+            continue;
+        };
+        if !slot.starts_with("mp") {
+            continue;
+        }
+        let mut source = None;
+        let mut target = None;
+        let mut readonly = false;
+        for (idx, part) in rest.trim().split(',').enumerate() {
+            let trimmed = part.trim();
+            if idx == 0 {
+                source = Some(trimmed.to_string());
+                continue;
+            }
+            if let Some(value) = trimmed.strip_prefix("mp=") {
+                target = Some(value.to_string());
+            } else if trimmed == "ro=1" || trimmed == "readonly=1" {
+                readonly = true;
+            }
+        }
+        if let (Some(source), Some(target)) = (source, target) {
+            result.push(CurrentMountPoint {
+                slot: slot.trim().to_string(),
+                source,
+                target,
+                readonly,
+            });
+        }
+    }
+    result
+}
+
+fn free_mount_slot(current: &[CurrentMountPoint]) -> String {
+    for idx in 0..16 {
+        let key = format!("mp{}", idx);
+        if current.iter().all(|item| item.slot != key) {
+            return key;
+        }
+    }
+    "mp15".to_string()
+}
+
+fn mount_spec(rule: &BindMountRule) -> String {
+    if rule.readonly {
+        format!("{},mp={},ro=1", rule.source, rule.target)
+    } else {
+        format!("{},mp={}", rule.source, rule.target)
+    }
+}
+
+fn host_path_exists(path: &str) -> Result<bool, String> {
+    let check = format!("test -e '{}' && echo yes || echo no", path.replace('\'', "'\\''"));
+    let out = ssh_cmd_output(&proxmox_host(), &proxmox_user(), &check)?;
+    Ok(out.trim() == "yes")
 }
 
 fn cmd_status() {
@@ -597,22 +565,17 @@ fn cmd_status() {
     let web_ok = probe_tcp(&host, web_port);
     let ssh_port_ok = probe_tcp(&host, 22);
     let ssh_ok = ssh_login_ok();
-    let api_session = api_login();
-    let api_ok = api_session.is_ok();
-    let api_user = api_session
-        .as_ref()
-        .map(|s| s.user.clone())
-        .unwrap_or_else(|_| proxmox_login_user());
-    let lxc_state = lxc_lines_with_source();
+    let lxc = if ssh_ok { lxc_lines().len() } else { 0 };
 
     println!("=== Proxmox 상태 ===\n");
     println!(
-        "[등록] {}",
+        "[등록] {} ({})",
         if proxmox_card_exists() {
             "✓ proxmox 카드"
         } else {
             "✗ env setup-proxmox 필요"
-        }
+        },
+        active_proxmox_card_name()
     );
     println!(
         "[Web UI] {} {}",
@@ -633,15 +596,6 @@ fn cmd_status() {
         }
     );
     println!(
-        "[API 로그인] {} {}",
-        api_user,
-        if api_ok { "✓ 가능" } else { "✗ 실패" }
-    );
-    match ssh_pub_key_fingerprint() {
-        Some(fp) => println!("[로컬 SSH 키] {} ({})", ssh_pub_key_path().display(), fp),
-        None => println!("[로컬 SSH 키] ✗ 없음"),
-    }
-    println!(
         "[SSH 포트] {}:22 {}",
         host,
         if ssh_port_ok {
@@ -658,78 +612,14 @@ fn cmd_status() {
             "✗ 미설정/실패"
         }
     );
-    println!("[SSH 다음 단계] {}", ssh_next_action());
-    match lxc_state {
-        Ok((lines, source)) => println!("[LXC] {} 개 ({})", lines.len(), source),
-        Err(_) if api_ok => println!("[LXC] API 연결됨, 목록 조회 실패"),
-        Err(_) => println!("[LXC] API 또는 SSH 로그인 필요"),
+    if ssh_ok {
+        println!("[LXC] {} 개", lxc);
+    } else {
+        println!("[LXC] SSH 로그인 필요");
     }
 }
 
-fn cmd_ssh_status() {
-    let host = proxmox_host();
-    let user = proxmox_user();
-    let ssh_port_ok = probe_tcp(&host, 22);
-    let ssh_ok = ssh_login_ok();
-
-    println!("=== Proxmox SSH 상태 ===\n");
-    println!("[대상] {}@{}", user, host);
-    println!(
-        "[SSH 포트] {}",
-        if ssh_port_ok {
-            "✓ 열림"
-        } else {
-            "✗ 닫힘"
-        }
-    );
-    println!(
-        "[SSH 로그인] {}",
-        if ssh_ok {
-            "✓ 키 기반 접속 가능"
-        } else {
-            "✗ 아직 불가"
-        }
-    );
-    println!(
-        "[dotenvx 비번] {}",
-        if proxmox_password_exists() {
-            "✓ 있음"
-        } else {
-            "✗ 없음"
-        }
-    );
-    println!(
-        "[sshpass] {}",
-        if sshpass_exists() {
-            "✓ 있음"
-        } else {
-            "✗ 없음"
-        }
-    );
-
-    match ensure_local_ssh_key() {
-        Ok(true) => println!("[로컬 키] ✓ 새로 생성: {}", ssh_key_path().display()),
-        Ok(false) => println!("[로컬 키] ✓ 존재: {}", ssh_key_path().display()),
-        Err(err) => {
-            println!("[로컬 키] ✗ {}", err);
-            std::process::exit(1);
-        }
-    }
-
-    if let Some(fp) = ssh_pub_key_fingerprint() {
-        println!("[지문] {}", fp);
-    }
-
-    println!("[다음 단계] {}", ssh_next_action());
-    if !ssh_port_ok {
-        println!("[주의] SSH 포트가 닫혀 있으면 키 등록 여부와 무관하게 SSH 접속은 되지 않습니다.");
-    }
-    if !ssh_ok {
-        print_manual_ssh_help();
-    }
-}
-
-fn cmd_setup(host: &str, user: &str, realm: &str, web_port: u16, password: Option<&str>) {
+fn cmd_setup(host: &str, user: &str, web_port: u16, password: Option<&str>) {
     let env_bin = env_domain_bin();
     let mut cmd = Command::new(&env_bin);
     cmd.args([
@@ -738,8 +628,6 @@ fn cmd_setup(host: &str, user: &str, realm: &str, web_port: u16, password: Optio
         host,
         "--user",
         user,
-        "--realm",
-        realm,
         "--web-port",
         &web_port.to_string(),
     ]);
@@ -754,116 +642,6 @@ fn cmd_setup(host: &str, user: &str, realm: &str, web_port: u16, password: Optio
     eprint!("{}", String::from_utf8_lossy(&out.stderr));
     if !out.status.success() {
         std::process::exit(1);
-    }
-
-    if password.is_some() {
-        println!();
-        match ssh_setup_result(password) {
-            Ok(()) => {}
-            Err(err) => {
-                eprintln!("⚠ SSH 키 자동 등록 실패: {}", err);
-                if api_login().is_ok() {
-                    eprintln!("  API 로그인은 가능하므로 Proxmox 조회는 계속 사용할 수 있습니다.");
-                } else {
-                    eprintln!("  API 로그인도 실패하므로 이후 Proxmox 작업이 제한될 수 있습니다.");
-                }
-                print_manual_ssh_help();
-            }
-        }
-    } else {
-        println!("ℹ SSH/LXC까지 쓰려면: mai run proxmox ssh-setup --password '...'");
-    }
-}
-
-fn ssh_setup_result(password: Option<&str>) -> Result<(), String> {
-    let host = proxmox_host();
-    let user = proxmox_user();
-
-    println!("=== Proxmox SSH 설정 ===\n");
-
-    match ensure_local_ssh_key() {
-        Ok(true) => println!("✓ 로컬 SSH 키 생성: {}", ssh_key_path().display()),
-        Ok(false) => println!("✓ 로컬 SSH 키 존재: {}", ssh_key_path().display()),
-        Err(err) => return Err(err),
-    }
-
-    if ssh_login_ok() {
-        println!("✓ 이미 SSH 키 기반 접속 가능: {}@{}", user, host);
-        return Ok(());
-    }
-
-    if !sshpass_exists() {
-        return Err("sshpass가 필요합니다. 먼저 `mai run bootstrap install`을 실행하세요.".into());
-    }
-
-    let Some(password) = proxmox_password(password) else {
-        return Err("PROXMOX_PASSWORD가 없어서 자동 등록을 할 수 없습니다. → mai run proxmox ssh-setup --password '...'".into());
-    };
-
-    println!("→ {}@{}에 공개키 등록 중...", user, host);
-    if let Err(err) = install_pubkey_via_password(&password) {
-        if ssh_login_ok() {
-            println!("✓ SSH 키 등록 완료");
-            return Ok(());
-        }
-        return Err(format!(
-            "{} (공개키: {})",
-            err,
-            ssh_pub_key_path().display()
-        ));
-    }
-
-    if ssh_login_ok() {
-        println!("✓ SSH 키 등록 완료");
-        Ok(())
-    } else {
-        Err("공개키 등록 후에도 SSH 접속 검증에 실패했습니다.".into())
-    }
-}
-
-fn cmd_ssh_setup(password: Option<&str>) {
-    if let Err(err) = ssh_setup_result(password) {
-        eprintln!("✗ {}", err);
-        print_manual_ssh_help();
-        std::process::exit(1);
-    }
-}
-
-fn cmd_ssh_pubkey() {
-    match ensure_local_ssh_key() {
-        Ok(true) => eprintln!("✓ 로컬 SSH 키 생성: {}", ssh_key_path().display()),
-        Ok(false) => {}
-        Err(err) => {
-            eprintln!("✗ {}", err);
-            std::process::exit(1);
-        }
-    }
-
-    match ssh_pub_key() {
-        Ok(pub_key) => println!("{}", pub_key),
-        Err(err) => {
-            eprintln!("✗ {}", err);
-            std::process::exit(1);
-        }
-    }
-}
-
-fn cmd_ssh_authorize_command() {
-    match ensure_local_ssh_key() {
-        Ok(true) => eprintln!("✓ 로컬 SSH 키 생성: {}", ssh_key_path().display()),
-        Ok(false) => {}
-        Err(err) => {
-            eprintln!("✗ {}", err);
-            std::process::exit(1);
-        }
-    }
-
-    match ssh_authorize_command() {
-        Ok(cmd) => println!("{}", cmd),
-        Err(err) => {
-            eprintln!("✗ {}", err);
-            std::process::exit(1);
-        }
     }
 }
 
@@ -881,22 +659,213 @@ fn cmd_open() {
 }
 
 fn cmd_lxc_list() {
-    match lxc_lines_with_source() {
-        Ok((lines, source)) => {
-            if lines.is_empty() {
-                println!("LXC 없음 ({})", source);
-                return;
+    if !ssh_login_ok() {
+        eprintln!("✗ SSH 키 기반 접속이 필요합니다. 현재 proxmox 웹 등록만 된 상태입니다.");
+        std::process::exit(1);
+    }
+    let lines = lxc_lines();
+    if lines.is_empty() {
+        println!("LXC 없음");
+        return;
+    }
+    println!("=== Proxmox LXC ===\n");
+    for line in lines {
+        println!("  {}", line);
+    }
+}
+
+fn cmd_bind_list() {
+    let rules = load_bind_mount_rules();
+    if rules.is_empty() {
+        println!("선언된 bind mount가 없습니다.");
+        println!("  mai run proxmox bind-add <lxc> <host-source> <container-target>");
+        return;
+    }
+    println!(
+        "{:<18} {:<38} {:<26} {}",
+        "LXC", "HOST SOURCE", "TARGET", "MODE"
+    );
+    println!("{}", "─".repeat(100));
+    for rule in rules {
+        println!(
+            "{:<18} {:<38} {:<26} {}",
+            rule.lxc,
+            rule.source,
+            rule.target,
+            if rule.readonly { "ro" } else { "rw" }
+        );
+    }
+}
+
+fn cmd_bind_add(lxc: &str, source: &str, target: &str, readonly: bool) {
+    let normalized = normalize_lxc_key(lxc);
+    let mut rules = load_bind_mount_rules();
+    if let Some(existing) = rules
+        .iter_mut()
+        .find(|rule| rule.lxc == normalized && rule.target == target)
+    {
+        existing.source = source.to_string();
+        existing.readonly = readonly;
+    } else {
+        rules.push(BindMountRule {
+            lxc: normalized.clone(),
+            source: source.to_string(),
+            target: target.to_string(),
+            readonly,
+        });
+    }
+    rules.sort_by(|a, b| a.lxc.cmp(&b.lxc).then(a.target.cmp(&b.target)));
+    if let Err(e) = save_bind_mount_rules(&rules) {
+        eprintln!("✗ {}", e);
+        std::process::exit(1);
+    }
+    println!(
+        "✓ bind mount 선언 저장: {} {} -> {} ({})",
+        normalized,
+        source,
+        target,
+        if readonly { "ro" } else { "rw" }
+    );
+}
+
+fn cmd_bind_remove(lxc: &str, target: &str) {
+    let normalized = normalize_lxc_key(lxc);
+    let mut rules = load_bind_mount_rules();
+    let before = rules.len();
+    rules.retain(|rule| !(rule.lxc == normalized && rule.target == target));
+    if rules.len() == before {
+        println!("일치하는 선언이 없습니다: {} {}", normalized, target);
+        return;
+    }
+    if let Err(e) = save_bind_mount_rules(&rules) {
+        eprintln!("✗ {}", e);
+        std::process::exit(1);
+    }
+    if let Some(vmid) = all_lxc()
+        .into_iter()
+        .find(|(_, _, _, name)| *name == normalized)
+        .map(|(_, vmid, _, _)| vmid)
+    {
+        let current = parse_current_mount_points(&vmid);
+        if let Some(slot) = current
+            .iter()
+            .find(|item| item.target == target)
+            .map(|item| item.slot.clone())
+        {
+            let cmd = pct_remote_cmd(&vmid, &format!("pct set {} -delete {}", vmid, slot));
+            let (ok, out) = common::ssh_cmd(&proxmox_host(), &proxmox_user(), &cmd);
+            if ok {
+                println!("✓ Proxmox 설정에서도 제거: {} {}", normalized, target);
+            } else {
+                eprintln!("⚠ 선언은 제거했지만 pct 설정 제거는 실패: {}", out);
             }
-            println!("=== Proxmox LXC ({}) ===\n", source);
-            for line in lines {
-                println!("  {}", line);
-            }
-        }
-        Err(_) => {
-            eprintln!("✗ SSH 또는 API 로그인 경로가 필요합니다.");
-            std::process::exit(1);
         }
     }
+    println!("✓ bind mount 선언 제거: {} {}", normalized, target);
+}
+
+fn cmd_bind_sync(target: Option<&str>) {
+    let rules = load_bind_mount_rules();
+    if rules.is_empty() {
+        println!("동기화할 bind mount 선언이 없습니다.");
+        return;
+    }
+
+    let filter = target.map(normalize_lxc_key);
+    let mut matched = 0;
+    let mut applied = 0;
+    let mut skipped = 0;
+    let mut failed = 0;
+
+    for (node, vmid, status, name) in all_lxc() {
+        if let Some(ref wanted) = filter {
+            if &name != wanted && &vmid != wanted {
+                continue;
+            }
+        }
+
+        let per_lxc: Vec<BindMountRule> = rules
+            .iter()
+            .filter(|rule| rule.lxc == name || rule.lxc == vmid)
+            .cloned()
+            .collect();
+        if per_lxc.is_empty() {
+            continue;
+        }
+
+        matched += per_lxc.len();
+        if status != "running" {
+            eprintln!("⚠ {}({}) stopped 상태라 bind sync는 건너뜁니다.", name, vmid);
+            skipped += per_lxc.len();
+            continue;
+        }
+
+        let mut current = parse_current_mount_points(&vmid);
+        for rule in per_lxc {
+            match host_path_exists(&rule.source) {
+                Ok(true) => {}
+                Ok(false) => {
+                    eprintln!("✗ {}: host source 없음: {}", name, rule.source);
+                    failed += 1;
+                    continue;
+                }
+                Err(e) => {
+                    eprintln!("✗ {}: host source 확인 실패: {}", name, e);
+                    failed += 1;
+                    continue;
+                }
+            }
+
+            if current.iter().any(|item| {
+                item.target == rule.target
+                    && item.source == rule.source
+                    && item.readonly == rule.readonly
+            }) {
+                skipped += 1;
+                continue;
+            }
+
+            let slot = current
+                .iter()
+                .find(|item| item.target == rule.target)
+                .map(|item| item.slot.clone())
+                .unwrap_or_else(|| free_mount_slot(&current));
+            let spec = mount_spec(&rule);
+            let cmd = pct_remote_cmd(&vmid, &format!("pct set {} -{} {}", vmid, slot, spec));
+            let (ok, out) = common::ssh_cmd(&proxmox_host(), &proxmox_user(), &cmd);
+            if ok {
+                println!(
+                    "✓ {}({}:{}) {} -> {} [{}]",
+                    name, node, vmid, rule.source, rule.target, slot
+                );
+                if let Some(existing) = current.iter_mut().find(|item| item.slot == slot) {
+                    existing.source = rule.source.clone();
+                    existing.target = rule.target.clone();
+                    existing.readonly = rule.readonly;
+                } else {
+                    current.push(CurrentMountPoint {
+                        slot: slot.clone(),
+                        source: rule.source.clone(),
+                        target: rule.target.clone(),
+                        readonly: rule.readonly,
+                    });
+                }
+                applied += 1;
+            } else {
+                eprintln!("✗ {}({}:{}) {}: {}", name, node, vmid, rule.target, out);
+                failed += 1;
+            }
+        }
+    }
+
+    if matched == 0 {
+        println!("해당 대상에 맞는 bind mount 선언이 없습니다.");
+        return;
+    }
+    println!(
+        "\nbind-sync: 적용 {}, 유지 {}, 실패 {}",
+        applied, skipped, failed
+    );
 }
 
 fn vm_lines() -> Vec<String> {
@@ -1043,42 +1012,19 @@ fn print_tui_spec() {
     let user = proxmox_user();
     let web_port = proxmox_web_port();
     let web_ok = probe_tcp(&host, web_port);
-    let ssh_port_ok = probe_tcp(&host, 22);
     let ssh_ok = ssh_login_ok();
-    let api_session = api_login();
-    let api_ok = api_session.is_ok();
-    let api_user = api_session
-        .as_ref()
-        .map(|s| s.user.clone())
-        .unwrap_or_else(|_| proxmox_login_user());
-    let api_csrf = api_session
-        .as_ref()
-        .ok()
-        .and_then(|s| s.csrf.as_ref())
-        .is_some();
-    let (lxc, lxc_source) = match lxc_lines_with_source() {
-        Ok((lines, source)) => (lines, source),
-        Err(_) => (Vec::new(), "none"),
-    };
 
     let usage_active = proxmox_card_exists();
     let usage_summary = if usage_active {
-        let auth = if ssh_ok {
-            "ssh"
-        } else if api_ok {
-            "api"
-        } else {
-            "auth down"
-        };
         format!(
-            "{} / web {} / {}",
+            "{} / web {}",
             proxmox_url(),
-            if web_ok { "ok" } else { "down" },
-            auth
+            if web_ok { "ok" } else { "down" }
         )
     } else {
         "미등록".to_string()
     };
+
     // 클러스터 전체 데이터
     let lxc_all = if ssh_ok { all_lxc() } else { Vec::new() };
     let vm_all = if ssh_ok { all_vms() } else { Vec::new() };
@@ -1105,87 +1051,46 @@ fn print_tui_spec() {
     TuiSpec::new("proxmox")
         .refresh(30)
         .usage(usage_active, &usage_summary)
-        .kv("상태", vec![
-            tui_spec::kv_item(
-                "등록",
-                if proxmox_card_exists() { "✓ proxmox 카드" } else { "✗ setup 필요" },
-                if proxmox_card_exists() { "ok" } else { "error" },
-            ),
-            tui_spec::kv_item("클러스터", &node_info,
-                if !nodes.is_empty() { "ok" } else { "error" }),
-            tui_spec::kv_item("Web UI", &proxmox_url(), if web_ok { "ok" } else { "error" }),
-            tui_spec::kv_item("계정", &user, if proxmox_password_exists() { "ok" } else { "warn" }),
-            tui_spec::kv_item("API 로그인", &api_user, if api_ok { "ok" } else { "warn" }),
-            tui_spec::kv_item("API 쓰기", if api_csrf { "✓ 가능" } else { "✗ 불가" }, if api_csrf { "ok" } else { "warn" }),
-            tui_spec::kv_item(
-                "로컬 SSH 키",
-                &match ssh_pub_key_fingerprint() {
-                    Some(fp) => fp,
-                    None => "✗ 없음".into(),
-                },
-                if ssh_key_exists() { "ok" } else { "warn" },
-            ),
-            tui_spec::kv_item(
-                "SSH",
-                &format!(
-                    "{}@{}:22 ({})",
-                    user,
-                    host,
-                    if ssh_port_ok { "port ok" } else { "port down" }
-                ),
-                if ssh_ok {
-                    "ok"
-                } else if ssh_port_ok {
-                    "warn"
-                } else {
-                    "error"
-                },
-            ),
-            tui_spec::kv_item("SSH 다음 단계", &ssh_next_action(),
-                if ssh_ok { "ok" } else { "warn" }),
-            tui_spec::kv_item("LXC",
-                &if ssh_ok {
-                    format!("{}/{} running", lxc_running, lxc_total)
-                } else if api_ok {
-                    format!("{} visible via {}", lxc.len(), lxc_source)
-                } else {
-                    "API/SSH 로그인 필요".into()
-                },
-                if ssh_ok || api_ok { "ok" } else { "warn" }),
-            tui_spec::kv_item("VM",
-                &format!("{}", vm_all.len()),
-                "ok"),
-        ])
-        .table("LXC 컨테이너",
-            vec!["VMID", "STATUS", "NODE", "NAME"],
-            lxc_rows)
-        .table("VM",
-            vec!["VMID", "STATUS", "NODE", "NAME"],
-            vm_rows)
-        .buttons()
-        .buttons_custom(
-            "빠른 실행",
+        .kv(
+            "상태",
             vec![
-                serde_json::json!({ "label": "기본 등록", "command": "setup", "key": "s" }),
-                serde_json::json!({ "label": "웹 UI 열기", "command": "open", "key": "o" }),
-                serde_json::json!({ "label": "SSH 상태", "command": "ssh-status", "key": "a" }),
-                serde_json::json!({ "label": "SSH 키 등록", "command": "ssh-setup", "key": "k" }),
-                serde_json::json!({ "label": "SSH 공개키", "command": "ssh-pubkey", "key": "p" }),
-                serde_json::json!({ "label": "등록 명령", "command": "ssh-authorize-command", "key": "c" }),
-                serde_json::json!({ "label": "LXC 목록", "command": "lxc-list", "key": "l" }),
-                serde_json::json!({ "label": "호스트 SSH", "command": "ssh", "key": "h" }),
+                tui_spec::kv_item(
+                    "클러스터",
+                    &node_info,
+                    if !nodes.is_empty() { "ok" } else { "error" },
+                ),
+                tui_spec::kv_item(
+                    "Web UI",
+                    &proxmox_url(),
+                    if web_ok { "ok" } else { "error" },
+                ),
+                tui_spec::kv_item(
+                    "SSH",
+                    &format!("{}@{}:{}", user, host, active_proxmox_default_port()),
+                    if ssh_ok { "ok" } else { "warn" },
+                ),
+                tui_spec::kv_item(
+                    "LXC",
+                    &format!("{}/{} running", lxc_running, lxc_total),
+                    if lxc_running > 0 { "ok" } else { "warn" },
+                ),
+                tui_spec::kv_item("VM", &format!("{}", vm_all.len()), "ok"),
             ],
         )
-        .text("안내",
-            "  mai run proxmox setup --realm pam --password ...\n  \
-             SSH가 막혀도 API 인증이 맞으면 LXC 목록은 API fallback 으로 조회합니다.\n  \
-             mai run proxmox ssh-status       SSH 준비 상태/다음 단계 확인\n  \
-             mai run proxmox ssh-pubkey       로컬 공개키 출력\n  \
-             mai run proxmox ssh-authorize-command  Proxmox 셸용 등록 명령 출력\n  \
-             mai run proxmox ssh              호스트 SSH 접속\n  \
+        .table(
+            "LXC 컨테이너",
+            vec!["VMID", "STATUS", "NODE", "NAME"],
+            lxc_rows,
+        )
+        .table("VM", vec!["VMID", "STATUS", "NODE", "NAME"], vm_rows)
+        .buttons()
+        .text(
+            "안내",
+            "  mai run proxmox ssh              호스트 SSH 접속\n  \
              mai run proxmox lxc-shell 50063   LXC 셸 접속\n  \
              mai run proxmox lxc-exec 50063 ls 명령 실행\n  \
              mai run proxmox lxc-start 50063   LXC 시작\n  \
-             mai run proxmox lxc-stop 50063    LXC 정지")
+             mai run proxmox lxc-stop 50063    LXC 정지",
+        )
         .print();
 }

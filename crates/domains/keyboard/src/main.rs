@@ -36,7 +36,11 @@ fn print_tui_spec() {
 
     let s = keyboard::get_status();
     let usage_active = s.mapping_active;
-    let usage_summary = if s.mapping_active { "F18 적용됨".to_string() } else { "미적용".to_string() };
+    let usage_summary = if s.mapping_active {
+        "F18 적용됨".to_string()
+    } else {
+        "미적용".to_string()
+    };
 
     TuiSpec::new("keyboard")
         .usage(usage_active, &usage_summary)

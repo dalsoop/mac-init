@@ -59,7 +59,12 @@ pub fn read_domain(domain: &str) -> Vec<DefaultEntry> {
     entries
 }
 
-pub fn write_default(domain: &str, key: &str, value_type: &str, value: &str) -> Result<String, String> {
+pub fn write_default(
+    domain: &str,
+    key: &str,
+    value_type: &str,
+    value: &str,
+) -> Result<String, String> {
     let dtype = match value_type {
         "boolean" => "-bool",
         "integer" => "-int",
@@ -69,6 +74,12 @@ pub fn write_default(domain: &str, key: &str, value_type: &str, value: &str) -> 
     Command::new("defaults")
         .args(["write", domain, key, dtype, value])
         .output()
-        .map(|o| format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)))
+        .map(|o| {
+            format!(
+                "{}{}",
+                String::from_utf8_lossy(&o.stdout),
+                String::from_utf8_lossy(&o.stderr)
+            )
+        })
         .map_err(|e| format!("defaults 실행 실패: {}", e))
 }

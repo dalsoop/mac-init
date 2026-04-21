@@ -8,18 +8,39 @@ pub fn status() {
 
     // Homebrew
     let (has_brew, _) = common::run_cmd_quiet("which", &["brew"]);
-    println!("[brew] {}", if has_brew { "✓ 설치됨" } else { "✗ 미설치" });
+    println!(
+        "[brew] {}",
+        if has_brew {
+            "✓ 설치됨"
+        } else {
+            "✗ 미설치"
+        }
+    );
 
     // macFUSE
     let has_macfuse = Path::new("/Library/Filesystems/macfuse.fs").exists()
         || Path::new("/usr/local/lib/libfuse.dylib").exists()
         || Path::new("/opt/homebrew/lib/libfuse.dylib").exists();
-    println!("[macFUSE] {}", if has_macfuse { "✓ 설치됨" } else { "✗ 미설치" });
+    println!(
+        "[macFUSE] {}",
+        if has_macfuse {
+            "✓ 설치됨"
+        } else {
+            "✗ 미설치"
+        }
+    );
 
     // macFUSE 커널 확장 로드 상태
     if has_macfuse {
         let loaded = is_macfuse_loaded();
-        println!("[macFUSE 커널] {}", if loaded { "✓ 로드됨" } else { "✗ 로드 안 됨" });
+        println!(
+            "[macFUSE 커널] {}",
+            if loaded {
+                "✓ 로드됨"
+            } else {
+                "✗ 로드 안 됨"
+            }
+        );
         if !loaded {
             print_macfuse_enable_guide();
         }
@@ -27,11 +48,25 @@ pub fn status() {
 
     // sshfs
     let (has_sshfs, _) = common::run_cmd_quiet("which", &["sshfs"]);
-    println!("[sshfs] {}", if has_sshfs { "✓ 설치됨" } else { "✗ 미설치" });
+    println!(
+        "[sshfs] {}",
+        if has_sshfs {
+            "✓ 설치됨"
+        } else {
+            "✗ 미설치"
+        }
+    );
 
     // sshpass
     let (has_sshpass, _) = common::run_cmd_quiet("which", &["sshpass"]);
-    println!("[sshpass] {}", if has_sshpass { "✓ 설치됨" } else { "✗ 미설치" });
+    println!(
+        "[sshpass] {}",
+        if has_sshpass {
+            "✓ 설치됨"
+        } else {
+            "✗ 미설치"
+        }
+    );
 
     if !has_macfuse || !has_sshfs {
         println!("\n  [!] sshfs 마운트를 사용하려면: mai setup install-sshfs");
@@ -101,7 +136,9 @@ pub fn install_sshfs() {
     let (has_brew, _) = common::run_cmd_quiet("which", &["brew"]);
     if !has_brew {
         eprintln!("[setup] Homebrew가 필요합니다.");
-        eprintln!("  /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"");
+        eprintln!(
+            "  /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+        );
         std::process::exit(1);
     }
 
@@ -146,9 +183,7 @@ pub fn install_sshfs() {
         println!("[setup] sshfs 설치 중...");
 
         // gromgit/fuse tap 추가
-        let _ = Command::new("brew")
-            .args(["tap", "gromgit/fuse"])
-            .status();
+        let _ = Command::new("brew").args(["tap", "gromgit/fuse"]).status();
 
         let ok = Command::new("brew")
             .args(["install", "gromgit/fuse/sshfs-mac"])

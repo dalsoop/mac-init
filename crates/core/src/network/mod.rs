@@ -18,30 +18,60 @@ pub fn status() {
 
     // WireGuard 상태
     let has_wg = ifconfig.contains("utun");
-    println!("\n[WireGuard] {}", if has_wg { "✓ 연결됨" } else { "✗ 미연결" });
+    println!(
+        "\n[WireGuard] {}",
+        if has_wg {
+            "✓ 연결됨"
+        } else {
+            "✗ 미연결"
+        }
+    );
 
     // Proxmox 연결
     let cfg = Config::load();
     let (ping_ok, _) = common::run_cmd_quiet("ping", &["-c", "1", "-W", "2", &cfg.proxmox.host]);
-    println!("\n[Proxmox] {} {}", cfg.proxmox.host,
-        if ping_ok { "✓ 도달 가능" } else { "✗ 도달 불가" });
+    println!(
+        "\n[Proxmox] {} {}",
+        cfg.proxmox.host,
+        if ping_ok {
+            "✓ 도달 가능"
+        } else {
+            "✗ 도달 불가"
+        }
+    );
 
     // SSH 연결
     let (ssh_ok, _) = common::ssh_cmd(&cfg.proxmox.host, &cfg.proxmox.user, "echo ok");
-    println!("[SSH] {}@{} {}", cfg.proxmox.user, cfg.proxmox.host,
-        if ssh_ok { "✓ 연결 가능" } else { "✗ 연결 불가" });
+    println!(
+        "[SSH] {}@{} {}",
+        cfg.proxmox.user,
+        cfg.proxmox.host,
+        if ssh_ok {
+            "✓ 연결 가능"
+        } else {
+            "✗ 연결 불가"
+        }
+    );
 
     // SMB 포트
     let (smb_ok, _) = common::run_cmd_quiet("nc", &["-z", "-w", "2", &cfg.proxmox.host, "445"]);
-    println!("[SMB] {}:445 {}", cfg.proxmox.host,
-        if smb_ok { "✓ 포트 열림" } else { "✗ 포트 닫힘" });
+    println!(
+        "[SMB] {}:445 {}",
+        cfg.proxmox.host,
+        if smb_ok {
+            "✓ 포트 열림"
+        } else {
+            "✗ 포트 닫힘"
+        }
+    );
 }
 
 /// Proxmox에 도달 가능한지 확인 (VPN 또는 LAN 모두 포함)
 /// WireGuard 여부와 무관하게 Proxmox에 ping이 담기면 마운트 허용
 pub fn is_vpn_connected() -> bool {
     let cfg = Config::load();
-    let (ping_ok, _) = common::run_cmd_quiet("/sbin/ping", &["-c", "1", "-W", "2", &cfg.proxmox.host]);
+    let (ping_ok, _) =
+        common::run_cmd_quiet("/sbin/ping", &["-c", "1", "-W", "2", &cfg.proxmox.host]);
     ping_ok
 }
 
@@ -52,19 +82,35 @@ pub fn check() {
 
     // Ping
     let (ping_ok, _) = common::run_cmd_quiet("ping", &["-c", "2", "-W", "2", &cfg.proxmox.host]);
-    println!("  ping {} ... {}", cfg.proxmox.host, if ping_ok { "OK" } else { "FAIL" });
+    println!(
+        "  ping {} ... {}",
+        cfg.proxmox.host,
+        if ping_ok { "OK" } else { "FAIL" }
+    );
 
     // SSH
     let (ssh_ok, _) = common::ssh_cmd(&cfg.proxmox.host, &cfg.proxmox.user, "echo ok");
-    println!("  ssh {}@{} ... {}", cfg.proxmox.user, cfg.proxmox.host, if ssh_ok { "OK" } else { "FAIL" });
+    println!(
+        "  ssh {}@{} ... {}",
+        cfg.proxmox.user,
+        cfg.proxmox.host,
+        if ssh_ok { "OK" } else { "FAIL" }
+    );
 
     // SMB
     let (smb_ok, _) = common::run_cmd_quiet("nc", &["-z", "-w", "2", &cfg.proxmox.host, "445"]);
-    println!("  smb {}:445 ... {}", cfg.proxmox.host, if smb_ok { "OK" } else { "FAIL" });
+    println!(
+        "  smb {}:445 ... {}",
+        cfg.proxmox.host,
+        if smb_ok { "OK" } else { "FAIL" }
+    );
 
     // SSHFS
     let (sshfs_ok, _) = common::run_cmd_quiet("which", &["sshfs"]);
-    println!("  sshfs binary ... {}", if sshfs_ok { "OK" } else { "NOT INSTALLED" });
+    println!(
+        "  sshfs binary ... {}",
+        if sshfs_ok { "OK" } else { "NOT INSTALLED" }
+    );
 
     if !ping_ok {
         println!("\n  [!] Proxmox에 도달할 수 없습니다. WireGuard 연결을 확인하세요.");

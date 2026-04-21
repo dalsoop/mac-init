@@ -24,7 +24,9 @@ pub struct Job {
     #[serde(default)]
     pub description: String,
 }
-fn true_default() -> bool { true }
+fn true_default() -> bool {
+    true
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScheduleSpec {

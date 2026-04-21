@@ -53,7 +53,6 @@ fn main() {
     }
 }
 
-
 fn local_bin_dir() -> PathBuf {
     PathBuf::from(paths::home()).join(".local/bin")
 }
@@ -97,8 +96,6 @@ fn sessionbar_config() -> PathBuf {
 fn windowbar_config() -> PathBuf {
     PathBuf::from(paths::home()).join(".config/tmux-windowbar/config.toml")
 }
-
-
 
 fn ensure_shell_integration() {
     let shell_bin = paths::domains_dir().join("mac-domain-shell");
@@ -164,7 +161,9 @@ fn ensure_brew() -> bool {
     if cmd::ok("brew", &["--version"]) {
         true
     } else {
-        eprintln!("✗ Homebrew가 필요합니다. 먼저 `mai run bootstrap install` 또는 brew 설치를 진행하세요.");
+        eprintln!(
+            "✗ Homebrew가 필요합니다. 먼저 `mai run bootstrap install` 또는 brew 설치를 진행하세요."
+        );
         false
     }
 }
@@ -349,7 +348,9 @@ fn cmd_init() {
 
 fn cmd_init_inner() -> bool {
     if !ensure_installed() {
-        eprintln!("✗ tmux-tools가 아직 설치되지 않았습니다. 먼저 `mai run tmux install`을 실행하세요.");
+        eprintln!(
+            "✗ tmux-tools가 아직 설치되지 않았습니다. 먼저 `mai run tmux install`을 실행하세요."
+        );
         return false;
     }
     println!("=== tmux 초기화 ===\n");
@@ -364,7 +365,9 @@ fn cmd_init_inner() -> bool {
 
 fn cmd_apply() {
     if !ensure_installed() {
-        eprintln!("✗ tmux-tools가 아직 설치되지 않았습니다. 먼저 `mai run tmux install`을 실행하세요.");
+        eprintln!(
+            "✗ tmux-tools가 아직 설치되지 않았습니다. 먼저 `mai run tmux install`을 실행하세요."
+        );
         std::process::exit(1);
     }
     if !run_with_local_bin(&sessionbar_bin(), &["apply"]) {
@@ -375,7 +378,9 @@ fn cmd_apply() {
 
 fn cmd_topbar() {
     if !ensure_installed() {
-        eprintln!("✗ tmux-tools가 아직 설치되지 않았습니다. 먼저 `mai run tmux install`을 실행하세요.");
+        eprintln!(
+            "✗ tmux-tools가 아직 설치되지 않았습니다. 먼저 `mai run tmux install`을 실행하세요."
+        );
         std::process::exit(1);
     }
     if !run_with_local_bin(&topbar_bin(), &[]) {
@@ -386,7 +391,9 @@ fn cmd_topbar() {
 
 fn cmd_sync() {
     if !ensure_installed() {
-        eprintln!("✗ tmux-tools가 아직 설치되지 않았습니다. 먼저 `mai run tmux install`을 실행하세요.");
+        eprintln!(
+            "✗ tmux-tools가 아직 설치되지 않았습니다. 먼저 `mai run tmux install`을 실행하세요."
+        );
         std::process::exit(1);
     }
     if !run_with_local_bin(&sessionbar_bin(), &["sync"]) {
@@ -414,21 +421,81 @@ fn cmd_status() {
 
     println!("=== tmux 상태 ===\n");
     println!("[core]");
-    println!("  {} tmux {}", mark(has_tmux), if has_tmux { cmd::stdout("tmux", &["-V"]) } else { "미설치".into() });
-    println!("  {} TPM {}", mark(has_tpm), if has_tpm { tpm_dir().display().to_string() } else { "미설치".into() });
+    println!(
+        "  {} tmux {}",
+        mark(has_tmux),
+        if has_tmux {
+            cmd::stdout("tmux", &["-V"])
+        } else {
+            "미설치".into()
+        }
+    );
+    println!(
+        "  {} TPM {}",
+        mark(has_tpm),
+        if has_tpm {
+            tpm_dir().display().to_string()
+        } else {
+            "미설치".into()
+        }
+    );
 
     println!("\n[binaries]");
-    println!("  {} tmux-sessionbar {}", mark(has_sessionbar), version_or_missing(&sessionbar_bin()));
-    println!("  {} tmux-windowbar {}", mark(has_windowbar), version_or_missing(&windowbar_bin()));
-    println!("  {} tmux-topbar {}", mark(has_topbar), version_or_missing(&topbar_bin()));
-    println!("  {} tmux-config {}", mark(has_compat), if has_compat { compat_bin().display().to_string() } else { "미설치".into() });
+    println!(
+        "  {} tmux-sessionbar {}",
+        mark(has_sessionbar),
+        version_or_missing(&sessionbar_bin())
+    );
+    println!(
+        "  {} tmux-windowbar {}",
+        mark(has_windowbar),
+        version_or_missing(&windowbar_bin())
+    );
+    println!(
+        "  {} tmux-topbar {}",
+        mark(has_topbar),
+        version_or_missing(&topbar_bin())
+    );
+    println!(
+        "  {} tmux-config {}",
+        mark(has_compat),
+        if has_compat {
+            compat_bin().display().to_string()
+        } else {
+            "미설치".into()
+        }
+    );
 
     println!("\n[config]");
-    println!("  {} source repo {}", mark(has_source), tmux_source_dir().display());
-    println!("  {} .tmux.conf {}", mark(has_tmux_conf), tmux_conf_path().display());
-    println!("  {} sessionbar config {}", mark(has_session_cfg), sessionbar_config().display());
-    println!("  {} windowbar config {}", mark(has_window_cfg), windowbar_config().display());
-    println!("  {} tmux server {}", mark(tmux_running), if tmux_running { "실행 중" } else { "미실행" });
+    println!(
+        "  {} source repo {}",
+        mark(has_source),
+        tmux_source_dir().display()
+    );
+    println!(
+        "  {} .tmux.conf {}",
+        mark(has_tmux_conf),
+        tmux_conf_path().display()
+    );
+    println!(
+        "  {} sessionbar config {}",
+        mark(has_session_cfg),
+        sessionbar_config().display()
+    );
+    println!(
+        "  {} windowbar config {}",
+        mark(has_window_cfg),
+        windowbar_config().display()
+    );
+    println!(
+        "  {} tmux server {}",
+        mark(tmux_running),
+        if tmux_running {
+            "실행 중"
+        } else {
+            "미실행"
+        }
+    );
 
     if !(has_tmux && has_sessionbar && has_windowbar && has_topbar) {
         println!("\n→ 설치: mai run tmux setup");

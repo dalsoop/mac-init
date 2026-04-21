@@ -35,7 +35,10 @@ enum Commands {
     TuiSpec,
 }
 
-use mac_common::{cmd, paths, tui_spec::{self, TuiSpec}};
+use mac_common::{
+    cmd, paths,
+    tui_spec::{self, TuiSpec},
+};
 
 fn vscode_app() -> PathBuf {
     PathBuf::from("/Applications/Visual Studio Code.app")
@@ -71,23 +74,48 @@ fn print_tui_spec() {
     let settings_exists = settings_path().exists();
 
     let usage_active = code_cli;
-    let usage_summary = if code_cli { "VS Code 사용 가능".to_string() }
-        else if app_installed { "앱 설치됨 (CLI 미설정)".to_string() }
-        else { "미설치".to_string() };
+    let usage_summary = if code_cli {
+        "VS Code 사용 가능".to_string()
+    } else if app_installed {
+        "앱 설치됨 (CLI 미설정)".to_string()
+    } else {
+        "미설치".to_string()
+    };
 
     TuiSpec::new("vscode")
         .usage(usage_active, &usage_summary)
-        .kv("상태", vec![
-            tui_spec::kv_item("Visual Studio Code.app",
-                if app_installed { "✓ 설치됨" } else { "✗ 미설치" },
-                if app_installed { "ok" } else { "error" }),
-            tui_spec::kv_item("code CLI (PATH)",
-                if code_cli { "✓ 사용 가능" } else { "✗ 미설치" },
-                if code_cli { "ok" } else { "warn" }),
-            tui_spec::kv_item("settings.json",
-                if settings_exists { "✓ 존재" } else { "✗ 없음" },
-                if settings_exists { "ok" } else { "warn" }),
-        ])
+        .kv(
+            "상태",
+            vec![
+                tui_spec::kv_item(
+                    "Visual Studio Code.app",
+                    if app_installed {
+                        "✓ 설치됨"
+                    } else {
+                        "✗ 미설치"
+                    },
+                    if app_installed { "ok" } else { "error" },
+                ),
+                tui_spec::kv_item(
+                    "code CLI (PATH)",
+                    if code_cli {
+                        "✓ 사용 가능"
+                    } else {
+                        "✗ 미설치"
+                    },
+                    if code_cli { "ok" } else { "warn" },
+                ),
+                tui_spec::kv_item(
+                    "settings.json",
+                    if settings_exists {
+                        "✓ 존재"
+                    } else {
+                        "✗ 없음"
+                    },
+                    if settings_exists { "ok" } else { "warn" },
+                ),
+            ],
+        )
         .buttons()
         .print();
 }
@@ -96,7 +124,14 @@ fn cmd_status() {
     println!("=== VS Code 상태 ===\n");
 
     let app_installed = vscode_app().exists();
-    println!("[VS Code.app] {}", if app_installed { "✓ 설치됨" } else { "✗ 미설치" });
+    println!(
+        "[VS Code.app] {}",
+        if app_installed {
+            "✓ 설치됨"
+        } else {
+            "✗ 미설치"
+        }
+    );
 
     let code_cli = cmd::ok("which", &["code"]);
     if code_cli {
@@ -139,8 +174,11 @@ fn cmd_install() {
         println!("✓ VS Code 이미 설치됨");
     } else {
         println!("VS Code 설치 중...");
-        let ok = Command::new("brew").args(["install", "--cask", "visual-studio-code"]).status()
-            .map(|s| s.success()).unwrap_or(false);
+        let ok = Command::new("brew")
+            .args(["install", "--cask", "visual-studio-code"])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
         if ok {
             println!("✓ VS Code 설치 완료");
         } else {
@@ -156,8 +194,11 @@ fn cmd_install() {
         let cli_dest = format!("{}/.local/bin/code", paths::home());
         fs::create_dir_all(format!("{}/.local/bin", paths::home())).ok();
         if std::path::Path::new(cli_src).exists() {
-            let ok = Command::new("ln").args(["-sf", cli_src, &cli_dest]).status()
-                .map(|s| s.success()).unwrap_or(false);
+            let ok = Command::new("ln")
+                .args(["-sf", cli_src, &cli_dest])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
             if ok {
                 println!("  ✓ {} 심볼릭 링크 생성", cli_dest);
                 println!("  (~/.local/bin이 PATH에 있어야 함)");
@@ -188,7 +229,9 @@ fn cmd_ext_install(id: &str) {
         return;
     }
     println!("Installing {}...", id);
-    let status = Command::new("code").args(["--install-extension", id]).status();
+    let status = Command::new("code")
+        .args(["--install-extension", id])
+        .status();
     match status {
         Ok(s) if s.success() => println!("✓ {} 설치 완료", id),
         _ => println!("✗ 설치 실패"),
@@ -196,7 +239,9 @@ fn cmd_ext_install(id: &str) {
 }
 
 fn cmd_ext_remove(id: &str) {
-    let status = Command::new("code").args(["--uninstall-extension", id]).status();
+    let status = Command::new("code")
+        .args(["--uninstall-extension", id])
+        .status();
     match status {
         Ok(s) if s.success() => println!("✓ {} 제거 완료", id),
         _ => println!("✗ 제거 실패"),
@@ -232,8 +277,11 @@ fn cmd_ext_import() {
     println!("=== {} 개 확장 설치 ===\n", ids.len());
     for id in ids {
         print!("  {} ... ", id);
-        let ok = Command::new("code").args(["--install-extension", id]).output()
-            .map(|o| o.status.success()).unwrap_or(false);
+        let ok = Command::new("code")
+            .args(["--install-extension", id])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
         println!("{}", if ok { "✓" } else { "✗" });
     }
 }
@@ -251,7 +299,9 @@ fn cmd_open(path: &str) {
     match status {
         Ok(s) if s.success() => {}
         _ => {
-            let _ = Command::new("open").args(["-a", "Visual Studio Code", path]).status();
+            let _ = Command::new("open")
+                .args(["-a", "Visual Studio Code", path])
+                .status();
         }
     }
 }

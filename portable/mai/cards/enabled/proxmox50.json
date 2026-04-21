@@ -1,0 +1,75 @@
+{
+  "name": "proxmox50",
+  "host": "192.168.2.50",
+  "user": "root",
+  "port": 22,
+  "web_port": 8006,
+  "scheme": "ssh",
+  "description": "portable proxmox 50 card",
+  "tags": [
+    "portable",
+    "proxmox"
+  ],
+  "password_ref": "dotenvx:PROXMOX50_PASSWORD",
+  "mount_options": {
+    "readonly": false,
+    "noappledouble": true,
+    "soft": true,
+    "nobrowse": true
+  },
+  "mount_entries": [
+    {
+      "share": "/",
+      "enabled": true,
+      "alias": "proxmox"
+    },
+    {
+      "share": "/mnt/synology",
+      "enabled": true,
+      "alias": "synology"
+    },
+    {
+      "share": "/mnt/truenas-organized",
+      "enabled": true,
+      "alias": "truenas"
+    }
+  ],
+  "bind_mounts": [
+    {
+      "lxc": "gitlab",
+      "source": "/mnt/truenas-organized",
+      "target": "/mnt/truenas",
+      "readonly": false
+    },
+    {
+      "lxc": "host-ops",
+      "source": "/mnt/truenas-organized",
+      "target": "/mnt/truenas",
+      "readonly": false
+    },
+    {
+      "lxc": "infra-control",
+      "source": "/mnt/truenas-organized",
+      "target": "/mnt/truenas",
+      "readonly": false
+    },
+    {
+      "lxc": "obsidian-bot",
+      "source": "/mnt/truenas-organized",
+      "target": "/mnt/truenas",
+      "readonly": false
+    },
+    {
+      "lxc": "openclaw",
+      "source": "/mnt/truenas-organized",
+      "target": "/mnt/truenas",
+      "readonly": false
+    },
+    {
+      "lxc": "outline",
+      "source": "/mnt/truenas-organized",
+      "target": "/mnt/truenas",
+      "readonly": false
+    }
+  ]
+}

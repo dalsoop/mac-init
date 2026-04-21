@@ -15,7 +15,11 @@ fn command_version(cmd: &str, args: &[&str]) -> Option<String> {
 }
 
 fn file_mark(path: &str) -> &'static str {
-    if Path::new(path).exists() { "✓" } else { "✗" }
+    if Path::new(path).exists() {
+        "✓"
+    } else {
+        "✗"
+    }
 }
 
 fn run_step(cmd: &str, args: &[&str]) -> bool {
@@ -44,7 +48,10 @@ fn load_env_map(path: &Path) -> Vec<(String, String)> {
 }
 
 fn env_value<'a>(pairs: &'a [(String, String)], key: &str) -> Option<&'a str> {
-    pairs.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
+    pairs
+        .iter()
+        .find(|(k, _)| k == key)
+        .map(|(_, v)| v.as_str())
 }
 
 fn home() -> String {
@@ -59,7 +66,14 @@ pub fn status() {
 
     // p10k
     let (has_p10k_brew, _) = common::run_cmd_quiet("brew", &["list", "powerlevel10k"]);
-    println!("[Powerlevel10k] {}", if has_p10k_brew { "✓ 설치됨" } else { "✗ 미설치" });
+    println!(
+        "[Powerlevel10k] {}",
+        if has_p10k_brew {
+            "✓ 설치됨"
+        } else {
+            "✗ 미설치"
+        }
+    );
 
     // tmux
     let (has_tmux, _) = common::run_cmd_quiet("which", &["tmux"]);
@@ -72,7 +86,14 @@ pub fn status() {
     let has_tmux_conf = Path::new(&format!("{}/.tmux.conf", home())).exists();
     println!("[tmux.conf] {}", if has_tmux_conf { "✓" } else { "✗" });
     let has_tpm = Path::new(&format!("{}/.tmux/plugins/tpm", home())).exists();
-    println!("[TPM] {}", if has_tpm { "✓ 설치됨" } else { "✗ 미설치" });
+    println!(
+        "[TPM] {}",
+        if has_tpm {
+            "✓ 설치됨"
+        } else {
+            "✗ 미설치"
+        }
+    );
 
     // 개발 도구
     println!("\n[CLI 도구]");
@@ -98,7 +119,12 @@ pub fn status() {
 
     // Node.js / Rust / Python
     println!("\n[런타임]");
-    for (cmd, name) in [("node", "Node.js"), ("rustc", "Rust"), ("python3", "Python"), ("bun", "Bun")] {
+    for (cmd, name) in [
+        ("node", "Node.js"),
+        ("rustc", "Rust"),
+        ("python3", "Python"),
+        ("bun", "Bun"),
+    ] {
         let (ok, ver) = common::run_cmd_quiet(cmd, &["--version"]);
         if ok {
             println!("  ✓ {name} {}", ver.trim());
@@ -133,9 +159,10 @@ pub fn install_tmux() {
         println!("[workspace] TPM 이미 설치됨");
     } else {
         println!("[workspace] TPM 설치 중...");
-        let (ok, _, _) = common::run_cmd("git", &[
-            "clone", "https://github.com/tmux-plugins/tpm", &tpm_path,
-        ]);
+        let (ok, _, _) = common::run_cmd(
+            "git",
+            &["clone", "https://github.com/tmux-plugins/tpm", &tpm_path],
+        );
         if ok {
             println!("[workspace] TPM 설치 완료");
             println!("  tmux 실행 후 prefix + I 로 플러그인 설치");
@@ -274,16 +301,25 @@ pub fn ai_status() {
     println!("\n[인증 파일]");
     println!("  {} Claude auth  ({claude_auth})", file_mark(&claude_auth));
     println!("  {} Codex auth   ({codex_auth})", file_mark(&codex_auth));
-    println!("  {} OpenCode auth ({opencode_auth})", file_mark(&opencode_auth));
+    println!(
+        "  {} OpenCode auth ({opencode_auth})",
+        file_mark(&opencode_auth)
+    );
 
     println!("\n[설정]");
     println!("  {} OMX AGENTS   ({omx_agents})", file_mark(&omx_agents));
-    println!("  {} OpenCode cfg ({opencode_config})", file_mark(&opencode_config));
+    println!(
+        "  {} OpenCode cfg ({opencode_config})",
+        file_mark(&opencode_config)
+    );
 
     if Path::new(&opencode_config).exists() {
         let content = std::fs::read_to_string(&opencode_config).unwrap_or_default();
         let plugin_ok = content.contains("oh-my-openagent") || content.contains("oh-my-opencode");
-        println!("  {} oh-my-openagent 플러그인", if plugin_ok { "✓" } else { "✗" });
+        println!(
+            "  {} oh-my-openagent 플러그인",
+            if plugin_ok { "✓" } else { "✗" }
+        );
     }
 
     let (ok, auth_list) = common::run_cmd_quiet("opencode", &["auth", "list"]);
@@ -297,22 +333,42 @@ pub fn ai_status() {
     }
 
     println!("\n[공급자 키]");
-    println!("  {} env file ({})", file_mark(&env_path.display().to_string()), env_path.display());
+    println!(
+        "  {} env file ({})",
+        file_mark(&env_path.display().to_string()),
+        env_path.display()
+    );
     println!(
         "  {} GOOGLE_API_KEY",
-        if env_value(&env_pairs, "GOOGLE_API_KEY").is_some() { "✓" } else { "✗" }
+        if env_value(&env_pairs, "GOOGLE_API_KEY").is_some() {
+            "✓"
+        } else {
+            "✗"
+        }
     );
     println!(
         "  {} GEMINI_API_KEY",
-        if env_value(&env_pairs, "GEMINI_API_KEY").is_some() { "✓" } else { "✗" }
+        if env_value(&env_pairs, "GEMINI_API_KEY").is_some() {
+            "✓"
+        } else {
+            "✗"
+        }
     );
     println!(
         "  {} GOOGLE_GENERATIVE_AI_API_KEY",
-        if env_value(&env_pairs, "GOOGLE_GENERATIVE_AI_API_KEY").is_some() { "✓" } else { "✗" }
+        if env_value(&env_pairs, "GOOGLE_GENERATIVE_AI_API_KEY").is_some() {
+            "✓"
+        } else {
+            "✗"
+        }
     );
     println!(
         "  {} MINIMAX_API_KEY",
-        if env_value(&env_pairs, "MINIMAX_API_KEY").is_some() { "✓" } else { "✗" }
+        if env_value(&env_pairs, "MINIMAX_API_KEY").is_some() {
+            "✓"
+        } else {
+            "✗"
+        }
     );
 }
 
@@ -343,7 +399,9 @@ pub fn ai_setup() {
         eprintln!("[ai] OpenCode 설정이 없습니다. oh-my-openagent 설치가 먼저 필요합니다.");
     }
 
-    println!("\n[ai] 현재 Mac에는 Claude/Codex 로컬 인증 파일이 있지만, OpenCode auth는 별도 로그인 상태입니다.");
+    println!(
+        "\n[ai] 현재 Mac에는 Claude/Codex 로컬 인증 파일이 있지만, OpenCode auth는 별도 로그인 상태입니다."
+    );
     println!("[ai] 자세한 상태는 `mai workspace ai-status`로 확인하세요.");
 }
 
@@ -420,7 +478,7 @@ pub fn ai_reinstall_opencode() {
 
     println!("\n[done] OpenCode 재설치 완료");
     println!("[done] 다음 단계: `opencode auth login -p anthropic -m \"Claude Pro/Max\"`");
-    println!("[done] 확인: `mai workspace ai-status`");
+    println!("[done] 확인: `mac-host-commands workspace ai-status`");
 }
 
 pub fn ai_set_provider_keys(google_api_key: Option<&str>, minimax_api_key: Option<&str>) {
@@ -449,7 +507,7 @@ pub fn ai_set_provider_keys(google_api_key: Option<&str>, minimax_api_key: Optio
 
     pairs.sort_by(|a, b| a.0.cmp(&b.0));
 
-    let mut output = String::from("# mai environment\n");
+    let mut output = String::from("# mac-host-commands environment\n");
     for (key, value) in pairs {
         output.push_str(&format!("{key}={value}\n"));
     }
@@ -464,7 +522,10 @@ pub fn ai_set_provider_keys(google_api_key: Option<&str>, minimax_api_key: Optio
         use std::os::unix::fs::PermissionsExt;
         let perms = fs::Permissions::from_mode(0o600);
         if let Err(err) = fs::set_permissions(&env_path, perms) {
-            eprintln!("[ai] 환경파일 권한 설정 실패 ({}): {err}", env_path.display());
+            eprintln!(
+                "[ai] 환경파일 권한 설정 실패 ({}): {err}",
+                env_path.display()
+            );
             std::process::exit(1);
         }
     }

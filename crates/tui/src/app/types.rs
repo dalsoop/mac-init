@@ -27,5 +27,9 @@ pub enum Focus {
 pub enum SidebarItem {
     GroupHeader(String),
     Install,
-    Domain { id: DomainId, label: String, icon: String },
+    Domain {
+        id: DomainId,
+        label: String,
+        icon: String,
+    },
 }

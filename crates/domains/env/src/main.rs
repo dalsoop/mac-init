@@ -37,12 +37,12 @@ enum Commands {
     },
     /// Proxmox Web UI 기본 카드 + .env 값 등록
     SetupProxmox {
+        #[arg(long, default_value = "proxmox50")]
+        name: String,
         #[arg(long, default_value = "192.168.2.50")]
         host: String,
         #[arg(long, default_value = "root")]
         user: String,
-        #[arg(long, default_value = "pam")]
-        realm: String,
         #[arg(long, default_value_t = 8006)]
         web_port: u16,
         #[arg(long)]
@@ -105,15 +105,36 @@ fn main() {
     match cli.command {
         Commands::List => cmd_list(),
         Commands::Show { name } => cmd_show(&name),
-        Commands::Add { name, host, user, port, scheme, password, description } => {
-            cmd_add(&name, &host, &user, port, &scheme, password.as_deref(), description.as_deref())
-        }
-        Commands::SetupProxmox { host, user, realm, web_port, password } => {
-            cmd_setup_proxmox(&host, &user, &realm, web_port, password.as_deref())
-        }
-        Commands::AddRclone { name, remote, path, description } => {
-            cmd_add_rclone(&name, &remote, &path, description.as_deref())
-        }
+        Commands::Add {
+            name,
+            host,
+            user,
+            port,
+            scheme,
+            password,
+            description,
+        } => cmd_add(
+            &name,
+            &host,
+            &user,
+            port,
+            &scheme,
+            password.as_deref(),
+            description.as_deref(),
+        ),
+        Commands::SetupProxmox {
+            name,
+            host,
+            user,
+            web_port,
+            password,
+        } => cmd_setup_proxmox(&name, &host, &user, web_port, password.as_deref()),
+        Commands::AddRclone {
+            name,
+            remote,
+            path,
+            description,
+        } => cmd_add_rclone(&name, &remote, &path, description.as_deref()),
         Commands::Rm { name } => cmd_rm(&name),
         Commands::SetPassword { name, password } => cmd_set_password(&name, password.as_deref()),
         Commands::GetPassword { name } => cmd_get_password(&name),
@@ -138,6 +159,8 @@ struct Card {
     host: String,
     user: String,
     port: u16,
+    #[serde(default)]
+    web_port: u16,
     /// ssh | smb | nfs | afp | webdav | webdavs | ftp | rclone | …
     /// "rclone" 인 경우 host/user/port 는 무시되고 rclone_remote / rclone_path 사용.
     scheme: String,
@@ -158,15 +181,26 @@ struct Card {
     /// 마운트/접속 옵션. SMB/NFS 마운트 시 mount 도메인이 참조.
     #[serde(default)]
     mount_options: MountOptions,
+    /// 카드 기반 자동 마운트 선언.
+    #[serde(default)]
+    mount_entries: Vec<CardMountEntry>,
+    /// 카드 기반 Proxmox bind mount 선언.
+    #[serde(default)]
+    bind_mounts: Vec<CardBindMount>,
 }
-fn default_pw_ref() -> String { "dotenvx:auto".into() }
+fn default_pw_ref() -> String {
+    "dotenvx:auto".into()
+}
 
 /// 카드 이름 → dotenvx 키. password_ref 가 "dotenvx:auto" 면 자동 매핑,
 /// "dotenvx:<EXPLICIT_KEY>" 면 그 키 그대로.
 fn dotenvx_key_for(card: &Card) -> Option<String> {
     let r = &card.password_ref;
     if r == "dotenvx:auto" {
-        Some(format!("{}_PASSWORD", card.name.to_uppercase().replace('-', "_")))
+        Some(format!(
+            "{}_PASSWORD",
+            card.name.to_uppercase().replace('-', "_")
+        ))
     } else if let Some(k) = r.strip_prefix("dotenvx:") {
         Some(k.to_string())
     } else {
@@ -197,7 +231,27 @@ struct MountOptions {
     #[serde(default)]
     wsize: u32,
 }
-fn default_true_opt() -> bool { true }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CardMountEntry {
+    share: String,
+    #[serde(default = "default_true_opt")]
+    enabled: bool,
+    #[serde(default)]
+    alias: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CardBindMount {
+    lxc: String,
+    source: String,
+    target: String,
+    #[serde(default)]
+    readonly: bool,
+}
+fn default_true_opt() -> bool {
+    true
+}
 
 impl Default for MountOptions {
     fn default() -> Self {
@@ -214,21 +268,29 @@ impl Default for MountOptions {
 
 impl MountOptions {
     /// 스킴별 권장 기본값. 추후 NFS 등 분기 가능.
-    fn default_for_scheme(_scheme: &str) -> Self { Self::default() }
+    fn default_for_scheme(_scheme: &str) -> Self {
+        Self::default()
+    }
 }
 
 fn is_mountable_scheme(scheme: &str) -> bool {
-    matches!(scheme, "smb" | "nfs" | "afp" | "webdav" | "webdavs" | "rclone")
+    matches!(
+        scheme,
+        "smb" | "nfs" | "afp" | "webdav" | "webdavs" | "rclone"
+    )
 }
 
-use mac_common::{paths, tui_spec::{self, TuiSpec}};
+use mac_common::{
+    paths,
+    tui_spec::{self, TuiSpec},
+};
 
 fn home() -> String {
     paths::home()
 }
 
 fn cards_dir() -> PathBuf {
-    paths::cards_dir()
+    paths::ssot_cards_dir()
 }
 
 fn card_path(name: &str) -> PathBuf {
@@ -241,7 +303,9 @@ fn keychain_service(name: &str) -> String {
 
 fn load_card(name: &str) -> Option<Card> {
     let p = card_path(name);
-    if !p.exists() { return None; }
+    if !p.exists() {
+        return None;
+    }
     serde_json::from_str(&fs::read_to_string(&p).ok()?).ok()
 }
 
@@ -266,17 +330,26 @@ fn set_mode(p: &std::path::Path, mode: u32) -> std::io::Result<()> {
     fs::set_permissions(p, perm)
 }
 #[cfg(not(unix))]
-fn set_mode(_p: &std::path::Path, _mode: u32) -> std::io::Result<()> { Ok(()) }
+fn set_mode(_p: &std::path::Path, _mode: u32) -> std::io::Result<()> {
+    Ok(())
+}
 
 fn list_cards() -> Vec<Card> {
     let dir = cards_dir();
-    if !dir.exists() { return Vec::new(); }
-    let mut out: Vec<Card> = fs::read_dir(&dir).ok().map(|it| {
-        it.filter_map(|e| e.ok())
-          .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("json"))
-          .filter_map(|e| serde_json::from_str::<Card>(&fs::read_to_string(e.path()).ok()?).ok())
-          .collect()
-    }).unwrap_or_default();
+    if !dir.exists() {
+        return Vec::new();
+    }
+    let mut out: Vec<Card> = fs::read_dir(&dir)
+        .ok()
+        .map(|it| {
+            it.filter_map(|e| e.ok())
+                .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("json"))
+                .filter_map(|e| {
+                    serde_json::from_str::<Card>(&fs::read_to_string(e.path()).ok()?).ok()
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     out.sort_by(|a, b| a.name.cmp(&b.name));
     out
 }
@@ -289,9 +362,12 @@ fn keychain_set(name: &str, password: &str) -> Result<(), String> {
     let status = Command::new("security")
         .args([
             "add-generic-password",
-            "-s", &keychain_service(name),
-            "-a", name,
-            "-w", password,
+            "-s",
+            &keychain_service(name),
+            "-a",
+            name,
+            "-w",
+            password,
             "-U",
         ])
         .output()
@@ -307,12 +383,17 @@ fn keychain_get(name: &str) -> Option<String> {
     let out = Command::new("security")
         .args([
             "find-generic-password",
-            "-s", &keychain_service(name),
-            "-a", name,
+            "-s",
+            &keychain_service(name),
+            "-a",
+            name,
             "-w",
         ])
-        .output().ok()?;
-    if !out.status.success() { return None; }
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
     let pw = String::from_utf8_lossy(&out.stdout).trim().to_string();
     if pw.is_empty() { None } else { Some(pw) }
 }
@@ -321,12 +402,18 @@ fn keychain_delete(name: &str) -> Result<(), String> {
     let out = Command::new("security")
         .args([
             "delete-generic-password",
-            "-s", &keychain_service(name),
-            "-a", name,
+            "-s",
+            &keychain_service(name),
+            "-a",
+            name,
         ])
         .output()
         .map_err(|e| format!("security 실행 실패: {}", e))?;
-    if out.status.success() { Ok(()) } else { Err("keychain 항목 없음".into()) }
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err("keychain 항목 없음".into())
+    }
 }
 
 // === 커맨드 ===
@@ -337,15 +424,39 @@ fn cmd_list() {
         println!("카드 없음. `env import` 로 이관하거나 `env add` 로 추가.");
         return;
     }
-    println!("{:<14} {:<7} {:<20} {:<22} {}", "NAME", "SCHEME", "USER", "HOST:PORT", "PASSWORD");
+    println!(
+        "{:<14} {:<7} {:<20} {:<22} {:<12} {}",
+        "NAME", "SCHEME", "USER", "HOST:PORT", "AUTH", "FEATURES"
+    );
     println!("{}", "─".repeat(80));
     for c in &cards {
         let hp = format!("{}:{}", c.host, c.port);
-        let pw = match dotenvx_key_for(c) {
-            Some(k) => if dotenvx_get(&k).is_some() { "✓ dotenvx" } else { "✗ 없음" },
-            None => "—",
+        let auth = match dotenvx_key_for(c) {
+            Some(k) => {
+                if dotenvx_get(&k).is_some() {
+                    "authenticated"
+                } else {
+                    "unauth"
+                }
+            }
+            None => "n/a",
         };
-        println!("{:<14} {:<7} {:<20} {:<22} {}", c.name, c.scheme, c.user, hp, pw);
+        let mut features = Vec::new();
+        if !c.mount_entries.is_empty() {
+            features.push(format!("mount:{}", c.mount_entries.len()));
+        }
+        if !c.bind_mounts.is_empty() {
+            features.push(format!("bind:{}", c.bind_mounts.len()));
+        }
+        let features = if features.is_empty() {
+            "basic".to_string()
+        } else {
+            features.join(",")
+        };
+        println!(
+            "{:<14} {:<7} {:<20} {:<22} {:<12} {}",
+            c.name, c.scheme, c.user, hp, auth, features
+        );
     }
 }
 
@@ -356,7 +467,21 @@ fn cmd_show(name: &str) {
             println!("{}", serde_json::to_string_pretty(&c).unwrap());
             if let Some(k) = dotenvx_key_for(&c) {
                 let has = dotenvx_get(&k).is_some();
-                eprintln!("비번: {} (key={})", if has { "✓ dotenvx" } else { "✗ 없음 (env set-password 필요)" }, k);
+                eprintln!(
+                    "인증: {} (key={})",
+                    if has {
+                        "authenticated"
+                    } else {
+                        "unauthenticated (env set-password 필요)"
+                    },
+                    k
+                );
+            }
+            if !c.mount_entries.is_empty() {
+                eprintln!("mount entries: {}", c.mount_entries.len());
+            }
+            if !c.bind_mounts.is_empty() {
+                eprintln!("bind mounts: {}", c.bind_mounts.len());
             }
         }
         None => {
@@ -367,8 +492,13 @@ fn cmd_show(name: &str) {
 }
 
 fn cmd_add(
-    name: &str, host: &str, user: &str, port: u16, scheme: &str,
-    password: Option<&str>, description: Option<&str>,
+    name: &str,
+    host: &str,
+    user: &str,
+    port: u16,
+    scheme: &str,
+    password: Option<&str>,
+    description: Option<&str>,
 ) {
     if load_card(name).is_some() {
         eprintln!("✗ 이미 존재: {}. 변경은 edit 또는 set-password 사용", name);
@@ -379,6 +509,7 @@ fn cmd_add(
         host: host.into(),
         user: user.into(),
         port,
+        web_port: 0,
         scheme: scheme.into(),
         description: description.unwrap_or("").into(),
         tags: Vec::new(),
@@ -386,8 +517,13 @@ fn cmd_add(
         rclone_path: String::new(),
         password_ref: "dotenvx:auto".into(),
         mount_options: MountOptions::default_for_scheme(scheme),
+        mount_entries: Vec::new(),
+        bind_mounts: Vec::new(),
     };
-    if let Err(e) = save_card(&card) { eprintln!("✗ {}", e); std::process::exit(1); }
+    if let Err(e) = save_card(&card) {
+        eprintln!("✗ {}", e);
+        std::process::exit(1);
+    }
     if let Some(pw) = password {
         if let Some(k) = dotenvx_key_for(&card) {
             if let Err(e) = dotenvx_set(&k, pw) {
@@ -398,49 +534,101 @@ fn cmd_add(
     println!("✓ 카드 추가: {}", name);
 }
 
-fn cmd_setup_proxmox(host: &str, user: &str, realm: &str, web_port: u16, password: Option<&str>) {
-    let web_card = Card {
-        name: "proxmox".into(),
+fn cmd_setup_proxmox(
+    name: &str,
+    host: &str,
+    user: &str,
+    web_port: u16,
+    password: Option<&str>,
+) {
+    let upper = name.to_uppercase();
+    let (mount_entries, bind_mounts) = if name == "proxmox50" {
+        (
+            vec![
+                CardMountEntry {
+                    share: "/".into(),
+                    enabled: true,
+                    alias: Some("proxmox".into()),
+                },
+                CardMountEntry {
+                    share: "/mnt/synology".into(),
+                    enabled: true,
+                    alias: Some("synology".into()),
+                },
+                CardMountEntry {
+                    share: "/mnt/truenas-organized".into(),
+                    enabled: true,
+                    alias: Some("truenas".into()),
+                },
+            ],
+            vec![
+                CardBindMount {
+                    lxc: "gitlab".into(),
+                    source: "/mnt/truenas-organized".into(),
+                    target: "/mnt/truenas".into(),
+                    readonly: false,
+                },
+                CardBindMount {
+                    lxc: "host-ops".into(),
+                    source: "/mnt/truenas-organized".into(),
+                    target: "/mnt/truenas".into(),
+                    readonly: false,
+                },
+                CardBindMount {
+                    lxc: "infra-control".into(),
+                    source: "/mnt/truenas-organized".into(),
+                    target: "/mnt/truenas".into(),
+                    readonly: false,
+                },
+                CardBindMount {
+                    lxc: "obsidian-bot".into(),
+                    source: "/mnt/truenas-organized".into(),
+                    target: "/mnt/truenas".into(),
+                    readonly: false,
+                },
+                CardBindMount {
+                    lxc: "openclaw".into(),
+                    source: "/mnt/truenas-organized".into(),
+                    target: "/mnt/truenas".into(),
+                    readonly: false,
+                },
+                CardBindMount {
+                    lxc: "outline".into(),
+                    source: "/mnt/truenas-organized".into(),
+                    target: "/mnt/truenas".into(),
+                    readonly: false,
+                },
+            ],
+        )
+    } else {
+        (Vec::new(), Vec::new())
+    };
+    let card = Card {
+        name: name.into(),
         host: host.into(),
         user: user.into(),
         port: web_port,
+        web_port,
         scheme: "https".into(),
         description: "Proxmox VE Web UI".into(),
         tags: vec!["infra".into(), "proxmox".into()],
         rclone_remote: String::new(),
         rclone_path: String::new(),
-        password_ref: "dotenvx:PROXMOX_PASSWORD".into(),
+        password_ref: "dotenvx:auto".into(),
         mount_options: MountOptions::default_for_scheme("https"),
+        mount_entries,
+        bind_mounts,
     };
 
-    let ssh_card = Card {
-        name: "proxmox-ssh".into(),
-        host: host.into(),
-        user: user.into(),
-        port: 22,
-        scheme: "ssh".into(),
-        description: "Proxmox VE SSH".into(),
-        tags: vec!["infra".into(), "proxmox".into(), "mount".into()],
-        rclone_remote: String::new(),
-        rclone_path: String::new(),
-        password_ref: "dotenvx:PROXMOX_PASSWORD".into(),
-        mount_options: MountOptions::default_for_scheme("ssh"),
-    };
-
-    if let Err(e) = save_card(&web_card) {
+    if let Err(e) = save_card(&card) {
         eprintln!("✗ proxmox 카드 저장 실패: {}", e);
-        std::process::exit(1);
-    }
-    if let Err(e) = save_card(&ssh_card) {
-        eprintln!("✗ proxmox-ssh 카드 저장 실패: {}", e);
         std::process::exit(1);
     }
 
     for (key, value) in [
-        ("PROXMOX_HOST", host),
-        ("PROXMOX_USER", user),
-        ("PROXMOX_REALM", realm),
-        ("PROXMOX_WEB_PORT", &web_port.to_string()),
+        (&format!("{}_HOST", upper), host),
+        (&format!("{}_USER", upper), user),
+        (&format!("{}_WEB_PORT", upper), &web_port.to_string()),
     ] {
         if let Err(e) = dotenvx_set(key, value) {
             eprintln!("✗ {} 저장 실패: {}", key, e);
@@ -449,19 +637,22 @@ fn cmd_setup_proxmox(host: &str, user: &str, realm: &str, web_port: u16, passwor
     }
 
     if let Some(pw) = password {
-        if let Err(e) = dotenvx_set("PROXMOX_PASSWORD", pw) {
-            eprintln!("✗ PROXMOX_PASSWORD 저장 실패: {}", e);
+        let pw_key = format!("{}_PASSWORD", upper);
+        if let Err(e) = dotenvx_set(&pw_key, pw) {
+            eprintln!("✗ {} 저장 실패: {}", pw_key, e);
             std::process::exit(1);
         }
     }
 
-    println!("✓ proxmox 등록 완료");
-    println!("  카드: proxmox (https://{}:{})", host, web_port);
-    println!("  카드: proxmox-ssh (ssh://{}@{}:22)", user, host);
-    println!("  realm: {}", realm);
-    println!("  .env : PROXMOX_HOST / PROXMOX_USER / PROXMOX_REALM / PROXMOX_WEB_PORT{}", if password.is_some() { " / PROXMOX_PASSWORD" } else { "" });
-    println!("  열기: mai run env open proxmox");
-    println!("  마운트: mai run mount shares");
+    println!("✓ {} 등록 완료", name);
+    println!("  카드: {} (https://{}:{})", name, host, web_port);
+    let pw_suffix = if password.is_some() {
+        format!(" / {}_PASSWORD", upper)
+    } else {
+        String::new()
+    };
+    println!("  .env : {upper}_HOST / {upper}_USER / {upper}_WEB_PORT{pw_suffix}");
+    println!("  열기: mai run env open {}", name);
 }
 
 fn cmd_add_rclone(name: &str, remote: &str, path: &str, description: Option<&str>) {
@@ -476,7 +667,10 @@ fn cmd_add_rclone(name: &str, remote: &str, path: &str, description: Option<&str
             let s = String::from_utf8_lossy(&o.stdout);
             let target = format!("{}:", remote);
             if !s.lines().any(|l| l.trim() == target) {
-                eprintln!("✗ rclone remote '{}' 미등록. `rclone config` 로 먼저 추가하세요.", remote);
+                eprintln!(
+                    "✗ rclone remote '{}' 미등록. `rclone config` 로 먼저 추가하세요.",
+                    remote
+                );
                 eprintln!("  현재 remote: {}", s.trim().replace('\n', ", "));
                 std::process::exit(1);
             }
@@ -491,6 +685,7 @@ fn cmd_add_rclone(name: &str, remote: &str, path: &str, description: Option<&str
         host: format!("rclone:{}", remote),
         user: String::new(),
         port: 0,
+        web_port: 0,
         scheme: "rclone".into(),
         description: description.unwrap_or("").into(),
         tags: vec!["cloud".into()],
@@ -498,8 +693,13 @@ fn cmd_add_rclone(name: &str, remote: &str, path: &str, description: Option<&str
         rclone_path: path.into(),
         password_ref: "none".into(), // rclone config 가 자체 관리
         mount_options: MountOptions::default(),
+        mount_entries: Vec::new(),
+        bind_mounts: Vec::new(),
     };
-    if let Err(e) = save_card(&card) { eprintln!("✗ {}", e); std::process::exit(1); }
+    if let Err(e) = save_card(&card) {
+        eprintln!("✗ {}", e);
+        std::process::exit(1);
+    }
     println!("✓ rclone 카드 추가: {} → {}:{}", name, remote, path);
 }
 
@@ -510,7 +710,10 @@ fn cmd_rm(name: &str) {
         std::process::exit(1);
     }
     let card = load_card(name);
-    if let Err(e) = fs::remove_file(&p) { eprintln!("✗ {}", e); std::process::exit(1); }
+    if let Err(e) = fs::remove_file(&p) {
+        eprintln!("✗ {}", e);
+        std::process::exit(1);
+    }
     if let Some(c) = card.as_ref() {
         if let Some(k) = dotenvx_key_for(c) {
             let _ = dotenvx_unset(&k);
@@ -534,14 +737,20 @@ fn cmd_set_password(name: &str, pw_arg: Option<&str>) {
             buf.trim().to_string()
         }
     };
-    if pw.is_empty() { eprintln!("✗ 빈 비번"); std::process::exit(1); }
+    if pw.is_empty() {
+        eprintln!("✗ 빈 비번");
+        std::process::exit(1);
+    }
     let Some(key) = dotenvx_key_for(&card) else {
         eprintln!("✗ 카드의 password_ref 가 dotenvx 가 아님");
         std::process::exit(1);
     };
     match dotenvx_set(&key, &pw) {
         Ok(()) => println!("✓ dotenvx 저장: {}={}", key, "***"),
-        Err(e) => { eprintln!("✗ {}", e); std::process::exit(1); }
+        Err(e) => {
+            eprintln!("✗ {}", e);
+            std::process::exit(1);
+        }
     }
 }
 
@@ -553,7 +762,10 @@ fn cmd_get_password(name: &str) {
     let pw = dotenvx_key_for(&card).and_then(|k| dotenvx_get(&k));
     match pw {
         Some(p) => print!("{}", p),
-        None => { eprintln!("✗ 비번 없음"); std::process::exit(2); }
+        None => {
+            eprintln!("✗ 비번 없음");
+            std::process::exit(2);
+        }
     }
 }
 
@@ -616,7 +828,10 @@ fn cmd_set_option(name: &str, key: &str, value: &str) {
             let v: bool = match value.to_ascii_lowercase().as_str() {
                 "true" | "1" | "on" | "yes" => true,
                 "false" | "0" | "off" | "no" => false,
-                _ => { eprintln!("✗ value 는 true|false"); std::process::exit(1); }
+                _ => {
+                    eprintln!("✗ value 는 true|false");
+                    std::process::exit(1);
+                }
             };
             match key {
                 "readonly" => opts.readonly = v,
@@ -632,8 +847,16 @@ fn cmd_set_option(name: &str, key: &str, value: &str) {
                 eprintln!("✗ {} 은 정수 (bytes). 0 = OS 기본", key);
                 std::process::exit(1);
             });
-            if key == "rsize" { opts.rsize = n; } else { opts.wsize = n; }
-            display_value = if n == 0 { "0 (OS 기본)".into() } else { n.to_string() };
+            if key == "rsize" {
+                opts.rsize = n;
+            } else {
+                opts.wsize = n;
+            }
+            display_value = if n == 0 {
+                "0 (OS 기본)".into()
+            } else {
+                n.to_string()
+            };
         }
         _ => {
             eprintln!("✗ key 는 readonly|noappledouble|soft|nobrowse|rsize|wsize");
@@ -641,7 +864,10 @@ fn cmd_set_option(name: &str, key: &str, value: &str) {
         }
     }
     card.mount_options = opts;
-    if let Err(e) = save_card(&card) { eprintln!("✗ {}", e); std::process::exit(1); }
+    if let Err(e) = save_card(&card) {
+        eprintln!("✗ {}", e);
+        std::process::exit(1);
+    }
     println!("✓ {} {}={}", name, key, display_value);
 
     // 현재 마운트된 share 가 있으면 자동 재마운트 (옵션 즉시 적용).
@@ -664,16 +890,26 @@ fn remount_active_shares(card_name: &str) -> usize {
     let mut count = 0;
     for line in stdout.lines() {
         // 예: //ai@192.168.2.15/works on /Users/jeonghan/NAS/synology/works (smbfs, ...)
-        let Some(on_idx) = line.find(" on ") else { continue; };
+        let Some(on_idx) = line.find(" on ") else {
+            continue;
+        };
         let mp = &line[on_idx + 4..];
-        let Some(paren) = mp.find(" (") else { continue; };
+        let Some(paren) = mp.find(" (") else {
+            continue;
+        };
         let mp_path = &mp[..paren];
-        if !mp_path.starts_with(&nas_prefix) { continue; }
-        let Some(share) = mp_path.strip_prefix(&nas_prefix) else { continue; };
+        if !mp_path.starts_with(&nas_prefix) {
+            continue;
+        }
+        let Some(share) = mp_path.strip_prefix(&nas_prefix) else {
+            continue;
+        };
 
         // unmount 후 재마운트
         let _ = Command::new(&mount_bin).args(["unmount", mp_path]).status();
-        let _ = Command::new(&mount_bin).args(["mount", card_name, share]).status();
+        let _ = Command::new(&mount_bin)
+            .args(["mount", card_name, share])
+            .status();
         count += 1;
     }
     count
@@ -686,7 +922,9 @@ fn mount_binary() -> PathBuf {
         PathBuf::from("./target/release/mac-domain-mount"),
     ];
     for c in &candidates {
-        if c.exists() { return c.clone(); }
+        if c.exists() {
+            return c.clone();
+        }
     }
     PathBuf::from("mac-domain-mount")
 }
@@ -700,7 +938,10 @@ fn cmd_import() {
     let content = fs::read_to_string(&conn_path).unwrap_or_default();
     let json: serde_json::Value = match serde_json::from_str(&content) {
         Ok(v) => v,
-        Err(e) => { eprintln!("✗ JSON 파싱 실패: {}", e); std::process::exit(1); }
+        Err(e) => {
+            eprintln!("✗ JSON 파싱 실패: {}", e);
+            std::process::exit(1);
+        }
     };
     let Some(services) = json.get("services").and_then(|v| v.as_array()) else {
         eprintln!("✗ services[] 없음");
@@ -716,7 +957,9 @@ fn cmd_import() {
         let host = s.get("host").and_then(|v| v.as_str()).unwrap_or("");
         let user = s.get("user").and_then(|v| v.as_str()).unwrap_or("");
         let port = s.get("port").and_then(|v| v.as_u64()).unwrap_or(22) as u16;
-        if name.is_empty() { continue; }
+        if name.is_empty() {
+            continue;
+        }
         if load_card(name).is_some() {
             skipped += 1;
             continue;
@@ -731,13 +974,17 @@ fn cmd_import() {
             (_, p) => p,
         };
         if effective_port != port {
-            eprintln!("  ↻ {} port 보정: {} → {} ({})", name, port, effective_port, scheme);
+            eprintln!(
+                "  ↻ {} port 보정: {} → {} ({})",
+                name, port, effective_port, scheme
+            );
         }
         let card = Card {
             name: name.into(),
             host: host.into(),
             user: user.into(),
             port: effective_port,
+            web_port: 0,
             scheme: scheme.into(),
             description: format!("imported from connections.json"),
             tags: vec!["imported".into()],
@@ -745,6 +992,8 @@ fn cmd_import() {
             rclone_path: String::new(),
             password_ref: "dotenvx:auto".into(),
             mount_options: MountOptions::default_for_scheme(scheme),
+            mount_entries: Vec::new(),
+            bind_mounts: Vec::new(),
         };
         if let Err(e) = save_card(&card) {
             eprintln!("✗ {} 카드 저장 실패: {}", name, e);
@@ -758,9 +1007,15 @@ fn cmd_import() {
             with_pw += 1;
         }
 
-        println!("  ✓ {} ({}@{}:{} / {})", name, user, host, effective_port, scheme);
+        println!(
+            "  ✓ {} ({}@{}:{} / {})",
+            name, user, host, effective_port, scheme
+        );
     }
-    println!("\nimport: 생성 {}, 이미 있음 {}, dotenvx 비번 매칭 {}", created, skipped, with_pw);
+    println!(
+        "\nimport: 생성 {}, 이미 있음 {}, dotenvx 비번 매칭 {}",
+        created, skipped, with_pw
+    );
 }
 
 /// 포트 기반 1차 추정. 비표준 포트면 host 에 SMB(445)/SSH(22) TCP 프로브.
@@ -775,7 +1030,9 @@ fn guess_scheme(host: &str, port: u16) -> &'static str {
     }
     // 비정형 포트: 445 → 22 순으로 프로브
     for (p, s) in [(445u16, "smb"), (22u16, "ssh")] {
-        if probe_tcp(host, p) { return s; }
+        if probe_tcp(host, p) {
+            return s;
+        }
     }
     "ssh"
 }
@@ -798,11 +1055,16 @@ fn env_file() -> PathBuf {
 
 fn dotenvx_get(key: &str) -> Option<String> {
     let p = env_file();
-    if !p.exists() { return None; }
+    if !p.exists() {
+        return None;
+    }
     let out = Command::new("dotenvx")
         .args(["get", key, "-f", &p.to_string_lossy()])
-        .output().ok()?;
-    if !out.status.success() { return None; }
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
     let v = String::from_utf8_lossy(&out.stdout).trim().to_string();
     if v.is_empty() { None } else { Some(v) }
 }
@@ -817,7 +1079,12 @@ fn dotenvx_set(key: &str, value: &str) -> Result<(), String> {
     let out = Command::new("dotenvx")
         .args(["set", key, value, "-f", &p.to_string_lossy(), "--encrypt"])
         .output()
-        .map_err(|e| format!("dotenvx 실행 실패: {} (brew install dotenvx/brew/dotenvx)", e))?;
+        .map_err(|e| {
+            format!(
+                "dotenvx 실행 실패: {} (brew install dotenvx/brew/dotenvx)",
+                e
+            )
+        })?;
     if !out.status.success() {
         return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
     }
@@ -827,7 +1094,9 @@ fn dotenvx_set(key: &str, value: &str) -> Result<(), String> {
 
 fn dotenvx_unset(key: &str) -> Result<(), String> {
     let p = env_file();
-    if !p.exists() { return Ok(()); }
+    if !p.exists() {
+        return Ok(());
+    }
     let out = Command::new("dotenvx")
         .args(["set", key, "", "-f", &p.to_string_lossy()])
         .output()
@@ -845,19 +1114,30 @@ fn cmd_test(name: &str) {
         eprintln!("✗ 카드 '{}' 없음", name);
         std::process::exit(1);
     };
-    println!("{} ({}://{}@{}:{}) 테스트 중...", card.name, card.scheme, card.user, card.host, card.port);
+    println!(
+        "{} ({}://{}@{}:{}) 테스트 중...",
+        card.name, card.scheme, card.user, card.host, card.port
+    );
     let ok = test_card(&card);
-    if !ok { std::process::exit(2); }
+    if !ok {
+        std::process::exit(2);
+    }
 }
 
 fn cmd_test_all() {
     let cards = list_cards();
-    if cards.is_empty() { println!("카드 없음."); return; }
+    if cards.is_empty() {
+        println!("카드 없음.");
+        return;
+    }
     println!("=== 연결 상태 ===\n");
     for card in &cards {
         let ok = test_card(card);
         let icon = if ok { "✓" } else { "✗" };
-        println!("  {} {:<15} {}://{}@{}:{}", icon, card.name, card.scheme, card.user, card.host, card.port);
+        println!(
+            "  {} {:<15} {}://{}@{}:{}",
+            icon, card.name, card.scheme, card.user, card.host, card.port
+        );
     }
 }
 
@@ -866,12 +1146,22 @@ fn test_card(card: &Card) -> bool {
     // 1) SSH 포트면 SSH BatchMode 시도
     if card.port == 22 || card.scheme == "ssh" {
         let ssh = Command::new("ssh")
-            .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=3",
-                   "-p", &card.port.to_string(),
-                   &format!("{}@{}", card.user, card.host), "echo ok"])
+            .args([
+                "-o",
+                "BatchMode=yes",
+                "-o",
+                "ConnectTimeout=3",
+                "-p",
+                &card.port.to_string(),
+                &format!("{}@{}", card.user, card.host),
+                "echo ok",
+            ])
             .output();
         if let Ok(o) = ssh {
-            if o.status.success() { println!("  ✓ SSH OK"); return true; }
+            if o.status.success() {
+                println!("  ✓ SSH OK");
+                return true;
+            }
         }
     }
 
@@ -889,7 +1179,9 @@ fn test_card(card: &Card) -> bool {
     }
 
     // 3) Fallback: ping
-    let ping = Command::new("ping").args(["-c", "1", "-W", "2000", &card.host]).output();
+    let ping = Command::new("ping")
+        .args(["-c", "1", "-W", "2000", &card.host])
+        .output();
     if ping.map(|o| o.status.success()).unwrap_or(false) {
         println!("  ✓ ping OK (TCP 포트 {}는 닫힘)", card.port);
         return true;
@@ -905,7 +1197,8 @@ fn cmd_status() {
     let cards = list_cards();
     println!("=== Env Status ===\n");
     println!("카드 {}개", cards.len());
-    let mut with = 0usize; let mut without = 0usize;
+    let mut with = 0usize;
+    let mut without = 0usize;
     for c in &cards {
         match dotenvx_key_for(c) {
             Some(k) if dotenvx_get(&k).is_some() => with += 1,
@@ -918,22 +1211,29 @@ fn cmd_status() {
     // 권한 점검
     let perms = audit_permissions();
     if !perms.is_empty() {
-        println!("\n⚠ 권한 부적합 ({}개 — `env fix-perms` 로 0600 적용):", perms.len());
-        for p in perms.iter().take(5) { println!("  • {}", p); }
+        println!(
+            "\n⚠ 권한 부적합 ({}개 — `env fix-perms` 로 0600 적용):",
+            perms.len()
+        );
+        for p in perms.iter().take(5) {
+            println!("  • {}", p);
+        }
     } else if !cards.is_empty() {
         println!("  • 파일 권한:    ✓ 0600");
     }
 
     let conn_path = PathBuf::from(home()).join(".mac-app-init/connections.json");
     if conn_path.exists() {
-        println!("\n⚠ legacy {} 존재 — `env import` 권장", conn_path.display());
+        println!(
+            "\n⚠ legacy {} 존재 — `env import` 권장",
+            conn_path.display()
+        );
     }
 
     let proxmox_host = dotenvx_get("PROXMOX_HOST");
     let proxmox_user = dotenvx_get("PROXMOX_USER");
-    let proxmox_realm = dotenvx_get("PROXMOX_REALM");
     let proxmox_port = dotenvx_get("PROXMOX_WEB_PORT");
-    if proxmox_host.is_some() || proxmox_user.is_some() || proxmox_realm.is_some() || proxmox_port.is_some() {
+    if proxmox_host.is_some() || proxmox_user.is_some() || proxmox_port.is_some() {
         println!("\n[proxmox]");
         println!(
             "  • web ui: https://{}:{}",
@@ -945,12 +1245,12 @@ fn cmd_status() {
             proxmox_user.as_deref().unwrap_or("미설정"),
         );
         println!(
-            "  • realm:  {}",
-            proxmox_realm.as_deref().unwrap_or("pam"),
-        );
-        println!(
             "  • 비번:   {}",
-            if dotenvx_get("PROXMOX_PASSWORD").is_some() { "✓ dotenvx" } else { "✗ 없음" },
+            if dotenvx_get("PROXMOX_PASSWORD").is_some() {
+                "✓ dotenvx"
+            } else {
+                "✗ 없음"
+            },
         );
     }
 }
@@ -960,12 +1260,16 @@ fn audit_permissions() -> Vec<String> {
     {
         use std::os::unix::fs::PermissionsExt;
         let dir = cards_dir();
-        if !dir.exists() { return Vec::new(); }
+        if !dir.exists() {
+            return Vec::new();
+        }
         let mut bad = Vec::new();
         if let Ok(it) = fs::read_dir(&dir) {
             for e in it.filter_map(|x| x.ok()) {
                 let path = e.path();
-                if path.extension().and_then(|s| s.to_str()) != Some("json") { continue; }
+                if path.extension().and_then(|s| s.to_str()) != Some("json") {
+                    continue;
+                }
                 if let Ok(meta) = fs::metadata(&path) {
                     let mode = meta.permissions().mode() & 0o777;
                     if mode != 0o600 {
@@ -977,12 +1281,16 @@ fn audit_permissions() -> Vec<String> {
         bad
     }
     #[cfg(not(unix))]
-    { Vec::new() }
+    {
+        Vec::new()
+    }
 }
 
 fn cmd_migrate_from_keychain() {
     let cards = list_cards();
-    let mut moved = 0; let mut skipped = 0; let mut failed = 0;
+    let mut moved = 0;
+    let mut skipped = 0;
+    let mut failed = 0;
     for mut c in cards {
         // legacy: password_ref == "keychain" 이거나, dotenvx 키에 비번이 없는데
         // keychain 에는 있는 경우.
@@ -1026,7 +1334,10 @@ fn cmd_migrate_from_keychain() {
         println!("  ✓ {} → dotenvx ({})", c.name, dx_key);
         moved += 1;
     }
-    println!("\nmigrate: 이관 {}, skip {}, 실패 {}", moved, skipped, failed);
+    println!(
+        "\nmigrate: 이관 {}, skip {}, 실패 {}",
+        moved, skipped, failed
+    );
 }
 
 fn cmd_cleanup(apply: bool) {
@@ -1038,7 +1349,9 @@ fn cmd_cleanup(apply: bool) {
     ];
     let mut found = 0;
     for p in &candidates {
-        if !p.exists() { continue; }
+        if !p.exists() {
+            continue;
+        }
         found += 1;
         if apply {
             match fs::remove_file(p) {
@@ -1063,8 +1376,12 @@ fn cmd_fix_perms() {
     if let Ok(it) = fs::read_dir(&dir) {
         for e in it.filter_map(|x| x.ok()) {
             let path = e.path();
-            if path.extension().and_then(|s| s.to_str()) != Some("json") { continue; }
-            if set_mode(&path, 0o600).is_ok() { fixed += 1; }
+            if path.extension().and_then(|s| s.to_str()) != Some("json") {
+                continue;
+            }
+            if set_mode(&path, 0o600).is_ok() {
+                fixed += 1;
+            }
         }
     }
     println!("✓ {} 개 카드 파일 권한 0600 적용 (디렉터리 0700)", fixed);
@@ -1072,24 +1389,29 @@ fn cmd_fix_perms() {
 
 fn print_tui_spec() {
     let cards = list_cards();
-    let items: Vec<serde_json::Value> = cards.iter().map(|c| {
-        let has_pw = dotenvx_key_for(c).is_some_and(|k| dotenvx_get(&k).is_some());
-        let mo = &c.mount_options;
-        let mountable = is_mountable_scheme(&c.scheme);
-        let kind = if mountable { "mount" } else { "service" };
-        tui_spec::kv_item_data(&c.name,
-            &format!("{}://{}@{}:{} [{}]", c.scheme, c.user, c.host, c.port, kind),
-            if has_pw { "ok" } else { "warn" },
-            serde_json::json!({
-                "name": c.name,
-                "scheme": c.scheme,
-                "mountable": mountable.to_string(),
-                "readonly": mo.readonly.to_string(),
-                "noappledouble": mo.noappledouble.to_string(),
-                "soft": mo.soft.to_string(),
-                "nobrowse": mo.nobrowse.to_string(),
-            }))
-    }).collect();
+    let items: Vec<serde_json::Value> = cards
+        .iter()
+        .map(|c| {
+            let has_pw = dotenvx_key_for(c).is_some_and(|k| dotenvx_get(&k).is_some());
+            let mo = &c.mount_options;
+            let mountable = is_mountable_scheme(&c.scheme);
+            let kind = if mountable { "mount" } else { "service" };
+            tui_spec::kv_item_data(
+                &c.name,
+                &format!("{}://{}@{}:{} [{}]", c.scheme, c.user, c.host, c.port, kind),
+                if has_pw { "ok" } else { "warn" },
+                serde_json::json!({
+                    "name": c.name,
+                    "scheme": c.scheme,
+                    "mountable": mountable.to_string(),
+                    "readonly": mo.readonly.to_string(),
+                    "noappledouble": mo.noappledouble.to_string(),
+                    "soft": mo.soft.to_string(),
+                    "nobrowse": mo.nobrowse.to_string(),
+                }),
+            )
+        })
+        .collect();
 
     let usage_active = !cards.is_empty();
     let usage_summary = format!("카드 {}개", cards.len());

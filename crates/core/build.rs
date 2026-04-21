@@ -18,7 +18,10 @@ fn main() {
 
     // Register valid cfg values (suppresses warnings)
     let all_values: Vec<String> = domain_names.iter().map(|n| format!("\"{}\"", n)).collect();
-    println!("cargo::rustc-check-cfg=cfg(domain, values({}))", all_values.join(", "));
+    println!(
+        "cargo::rustc-check-cfg=cfg(domain, values({}))",
+        all_values.join(", ")
+    );
 
     // Set cfg for each detected domain
     for name in &domain_names {

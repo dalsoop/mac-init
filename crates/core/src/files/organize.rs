@@ -1,11 +1,11 @@
+use std::fs;
 use std::path::Path;
 use std::process::Command;
-use std::fs;
 
-use crate::common;
 use super::home;
 use super::rename::classify_file;
 use super::rename::format_filename;
+use crate::common;
 
 pub fn organize() {
     let h = home();
@@ -65,12 +65,24 @@ pub fn cleanup_temp() {
     println!("[files] 임시 폴더 정리 (30일 이상)...\n");
 
     let output = Command::new("find")
-        .args([&temp_dir, "-maxdepth", "1", "-mtime", "+30", "-not", "-name", ".DS_Store"])
+        .args([
+            &temp_dir,
+            "-maxdepth",
+            "1",
+            "-mtime",
+            "+30",
+            "-not",
+            "-name",
+            ".DS_Store",
+        ])
         .output()
         .expect("find 실행 실패");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let old_files: Vec<&str> = stdout.lines().filter(|l| !l.is_empty() && *l != temp_dir).collect();
+    let old_files: Vec<&str> = stdout
+        .lines()
+        .filter(|l| !l.is_empty() && *l != temp_dir)
+        .collect();
 
     if old_files.is_empty() {
         println!("  30일 이상 된 파일 없음");
@@ -81,7 +93,11 @@ pub fn cleanup_temp() {
     common::ensure_dir(Path::new(&archive_dir));
 
     for f in &old_files {
-        let name = Path::new(f).file_name().unwrap().to_string_lossy().to_string();
+        let name = Path::new(f)
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
         let dest = format!("{archive_dir}/{name}");
         fs::rename(f, &dest).ok();
         println!("  {name} → 아카이브/임시정리/");
@@ -102,7 +118,8 @@ pub fn setup_auto() {
     // CLI 바이너리를 직접 호출 (shell 스크립트 불필요)
     let bin = which_bin();
 
-    let plist = format!(r#"<?xml version="1.0" encoding="UTF-8"?>
+    let plist = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -126,18 +143,28 @@ pub fn setup_auto() {
     <key>StandardErrorPath</key>
     <string>{home}/문서/시스템/로그/file-organizer.log</string>
 </dict>
-</plist>"#, bin = bin, home = h);
+</plist>"#,
+        bin = bin,
+        home = h
+    );
 
     common::ensure_dir(Path::new(&format!("{h}/문서/시스템/로그")));
     fs::write(&plist_path, plist).expect("LaunchAgent 생성 실패");
-    let _ = Command::new("launchctl").args(["load", &plist_path]).status();
+    let _ = Command::new("launchctl")
+        .args(["load", &plist_path])
+        .status();
 
     println!("[files] 자동 정리 설정 완료");
-    println!("  매일 09:00 실행 (mai run files organize + mai run files cleanup-temp)");
+    println!("  매일 09:00 실행 (mac-host-commands files organize + cleanup-temp)");
 }
 
 fn which_bin() -> String {
-    common::manager_bin().display().to_string()
+    let (ok, stdout) = common::run_cmd_quiet("which", &["mac-host-commands"]);
+    if ok {
+        stdout.trim().to_string()
+    } else {
+        format!("{}/.cargo/bin/mac-host-commands", home())
+    }
 }
 
 pub fn disable_auto() {
@@ -149,7 +176,9 @@ pub fn disable_auto() {
         return;
     }
 
-    let _ = Command::new("launchctl").args(["unload", &plist_path]).status();
+    let _ = Command::new("launchctl")
+        .args(["unload", &plist_path])
+        .status();
     fs::remove_file(&plist_path).ok();
     println!("[files] 자동 정리 비활성화 완료");
 }

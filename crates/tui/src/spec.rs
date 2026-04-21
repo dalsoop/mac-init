@@ -79,7 +79,9 @@ pub struct KeyBinding {
     pub reload: bool,
 }
 
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TabInfo {

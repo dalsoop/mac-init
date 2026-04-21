@@ -10,7 +10,8 @@ pub fn resolve_template(template: &str, data: &HashMap<String, String>) -> Strin
         out.push_str(&rest[..start]);
         let after = &rest[start + 2..];
         let Some(end) = after.find('}') else {
-            out.push_str("${"); out.push_str(after);
+            out.push_str("${");
+            out.push_str(after);
             rest = "";
             break;
         };
@@ -22,7 +23,9 @@ pub fn resolve_template(template: &str, data: &HashMap<String, String>) -> Strin
             let cur = data.get(field).map(|s| s.as_str()).unwrap_or("false");
             out.push_str(if cur == "true" { "false" } else { "true" });
         } else {
-            out.push_str("${"); out.push_str(expr); out.push('}');
+            out.push_str("${");
+            out.push_str(expr);
+            out.push('}');
         }
     }
     out.push_str(rest);

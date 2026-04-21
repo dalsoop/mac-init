@@ -165,8 +165,22 @@ pub fn remove() -> Result<Vec<String>, String> {
 pub fn print_status() {
     let s = get_status();
     println!("=== 키보드 설정 ===\n");
-    println!("[Caps Lock → F18] {}", if s.mapping_active { "✓ 적용됨 (hidutil)" } else { "✗ 미적용" });
-    println!("[부팅 시 자동 적용] {}", if s.launch_agent_exists { "✓ LaunchAgent 등록됨" } else { "✗ LaunchAgent 없음" });
+    println!(
+        "[Caps Lock → F18] {}",
+        if s.mapping_active {
+            "✓ 적용됨 (hidutil)"
+        } else {
+            "✗ 미적용"
+        }
+    );
+    println!(
+        "[부팅 시 자동 적용] {}",
+        if s.launch_agent_exists {
+            "✓ LaunchAgent 등록됨"
+        } else {
+            "✗ LaunchAgent 없음"
+        }
+    );
     if s.karabiner_installed {
         println!("[Karabiner] ⚠ 아직 설치되어 있음 (hidutil 사용 시 불필요)");
     } else {
@@ -181,7 +195,9 @@ pub fn print_setup() {
     println!("=== 키보드 설정: Caps Lock → F18 (한영 전환) ===\n");
     match setup() {
         Ok(logs) => {
-            for l in &logs { println!("  ✓ {}", l); }
+            for l in &logs {
+                println!("  ✓ {}", l);
+            }
             println!("\n=== 완료 ===");
         }
         Err(e) => println!("  ✗ {}", e),
@@ -192,7 +208,9 @@ pub fn print_remove() {
     println!("=== 키보드 매핑 제거 ===\n");
     match remove() {
         Ok(logs) => {
-            for l in &logs { println!("  ✓ {}", l); }
+            for l in &logs {
+                println!("  ✓ {}", l);
+            }
             println!("\n=== 완료 ===");
         }
         Err(e) => println!("  ✗ {}", e),

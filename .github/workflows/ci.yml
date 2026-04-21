@@ -30,6 +30,9 @@ jobs:
       - name: cargo check (workspace)
         run: cargo check --workspace
 
+      - name: cargo test (mount domain)
+        run: cargo test -p mac-domain-mount
+
       - name: install-local smoke (manager + proxmox flow)
         run: |
           bash scripts/install-local.sh manager env proxmox
@@ -54,3 +57,6 @@ jobs:
 
       - name: Eval ncl/domains.ncl
         run: nickel eval ncl/domains.ncl > /dev/null
+
+      - name: Eval ncl/cards.ncl
+        run: nickel eval ncl/cards.ncl > /dev/null

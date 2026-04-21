@@ -1,5 +1,6 @@
 ---
 source: crates/tui/tests/tui_e2e.rs
+assertion_line: 436
 expression: output
 ---
 "┌ mac-app-init ────────┐┌ 도메인 현황 — 14/14 설치됨 ──────────────────────────┐" Hidden by multi-width symbols: [(27, " "), (29, " "), (31, " "), (34, " "), (36, " "), (47, " "), (49, " "), (51, " ")]
@@ -17,8 +18,8 @@ expression: output
 "│ 개발                 ││Enter/Space: 설치 또는 제거                           │" Hidden by multi-width symbols: [(3, " "), (5, " "), (39, " "), (41, " "), (44, " "), (46, " "), (49, " "), (51, " ")]
 "│   🔱 Git 설정        ││r: 새로고침                                           │" Hidden by multi-width symbols: [(5, " "), (12, " "), (14, " "), (29, " "), (31, " "), (33, " "), (35, " ")]
 "│   💻 VSCode          ││                                                      │" Hidden by multi-width symbols: [(5, " ")]
-"│   📦 컨테이너        ││현재 설치: 14개                                       │" Hidden by multi-width symbols: [(5, " "), (8, " "), (10, " "), (12, " "), (14, " "), (26, " "), (28, " "), (31, " "), (33, " "), (39, " ")]
-"│ Finder               ││사용 가능 목록: 14개                                  │" Hidden by multi-width symbols: [(26, " "), (28, " "), (31, " "), (33, " "), (36, " "), (38, " "), (44, " ")]
+"│   📦 컨테이너        ││카드: enabled 0 / disabled 0                          │" Hidden by multi-width symbols: [(5, " "), (8, " "), (10, " "), (12, " "), (14, " "), (26, " "), (28, " ")]
+"│ Finder               ││카드 없음                                             │" Hidden by multi-width symbols: [(26, " "), (28, " "), (31, " "), (33, " ")]
 "│   ⚡ 빠른동작        ││                                                      │" Hidden by multi-width symbols: [(5, " "), (8, " "), (10, " "), (12, " "), (14, " ")]
 "└──────────────────────┘└──────────────────────────────────────────────────────┘"
 "↑↓ 이동 │ Enter/→ 선택 │ r 새로고침 │ Esc 종료                                  " Hidden by multi-width symbols: [(4, " "), (6, " "), (19, " "), (21, " "), (28, " "), (30, " "), (32, " "), (34, " "), (43, " "), (45, " ")]

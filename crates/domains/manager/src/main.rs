@@ -1,8 +1,8 @@
 use clap::{Parser, Subcommand};
-use mac_common::paths;
 use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 const GITHUB_REPO: &str = "dalsoop/mac-app-init";
@@ -41,11 +41,16 @@ enum Commands {
     /// 도메인 실행 (mai run keyboard status)
     Run {
         name: String,
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true, num_args = 0..)]
         args: Vec<String>,
     },
     /// LXC/호스트에 SSH 접속 (mai ssh gitlab, mai ssh proxmox)
     Ssh { target: String },
+    /// 카드 SSOT 관리
+    Card {
+        #[command(subcommand)]
+        action: CardAction,
+    },
     /// 스케줄 tick (LaunchAgent에서 매분 호출 — 내부용)
     Tick,
     /// 스케줄 작업 목록
@@ -63,6 +68,93 @@ enum Commands {
     ScheduleRemove { name: String },
     /// 스케줄 작업 토글
     ScheduleToggle { name: String },
+}
+
+#[derive(Subcommand)]
+enum CardAction {
+    /// 카드 목록
+    List {
+        #[arg(long)]
+        all: bool,
+    },
+    /// 카드 상세
+    Show { name: String },
+    /// 카드 활성화
+    Enable { name: String },
+    /// 카드 비활성화
+    Disable { name: String },
+    /// 카드 mount 항목 관리
+    Mount {
+        #[command(subcommand)]
+        action: CardMountAction,
+    },
+    /// 카드 bind 항목 관리
+    Bind {
+        #[command(subcommand)]
+        action: CardBindAction,
+    },
+    /// 카드 mount entry 추가
+    #[command(hide = true)]
+    MountAdd {
+        card: String,
+        share: String,
+        #[arg(long)]
+        alias: Option<String>,
+    },
+    /// 카드 mount entry 제거
+    #[command(hide = true)]
+    MountRemove {
+        card: String,
+        share: String,
+    },
+    /// 카드 bind entry 추가
+    #[command(hide = true)]
+    BindAdd {
+        card: String,
+        lxc: String,
+        source: String,
+        target: String,
+        #[arg(long)]
+        readonly: bool,
+    },
+    /// 카드 bind entry 제거
+    #[command(hide = true)]
+    BindRemove {
+        card: String,
+        lxc: String,
+        target: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum CardMountAction {
+    Add {
+        card: String,
+        share: String,
+        #[arg(long)]
+        alias: Option<String>,
+    },
+    Remove {
+        card: String,
+        share: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum CardBindAction {
+    Add {
+        card: String,
+        lxc: String,
+        source: String,
+        target: String,
+        #[arg(long)]
+        readonly: bool,
+    },
+    Remove {
+        card: String,
+        lxc: String,
+        target: String,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -88,6 +180,303 @@ fn registry_path() -> PathBuf {
     domains_dir().join("registry.json")
 }
 
+fn enabled_cards_dir() -> PathBuf {
+    mac_common::paths::ssot_enabled_cards_dir()
+}
+
+fn disabled_cards_dir() -> PathBuf {
+    mac_common::paths::ssot_disabled_cards_dir()
+}
+
+fn enabled_card_path(name: &str) -> PathBuf {
+    enabled_cards_dir().join(format!("{}.json", name))
+}
+
+fn disabled_card_path(name: &str) -> PathBuf {
+    disabled_cards_dir().join(format!("{}.json", name))
+}
+
+fn card_path(name: &str) -> PathBuf {
+    if enabled_card_path(name).exists() {
+        enabled_card_path(name)
+    } else if disabled_card_path(name).exists() {
+        disabled_card_path(name)
+    } else {
+        enabled_card_path(name)
+    }
+}
+
+fn list_cards(all: bool) -> Vec<String> {
+    let mut cards = Vec::new();
+    let dirs = if all {
+        mac_common::paths::ssot_all_cards_dirs()
+    } else {
+        vec![enabled_cards_dir()]
+    };
+    for dir in dirs {
+        if let Ok(it) = fs::read_dir(dir) {
+            for e in it.filter_map(|x| x.ok()) {
+                if e.path().extension().and_then(|s| s.to_str()) != Some("json") {
+                    continue;
+                }
+                if let Some(stem) = e.path().file_stem().and_then(|s| s.to_str()) {
+                    cards.push(stem.to_string());
+                }
+            }
+        }
+    }
+    cards.sort();
+    cards.dedup();
+    cards
+}
+
+fn load_card_json(name: &str) -> Result<JsonValue, String> {
+    let path = card_path(name);
+    let content = fs::read_to_string(&path).map_err(|e| format!("{}: {}", path.display(), e))?;
+    serde_json::from_str(&content).map_err(|e| format!("{}: {}", path.display(), e))
+}
+
+fn save_card_json(name: &str, value: &JsonValue) -> Result<(), String> {
+    let path = card_path(name);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    fs::write(
+        &path,
+        serde_json::to_string_pretty(value).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())
+}
+
+fn cmd_card_list(all: bool) {
+    let cards = list_cards(all);
+    if cards.is_empty() {
+        println!("카드가 없습니다.");
+        return;
+    }
+    for card in cards {
+        let state = if enabled_card_path(&card).exists() {
+            "enabled"
+        } else {
+            "disabled"
+        };
+        println!("{:<12} {}", state, card);
+    }
+}
+
+fn cmd_card_show(name: &str) {
+    match load_card_json(name) {
+        Ok(v) => println!("{}", serde_json::to_string_pretty(&v).unwrap_or_default()),
+        Err(e) => {
+            eprintln!("✗ {}", e);
+            std::process::exit(1);
+        }
+    }
+}
+
+fn cmd_card_enable(name: &str) {
+    let src = disabled_card_path(name);
+    let dst = enabled_card_path(name);
+    if dst.exists() {
+        println!("이미 enabled: {}", name);
+        return;
+    }
+    if !src.exists() {
+        eprintln!("✗ 비활성 카드 없음: {}", name);
+        std::process::exit(1);
+    }
+    if let Some(parent) = dst.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    if let Err(e) = fs::rename(&src, &dst) {
+        eprintln!("✗ {} -> {} 이동 실패: {}", src.display(), dst.display(), e);
+        std::process::exit(1);
+    }
+    println!("✓ card enabled: {}", name);
+}
+
+fn cmd_card_disable(name: &str) {
+    let src = enabled_card_path(name);
+    let dst = disabled_card_path(name);
+    if dst.exists() {
+        println!("이미 disabled: {}", name);
+        return;
+    }
+    if !src.exists() {
+        eprintln!("✗ 활성 카드 없음: {}", name);
+        std::process::exit(1);
+    }
+    if let Some(parent) = dst.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    if let Err(e) = fs::rename(&src, &dst) {
+        eprintln!("✗ {} -> {} 이동 실패: {}", src.display(), dst.display(), e);
+        std::process::exit(1);
+    }
+    println!("✓ card disabled: {}", name);
+}
+
+fn cmd_card_mount_add(card: &str, share: &str, alias: Option<&str>) {
+    let mut json = match load_card_json(card) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("✗ {}", e);
+            std::process::exit(1);
+        }
+    };
+    let obj = json.as_object_mut().expect("card must be object");
+    let arr = obj
+        .entry("mount_entries")
+        .or_insert_with(|| serde_json::json!([]))
+        .as_array_mut()
+        .expect("mount_entries must be array");
+    if arr.iter().any(|v| v.get("share").and_then(|x| x.as_str()) == Some(share)) {
+        println!("이미 존재: {} {}", card, share);
+        return;
+    }
+    arr.push(serde_json::json!({
+        "share": share,
+        "enabled": true,
+        "alias": alias,
+    }));
+    if let Err(e) = save_card_json(card, &json) {
+        eprintln!("✗ {}", e);
+        std::process::exit(1);
+    }
+    println!("✓ card mount 추가: {} {}", card, share);
+}
+
+fn cmd_card_mount_remove(card: &str, share: &str) {
+    let mut json = match load_card_json(card) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("✗ {}", e);
+            std::process::exit(1);
+        }
+    };
+    let obj = json.as_object_mut().expect("card must be object");
+    let arr = obj
+        .entry("mount_entries")
+        .or_insert_with(|| serde_json::json!([]))
+        .as_array_mut()
+        .expect("mount_entries must be array");
+    let before = arr.len();
+    arr.retain(|v| v.get("share").and_then(|x| x.as_str()) != Some(share));
+    if arr.len() == before {
+        println!("일치하는 mount entry 없음: {} {}", card, share);
+        return;
+    }
+    if let Err(e) = save_card_json(card, &json) {
+        eprintln!("✗ {}", e);
+        std::process::exit(1);
+    }
+    println!("✓ card mount 제거: {} {}", card, share);
+}
+
+fn cmd_card_bind_add(card: &str, lxc: &str, source: &str, target: &str, readonly: bool) {
+    let mut json = match load_card_json(card) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("✗ {}", e);
+            std::process::exit(1);
+        }
+    };
+    let obj = json.as_object_mut().expect("card must be object");
+    let arr = obj
+        .entry("bind_mounts")
+        .or_insert_with(|| serde_json::json!([]))
+        .as_array_mut()
+        .expect("bind_mounts must be array");
+    if let Some(existing) = arr.iter_mut().find(|v| {
+        v.get("lxc").and_then(|x| x.as_str()) == Some(lxc)
+            && v.get("target").and_then(|x| x.as_str()) == Some(target)
+    }) {
+        *existing = serde_json::json!({
+            "lxc": lxc,
+            "source": source,
+            "target": target,
+            "readonly": readonly,
+        });
+    } else {
+        arr.push(serde_json::json!({
+            "lxc": lxc,
+            "source": source,
+            "target": target,
+            "readonly": readonly,
+        }));
+    }
+    if let Err(e) = save_card_json(card, &json) {
+        eprintln!("✗ {}", e);
+        std::process::exit(1);
+    }
+    println!("✓ card bind 추가: {} {} -> {}", card, source, target);
+}
+
+fn cmd_card_bind_remove(card: &str, lxc: &str, target: &str) {
+    let mut json = match load_card_json(card) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("✗ {}", e);
+            std::process::exit(1);
+        }
+    };
+    let obj = json.as_object_mut().expect("card must be object");
+    let arr = obj
+        .entry("bind_mounts")
+        .or_insert_with(|| serde_json::json!([]))
+        .as_array_mut()
+        .expect("bind_mounts must be array");
+    let before = arr.len();
+    arr.retain(|v| {
+        !(v.get("lxc").and_then(|x| x.as_str()) == Some(lxc)
+            && v.get("target").and_then(|x| x.as_str()) == Some(target))
+    });
+    if arr.len() == before {
+        println!("일치하는 bind entry 없음: {} {} {}", card, lxc, target);
+        return;
+    }
+    if let Err(e) = save_card_json(card, &json) {
+        eprintln!("✗ {}", e);
+        std::process::exit(1);
+    }
+    println!("✓ card bind 제거: {} {} {}", card, lxc, target);
+}
+
+fn sync_portable_file(src: &Path, dst: &Path) -> Result<bool, String> {
+    if !src.exists() {
+        return Ok(false);
+    }
+    if let Some(parent) = dst.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    fs::copy(src, dst).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+fn sync_portable_profile() -> Result<Vec<String>, String> {
+    let Some(root) = mac_common::paths::portable_root() else {
+        return Ok(Vec::new());
+    };
+
+    let mut applied = Vec::new();
+    mac_common::paths::record_config_source(&root).map_err(|e| e.to_string())?;
+    applied.push(format!("config-source -> {}", root.display()));
+
+    let env_candidates = ["dotenvx.env", ".env", ".env.encrypted"];
+    let home_env = PathBuf::from(home()).join(".env");
+    if !home_env.exists() {
+        for rel in env_candidates {
+            let src = root.join(rel);
+            if sync_portable_file(&src, &home_env)? {
+                applied.push(format!("env <- {}", rel));
+                break;
+            }
+        }
+    }
+
+    Ok(applied)
+}
+
 fn domain_bin_path(name: &str) -> PathBuf {
     domains_dir().join(format!("mac-domain-{}", name))
 }
@@ -110,11 +499,11 @@ fn save_registry(reg: &Registry) {
 }
 
 fn arch() -> &'static str {
-    if cfg!(target_arch = "aarch64") { "aarch64" } else { "x86_64" }
-}
-
-fn manager_bin_path() -> PathBuf {
-    paths::manager_bin()
+    if cfg!(target_arch = "aarch64") {
+        "aarch64"
+    } else {
+        "x86_64"
+    }
 }
 
 fn asset_name(domain: &str) -> String {
@@ -124,14 +513,32 @@ fn asset_name(domain: &str) -> String {
 /// 도메인 목록. locale.json (ncl SSOT) 에서 읽음. 없으면 fallback.
 fn known_domains() -> Vec<String> {
     let presets = mac_common::locale::get_all_domain_names();
-    if !presets.is_empty() { return presets; }
+    if !presets.is_empty() {
+        return presets;
+    }
     // locale.json 없을 때 fallback
     vec![
-        "bootstrap", "env", "mount", "host", "proxmox",
-        "cron", "files", "sd-backup",
-        "git", "vscode", "container", "obsidian",
-        "quickaction", "keyboard", "shell", "wireguard", "tmux",
-    ].into_iter().map(String::from).collect()
+        "bootstrap",
+        "env",
+        "mount",
+        "host",
+        "proxmox",
+        "cron",
+        "files",
+        "sd-backup",
+        "git",
+        "vscode",
+        "container",
+        "obsidian",
+        "quickaction",
+        "keyboard",
+        "shell",
+        "wireguard",
+        "tmux",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect()
 }
 
 const LAUNCHAGENT_LABEL: &str = "com.mac-app-init.scheduler";
@@ -189,9 +596,52 @@ fn main() {
         Commands::Doctor => cmd_doctor(),
         Commands::Run { name, args } => cmd_run(&name, &args),
         Commands::Ssh { target } => cmd_ssh(&target),
+        Commands::Card { action } => match action {
+            CardAction::List { all } => cmd_card_list(all),
+            CardAction::Show { name } => cmd_card_show(&name),
+            CardAction::Enable { name } => cmd_card_enable(&name),
+            CardAction::Disable { name } => cmd_card_disable(&name),
+            CardAction::Mount { action } => match action {
+                CardMountAction::Add { card, share, alias } => {
+                    cmd_card_mount_add(&card, &share, alias.as_deref())
+                }
+                CardMountAction::Remove { card, share } => cmd_card_mount_remove(&card, &share),
+            },
+            CardAction::Bind { action } => match action {
+                CardBindAction::Add {
+                    card,
+                    lxc,
+                    source,
+                    target,
+                    readonly,
+                } => cmd_card_bind_add(&card, &lxc, &source, &target, readonly),
+                CardBindAction::Remove { card, lxc, target } => {
+                    cmd_card_bind_remove(&card, &lxc, &target)
+                }
+            },
+            CardAction::MountAdd { card, share, alias } => {
+                cmd_card_mount_add(&card, &share, alias.as_deref())
+            }
+            CardAction::MountRemove { card, share } => cmd_card_mount_remove(&card, &share),
+            CardAction::BindAdd {
+                card,
+                lxc,
+                source,
+                target,
+                readonly,
+            } => cmd_card_bind_add(&card, &lxc, &source, &target, readonly),
+            CardAction::BindRemove { card, lxc, target } => {
+                cmd_card_bind_remove(&card, &lxc, &target)
+            }
+        },
         Commands::Tick => cmd_tick(),
         Commands::ScheduleList => cmd_schedule_list(),
-        Commands::ScheduleAdd { name, command, cron, interval } => cmd_schedule_add(&name, &command, cron, interval),
+        Commands::ScheduleAdd {
+            name,
+            command,
+            cron,
+            interval,
+        } => cmd_schedule_add(&name, &command, cron, interval),
         Commands::ScheduleRemove { name } => cmd_schedule_remove(&name),
         Commands::ScheduleToggle { name } => cmd_schedule_toggle(&name),
     }
@@ -220,7 +670,11 @@ fn cmd_available() {
     println!("{:<20} {}", "DOMAIN", "STATUS");
     println!("{}", "─".repeat(40));
     for name in known_domains() {
-        let status = if installed.contains(&name.as_str()) { "✓ installed" } else { "  available" };
+        let status = if installed.contains(&name.as_str()) {
+            "✓ installed"
+        } else {
+            "  available"
+        };
         println!("{:<20} {}", name, status);
     }
 }
@@ -248,13 +702,17 @@ fn record_installed_domain(name: &str, version: &str) {
 fn cmd_install(name: &str) {
     let mut reg = load_registry();
     if reg.installed.iter().any(|d| d.name == name) {
-        println!("'{}' 이미 설치되어 있습니다. 업데이트: mai update {}", name, name);
+        println!(
+            "'{}' 이미 설치되어 있습니다. 업데이트: mai update {}",
+            name, name
+        );
         return;
     }
 
     // 의존성 체크
     let deps = domain_deps(name);
-    let missing: Vec<&&str> = deps.iter()
+    let missing: Vec<&&str> = deps
+        .iter()
         .filter(|d| !reg.installed.iter().any(|inst| &inst.name == *d))
         .collect();
     if !missing.is_empty() {
@@ -316,7 +774,10 @@ fn cmd_update(name: &str) {
                 Err(e) => eprintln!("✗ 업데이트 실패: {}", e),
             }
         }
-        None => println!("'{}' 설치되어 있지 않습니다. 먼저: mai install {}", name, name),
+        None => println!(
+            "'{}' 설치되어 있지 않습니다. 먼저: mai install {}",
+            name, name
+        ),
     }
 }
 
@@ -333,21 +794,33 @@ fn cmd_update_all() {
 }
 
 fn cmd_self_update() {
-    println!("Updating mai manager...");
+    println!("Updating mac manager...");
 
     let asset = format!("mai-{}-apple-darwin.tar.gz", arch());
     let dest_dir = std::env::temp_dir();
 
     // Get latest release tag
     let output = Command::new("gh")
-        .args(["release", "list", "--repo", GITHUB_REPO, "--limit", "1", "--exclude-pre-releases", "--json", "tagName"])
+        .args([
+            "release",
+            "list",
+            "--repo",
+            GITHUB_REPO,
+            "--limit",
+            "1",
+            "--exclude-pre-releases",
+            "--json",
+            "tagName",
+        ])
         .output();
 
     let tag = match output {
         Ok(o) if o.status.success() => {
             let stdout = String::from_utf8_lossy(&o.stdout);
-            let releases: Vec<serde_json::Value> = serde_json::from_str(&stdout).unwrap_or_default();
-            releases.first()
+            let releases: Vec<serde_json::Value> =
+                serde_json::from_str(&stdout).unwrap_or_default();
+            releases
+                .first()
                 .and_then(|r| r.get("tagName"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("latest")
@@ -362,10 +835,15 @@ fn cmd_self_update() {
     // Download
     let result = Command::new("gh")
         .args([
-            "release", "download", &tag,
-            "--repo", GITHUB_REPO,
-            "--pattern", &asset,
-            "--dir", &dest_dir.to_string_lossy(),
+            "release",
+            "download",
+            &tag,
+            "--repo",
+            GITHUB_REPO,
+            "--pattern",
+            &asset,
+            "--dir",
+            &dest_dir.to_string_lossy(),
             "--clobber",
         ])
         .output();
@@ -378,7 +856,12 @@ fn cmd_self_update() {
     // Extract to temp
     let tar_path = dest_dir.join(&asset);
     let extract = Command::new("tar")
-        .args(["xzf", &tar_path.to_string_lossy(), "-C", &dest_dir.to_string_lossy()])
+        .args([
+            "xzf",
+            &tar_path.to_string_lossy(),
+            "-C",
+            &dest_dir.to_string_lossy(),
+        ])
         .output();
 
     if extract.is_err() || !extract.unwrap().status.success() {
@@ -424,16 +907,19 @@ fn cmd_ssh(target: &str) {
         eprintln!("proxmox 도메인 미설치. mai install proxmox");
         return;
     }
-    // "proxmox" → 호스트 SSH
-    if target == "proxmox" {
+    // "proxmox*" → 카드 기준 호스트 SSH
+    if target.starts_with("proxmox") {
         let _ = std::os::unix::process::CommandExt::exec(
-            Command::new(&proxmox_bin).arg("ssh")
+            Command::new(&proxmox_bin)
+                .arg("--card")
+                .arg(target)
+                .arg("ssh"),
         );
         return;
     }
     // LXC 이름 → lxc-shell
     let _ = std::os::unix::process::CommandExt::exec(
-        Command::new(&proxmox_bin).args(["lxc-shell", target])
+        Command::new(&proxmox_bin).args(["lxc-shell", target]),
     );
 }
 
@@ -444,13 +930,10 @@ fn cmd_run(name: &str, args: &[String]) {
         eprintln!("  mai install {}", name);
         return;
     }
-    let status = Command::new(&bin)
-        .args(args)
-        .status()
-        .unwrap_or_else(|e| {
-            eprintln!("실행 실패: {}", e);
-            std::process::exit(1);
-        });
+    let status = Command::new(&bin).args(args).status().unwrap_or_else(|e| {
+        eprintln!("실행 실패: {}", e);
+        std::process::exit(1);
+    });
     std::process::exit(status.code().unwrap_or(1));
 }
 
@@ -504,7 +987,17 @@ fn download_domain(name: &str) -> Result<String, String> {
 
     // Get latest release
     let output = Command::new("gh")
-        .args(["release", "list", "--repo", GITHUB_REPO, "--limit", "1", "--exclude-pre-releases", "--json", "tagName"])
+        .args([
+            "release",
+            "list",
+            "--repo",
+            GITHUB_REPO,
+            "--limit",
+            "1",
+            "--exclude-pre-releases",
+            "--json",
+            "tagName",
+        ])
         .output()
         .map_err(|e| format!("gh CLI 필요: {}", e))?;
 
@@ -526,10 +1019,15 @@ fn download_domain(name: &str) -> Result<String, String> {
     let tar_path = dest_dir.join(&asset);
     let result = Command::new("gh")
         .args([
-            "release", "download", &tag,
-            "--repo", GITHUB_REPO,
-            "--pattern", &asset,
-            "--dir", &dest_dir.to_string_lossy(),
+            "release",
+            "download",
+            &tag,
+            "--repo",
+            GITHUB_REPO,
+            "--pattern",
+            &asset,
+            "--dir",
+            &dest_dir.to_string_lossy(),
             "--clobber",
         ])
         .output()
@@ -544,7 +1042,12 @@ fn download_domain(name: &str) -> Result<String, String> {
 
     // Extract
     let extract = Command::new("tar")
-        .args(["xzf", &tar_path.to_string_lossy(), "-C", &dest_dir.to_string_lossy()])
+        .args([
+            "xzf",
+            &tar_path.to_string_lossy(),
+            "-C",
+            &dest_dir.to_string_lossy(),
+        ])
         .output()
         .map_err(|e| format!("압축 해제 실패: {}", e))?;
 
@@ -557,7 +1060,10 @@ fn download_domain(name: &str) -> Result<String, String> {
 
     // Make executable
     let bin = domain_bin_path(name);
-    Command::new("chmod").args(["+x", &bin.to_string_lossy()]).output().ok();
+    Command::new("chmod")
+        .args(["+x", &bin.to_string_lossy()])
+        .output()
+        .ok();
 
     Ok(tag)
 }
@@ -570,17 +1076,34 @@ fn cmd_setup() {
     let cards_dir = PathBuf::from(home()).join(".mac-app-init/cards");
     fs::create_dir_all(&cards_dir).ok();
     #[cfg(unix)]
-    { use std::os::unix::fs::PermissionsExt; let _ = fs::set_permissions(&cards_dir, fs::Permissions::from_mode(0o700)); }
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&cards_dir, fs::Permissions::from_mode(0o700));
+    }
     println!("[1] ✓ 디렉토리 생성");
 
     // 2. TUI 설치 (domains 디렉터리에 — 사용자 PATH에 노출 안 함)
     let tui_path = domains_dir().join("mai-tui");
     if !tui_path.exists() {
         println!("[2] TUI 설치 중...");
-        let target = if cfg!(target_arch = "aarch64") { "aarch64-apple-darwin" } else { "x86_64-apple-darwin" };
-        let url = format!("https://github.com/{}/releases/latest/download/mai-tui-{}.tar.gz", GITHUB_REPO, target);
+        let target = if cfg!(target_arch = "aarch64") {
+            "aarch64-apple-darwin"
+        } else {
+            "x86_64-apple-darwin"
+        };
+        let url = format!(
+            "https://github.com/{}/releases/latest/download/mai-tui-{}.tar.gz",
+            GITHUB_REPO, target
+        );
         let status = Command::new("bash")
-            .args(["-c", &format!("curl -sfL '{}' | tar xz -C '{}'", url, domains_dir().display())])
+            .args([
+                "-c",
+                &format!(
+                    "curl -sfL '{}' | tar xz -C '{}'",
+                    url,
+                    domains_dir().display()
+                ),
+            ])
             .status();
         if status.map(|s| s.success()).unwrap_or(false) {
             println!("    ✓ TUI 설치 완료");
@@ -593,7 +1116,16 @@ fn cmd_setup() {
 
     // 3. 핵심 도메인 설치 + registry 반영
     println!("[3] 핵심 도메인 확인...");
-    let core = ["bootstrap", "env", "mount", "host", "cron", "shell", "keyboard", "git"];
+    let core = [
+        "bootstrap",
+        "env",
+        "mount",
+        "host",
+        "cron",
+        "shell",
+        "keyboard",
+        "git",
+    ];
     for name in &core {
         let already_installed = load_registry().installed.iter().any(|d| d.name == *name);
         if !domain_bin_path(name).exists() || !already_installed {
@@ -609,6 +1141,14 @@ fn cmd_setup() {
     }
     println!("    ✓ 핵심 도메인 확인 완료");
 
+    // 3.5 portable 설정 복원 (repo tracked + dotenvx env seed)
+    println!("[3.5] portable 설정 동기화...");
+    match sync_portable_profile() {
+        Ok(items) if items.is_empty() => println!("    - portable/mai 없음 또는 반영할 설정 없음"),
+        Ok(items) => println!("    ✓ {}", items.join(", ")),
+        Err(e) => println!("    ⚠ {}", e),
+    }
+
     // 4. 의존성 (bootstrap)
     println!("[4] 의존성 확인...");
     let bootstrap_bin = domain_bin_path("bootstrap");
@@ -623,31 +1163,12 @@ fn cmd_setup() {
         Err(e) => println!("    ⚠ {}", e),
     }
     let mut sched = mac_host_core::cron::load_schedule();
-    let manager_bin = manager_bin_path();
-    let mut upgrade_job_found = false;
-    let mut schedule_changed = false;
-    for job in &mut sched.jobs {
-        if job.name == "mac-upgrade" || job.name == "mai-upgrade" {
-            upgrade_job_found = true;
-            let wanted_command = format!("{} upgrade", manager_bin.display());
-            if job.name != "mai-upgrade" {
-                job.name = "mai-upgrade".into();
-                schedule_changed = true;
-            }
-            if job.command != wanted_command {
-                job.command = wanted_command;
-                schedule_changed = true;
-            }
-            if job.description != "매일 10시 mai + 도메인 자동 업데이트" {
-                job.description = "매일 10시 mai + 도메인 자동 업데이트".into();
-                schedule_changed = true;
-            }
-        }
-    }
-    if !upgrade_job_found {
+    if !sched.jobs.iter().any(|j| j.name == "mac-upgrade") {
+        let mac_bin = std::env::current_exe()
+            .unwrap_or_else(|_| PathBuf::from(format!("{}/.local/bin/mac", home())));
         sched.jobs.push(mac_host_core::models::cron::Job {
-            name: "mai-upgrade".into(),
-            command: format!("{} upgrade", manager_bin.display()),
+            name: "mac-upgrade".into(),
+            command: format!("{} upgrade", mac_bin.display()),
             schedule: mac_host_core::models::cron::ScheduleSpec {
                 stype: "cron".into(),
                 cron: Some("0 10 * * *".into()),
@@ -657,17 +1178,19 @@ fn cmd_setup() {
             enabled: true,
             description: "매일 10시 mai + 도메인 자동 업데이트".into(),
         });
-        schedule_changed = true;
-        println!("    ✓ mai-upgrade 작업 추가");
-    }
-    if schedule_changed {
         let _ = mac_host_core::cron::save_schedule(&sched);
+        println!("    ✓ mac-upgrade 작업 추가");
     }
 
     // 6. locale.json
     println!("[6] locale.json 생성...");
     let locale_path = PathBuf::from(home()).join(".mac-app-init/locale.json");
-    if Command::new("nickel").arg("--version").output().map(|o| o.status.success()).unwrap_or(false) {
+    if Command::new("nickel")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+    {
         // nickel 있으면 ncl export 시도
         let ncl_candidates = [
             PathBuf::from(home()).join(".mac-app-init/src/mac-app-init/ncl/domains.ncl"),
@@ -687,7 +1210,10 @@ fn cmd_setup() {
         }
     }
     if !locale_path.exists() {
-        let _ = fs::write(&locale_path, "{\"domains\":{},\"dns_presets\":{},\"section_names\":{}}");
+        let _ = fs::write(
+            &locale_path,
+            "{\"domains\":{},\"dns_presets\":{},\"section_names\":{}}",
+        );
         println!("    ✓ locale.json fallback 생성");
     }
 
@@ -702,9 +1228,9 @@ fn cmd_setup() {
 fn cmd_doctor() {
     println!("=== mac-app-init 상태 ===\n");
 
-    // 1. mai binary
-    let manager_bin = std::env::current_exe().unwrap_or_else(|_| manager_bin_path());
-    println!("[mai 바이너리] ✓ {}", manager_bin.display());
+    // 1. mac binary
+    let mac_bin = std::env::current_exe().unwrap_or_default();
+    println!("[mac 바이너리] ✓ {}", mac_bin.display());
 
     // 2. domains dir
     let dd = domains_dir();
@@ -716,7 +1242,12 @@ fn cmd_doctor() {
     for d in &reg.installed {
         let bin = domain_bin_path(&d.name);
         let ok = bin.exists();
-        println!("  {} {} ({})", if ok { "✓" } else { "✗" }, d.name, d.version);
+        println!(
+            "  {} {} ({})",
+            if ok { "✓" } else { "✗" },
+            d.name,
+            d.version
+        );
     }
 
     // 4. LaunchAgent
@@ -735,7 +1266,11 @@ fn cmd_doctor() {
         ("dotenvx", "dotenvx", &["--version"]),
         ("nickel", "nickel", &["--version"]),
     ] {
-        let ok = Command::new(cmd).args(*args).output().map(|o| o.status.success()).unwrap_or(false);
+        let ok = Command::new(cmd)
+            .args(*args)
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
         println!("  {} {}", if ok { "✓" } else { "✗" }, name);
     }
 
@@ -744,7 +1279,10 @@ fn cmd_doctor() {
     if env_path.exists() {
         let content = fs::read_to_string(&env_path).unwrap_or_default();
         let encrypted = content.contains("encrypted:");
-        println!("\n[.env] ✓ 존재 ({})", if encrypted { "암호화됨" } else { "평문" });
+        println!(
+            "\n[.env] ✓ 존재 ({})",
+            if encrypted { "암호화됨" } else { "평문" }
+        );
     } else {
         println!("\n[.env] ✗ 없음");
         println!("  → mai run bootstrap install");
@@ -758,7 +1296,10 @@ fn cmd_tick() {
 }
 
 fn deprecated_notice(old: &str, new: &str) {
-    eprintln!("⚠ `mac {}` 는 deprecated 입니다. `mai run cron {}` 를 사용하세요.", old, new);
+    eprintln!(
+        "⚠ `mac {}` 는 deprecated 입니다. `mai run cron {}` 를 사용하세요.",
+        old, new
+    );
 }
 
 fn cmd_schedule_list() {
@@ -768,7 +1309,10 @@ fn cmd_schedule_list() {
         println!("등록된 작업이 없습니다.");
         return;
     }
-    println!("{:<20} {:<8} {:<25} {}", "NAME", "STATUS", "SCHEDULE", "COMMAND");
+    println!(
+        "{:<20} {:<8} {:<25} {}",
+        "NAME", "STATUS", "SCHEDULE", "COMMAND"
+    );
     println!("{}", "─".repeat(80));
     for j in &s.jobs {
         let st = if j.enabled { "✓" } else { "✗" };
@@ -800,7 +1344,15 @@ fn cmd_schedule_remove(name: &str) {
 fn cmd_schedule_toggle(name: &str) {
     deprecated_notice("schedule-toggle", "toggle <name>");
     match mac_host_core::cron::toggle_job(name) {
-        Ok((n, en)) => println!("'{}' {}", n, if en { "✓ 활성화" } else { "✗ 비활성화" }),
+        Ok((n, en)) => println!(
+            "'{}' {}",
+            n,
+            if en {
+                "✓ 활성화"
+            } else {
+                "✗ 비활성화"
+            }
+        ),
         Err(e) => eprintln!("✗ {}", e),
     }
 }

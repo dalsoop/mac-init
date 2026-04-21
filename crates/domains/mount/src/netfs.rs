@@ -117,9 +117,16 @@ pub fn mount_url_sync(
     };
 
     if status == 0 {
-        Ok(MountOutcome { status, mountpoints })
+        Ok(MountOutcome {
+            status,
+            mountpoints,
+        })
     } else {
-        Err(format!("NetFSMountURLSync 실패: {} (status={})", explain_status(status), status))
+        Err(format!(
+            "NetFSMountURLSync 실패: {} (status={})",
+            explain_status(status),
+            status
+        ))
     }
 }
 
@@ -129,16 +136,16 @@ pub fn mount_url_sync(
 fn explain_status(status: i32) -> &'static str {
     match status {
         // NetFS errno (양수)
-        1   => "EPERM (권한 없음)",
-        2   => "ENOENT (마운트 포인트 또는 share 경로 없음)",
-        13  => "EACCES (접근 거부 — 자격증명 또는 share 권한 확인)",
-        17  => "EEXIST (이미 마운트됨)",
-        20  => "ENOTDIR (마운트 포인트가 디렉터리 아님)",
-        22  => "EINVAL (잘못된 인자 또는 URL)",
-        60  => "ETIMEDOUT (서버 응답 없음)",
-        61  => "ECONNREFUSED (서버 연결 거부)",
-        64  => "EHOSTDOWN (호스트 다운)",
-        65  => "EHOSTUNREACH (호스트 도달 불가 — 네트워크/방화벽)",
+        1 => "EPERM (권한 없음)",
+        2 => "ENOENT (마운트 포인트 또는 share 경로 없음)",
+        13 => "EACCES (접근 거부 — 자격증명 또는 share 권한 확인)",
+        17 => "EEXIST (이미 마운트됨)",
+        20 => "ENOTDIR (마운트 포인트가 디렉터리 아님)",
+        22 => "EINVAL (잘못된 인자 또는 URL)",
+        60 => "ETIMEDOUT (서버 응답 없음)",
+        61 => "ECONNREFUSED (서버 연결 거부)",
+        64 => "EHOSTDOWN (호스트 다운)",
+        65 => "EHOSTUNREACH (호스트 도달 불가 — 네트워크/방화벽)",
 
         // NetFS / NetAuth (음수)
         -5999 => "ENETFSACCOUNTRESTRICTED (계정이 제한됨)",

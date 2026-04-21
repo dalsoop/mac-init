@@ -10,18 +10,66 @@ struct ConfigSource {
 }
 
 const KNOWN_CONFIGS: &[ConfigSource] = &[
-    ConfigSource { name: "zshrc", path: "~/.zshrc", category: ConfigCategory::Shell },
-    ConfigSource { name: "zprofile", path: "~/.zprofile", category: ConfigCategory::Shell },
-    ConfigSource { name: "bash_profile", path: "~/.bash_profile", category: ConfigCategory::Shell },
-    ConfigSource { name: "gitconfig", path: "~/.gitconfig", category: ConfigCategory::Git },
-    ConfigSource { name: "git/config", path: "~/.config/git/config", category: ConfigCategory::Git },
-    ConfigSource { name: "ssh/config", path: "~/.ssh/config", category: ConfigCategory::Ssh },
-    ConfigSource { name: "karabiner", path: "~/.config/karabiner/karabiner.json", category: ConfigCategory::Keyboard },
-    ConfigSource { name: "tmux.conf", path: "~/.tmux.conf", category: ConfigCategory::Terminal },
-    ConfigSource { name: "tmux (xdg)", path: "~/.config/tmux/tmux.conf", category: ConfigCategory::Terminal },
-    ConfigSource { name: "iterm2", path: "~/.config/iterm2", category: ConfigCategory::Terminal },
-    ConfigSource { name: "vscode settings", path: "~/Library/Application Support/Code/User/settings.json", category: ConfigCategory::Editor },
-    ConfigSource { name: "vscode keybindings", path: "~/Library/Application Support/Code/User/keybindings.json", category: ConfigCategory::Editor },
+    ConfigSource {
+        name: "zshrc",
+        path: "~/.zshrc",
+        category: ConfigCategory::Shell,
+    },
+    ConfigSource {
+        name: "zprofile",
+        path: "~/.zprofile",
+        category: ConfigCategory::Shell,
+    },
+    ConfigSource {
+        name: "bash_profile",
+        path: "~/.bash_profile",
+        category: ConfigCategory::Shell,
+    },
+    ConfigSource {
+        name: "gitconfig",
+        path: "~/.gitconfig",
+        category: ConfigCategory::Git,
+    },
+    ConfigSource {
+        name: "git/config",
+        path: "~/.config/git/config",
+        category: ConfigCategory::Git,
+    },
+    ConfigSource {
+        name: "ssh/config",
+        path: "~/.ssh/config",
+        category: ConfigCategory::Ssh,
+    },
+    ConfigSource {
+        name: "karabiner",
+        path: "~/.config/karabiner/karabiner.json",
+        category: ConfigCategory::Keyboard,
+    },
+    ConfigSource {
+        name: "tmux.conf",
+        path: "~/.tmux.conf",
+        category: ConfigCategory::Terminal,
+    },
+    ConfigSource {
+        name: "tmux (xdg)",
+        path: "~/.config/tmux/tmux.conf",
+        category: ConfigCategory::Terminal,
+    },
+    ConfigSource {
+        name: "iterm2",
+        path: "~/.config/iterm2",
+        category: ConfigCategory::Terminal,
+    },
+    ConfigSource {
+        name: "vscode settings",
+        path: "~/Library/Application Support/Code/User/settings.json",
+        category: ConfigCategory::Editor,
+    },
+    ConfigSource {
+        name: "vscode keybindings",
+        path: "~/Library/Application Support/Code/User/keybindings.json",
+        category: ConfigCategory::Editor,
+    },
 ];
 
 fn expand_tilde(path: &str) -> PathBuf {

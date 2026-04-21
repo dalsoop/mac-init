@@ -35,7 +35,7 @@ pub mod setup;
 pub mod ssh;
 #[cfg(domain = "synology")]
 pub mod synology;
-#[cfg(domain = "worktree")]
-pub mod worktree;
 #[cfg(domain = "workspace")]
 pub mod workspace;
+#[cfg(domain = "worktree")]
+pub mod worktree;

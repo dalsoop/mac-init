@@ -33,9 +33,7 @@ fn cmd_status() {
 fn print_tui_spec() {
     TuiSpec::new("obsidian")
         .usage(false, "미설정")
-        .kv("상태", vec![
-            tui_spec::kv_item("상태", "TODO", "warn"),
-        ])
+        .kv("상태", vec![tui_spec::kv_item("상태", "TODO", "warn")])
         .buttons()
         .text("안내", "TODO: 도메인 설명 작성")
         .print();

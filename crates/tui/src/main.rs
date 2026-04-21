@@ -1,10 +1,10 @@
-use mac_host_tui::app::App;
 use color_eyre::Result;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event},
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand,
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
+use mac_host_tui::app::App;
 use ratatui::prelude::*;
 use std::io;
 use std::process::Command;
@@ -33,8 +33,10 @@ async fn main() -> Result<()> {
                         println!("✓ 업데이트 완료. TUI를 재시작합니다.\n");
                         // exec()로 자기 교체 — 새 바이너리로 재시작
                         let err = std::os::unix::process::CommandExt::exec(
-                            Command::new(std::env::current_exe().unwrap_or_else(|_| "mai-tui".into()))
-                                .args(std::env::args().skip(1))
+                            Command::new(
+                                std::env::current_exe().unwrap_or_else(|_| "mai-tui".into()),
+                            )
+                            .args(std::env::args().skip(1)),
                         );
                         eprintln!("재시작 실패: {}", err);
                         std::process::exit(1);
@@ -83,10 +85,17 @@ async fn main() -> Result<()> {
             last_refresh = std::time::Instant::now();
         }
 
-        let poll_ms = if app.bg_loading.is_some() || app.action_running { 50 } else { 200 };
+        let poll_ms = if app.bg_loading.is_some() || app.action_running {
+            50
+        } else {
+            200
+        };
         if event::poll(std::time::Duration::from_millis(poll_ms))? {
             match event::read()? {
-                Event::Key(k) => { app.handle_key(k); last_refresh = std::time::Instant::now(); },
+                Event::Key(k) => {
+                    app.handle_key(k);
+                    last_refresh = std::time::Instant::now();
+                }
                 Event::Mouse(m) => app.handle_mouse(m),
                 _ => {}
             }
@@ -102,10 +111,22 @@ async fn main() -> Result<()> {
 /// GitHub Releases에서 최신 버전 태그 조회. 실패 시 None (오프라인 등).
 fn check_latest_version() -> Option<String> {
     let output = Command::new("gh")
-        .args(["release", "list", "--repo", "dalsoop/mac-app-init",
-               "--limit", "1", "--exclude-pre-releases", "--json", "tagName"])
-        .output().ok()?;
-    if !output.status.success() { return None; }
+        .args([
+            "release",
+            "list",
+            "--repo",
+            "dalsoop/mac-app-init",
+            "--limit",
+            "1",
+            "--exclude-pre-releases",
+            "--json",
+            "tagName",
+        ])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
     let stdout = String::from_utf8_lossy(&output.stdout);
     let releases: Vec<serde_json::Value> = serde_json::from_str(&stdout).ok()?;
     let tag = releases.first()?.get("tagName")?.as_str()?;
