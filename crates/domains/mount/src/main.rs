@@ -49,25 +49,12 @@ enum Commands {
         #[arg(long)]
         alias: Option<String>,
     },
-    /// Proxmox LXC 직접 마운트 설정 추가
-    AutoAddLxc {
-        /// LXC 이름 또는 VMID
-        name: String,
-        /// 컨테이너 내부 원격 경로
-        #[arg(default_value = "/")]
-        path: String,
-        /// 마운트 별칭 (기본: LXC 이름)
-        #[arg(long)]
-        alias: Option<String>,
-    },
     /// 자동 마운트 설정 제거
     AutoRemove { connection: String, share: String },
     /// 자동 마운트 설정 토글
     AutoToggle { connection: String, share: String },
     /// 자동 마운트 설정 목록
     AutoList,
-    /// Proxmox running LXC를 자동 마운트 설정에 동기화
-    AutoSyncLxc,
     /// 자동 마운트 실행 (config 의 enabled 항목들 중 미마운트인 것 마운트)
     Auto,
     /// quarantine / backoff 상태 조회
@@ -882,13 +869,9 @@ fn main() {
             share,
             alias,
         } => cmd_auto_add(&connection, &share, alias.as_deref()),
-        Commands::AutoAddLxc { name, path, alias } => {
-            cmd_auto_add_lxc(&name, &path, alias.as_deref())
-        }
         Commands::AutoRemove { connection, share } => cmd_auto_remove(&connection, &share),
         Commands::AutoToggle { connection, share } => cmd_auto_toggle(&connection, &share),
         Commands::AutoList => cmd_auto_list(),
-        Commands::AutoSyncLxc => cmd_auto_sync_lxc(),
         Commands::Auto => cmd_auto(),
         Commands::AutoStatus => cmd_auto_status(),
         Commands::AutoResume { target } => cmd_auto_resume(target.as_deref()),
@@ -1397,28 +1380,6 @@ fn cmd_auto_add(connection: &str, share: &str, alias: Option<&str>) {
     println!("✓ 자동 마운트 추가: {}/{}", connection, share);
 }
 
-fn cmd_auto_add_lxc(name: &str, path: &str, alias: Option<&str>) {
-    let conn_name = if name.starts_with("lxc.") {
-        name.to_string()
-    } else {
-        format!("lxc.{}", name)
-    };
-    let Some(conn) = find_connection(&conn_name) else {
-        eprintln!(
-            "✗ Proxmox LXC '{}' 를 직접 마운트 가능한 상태로 찾지 못했습니다.",
-            name
-        );
-        eprintln!("  `mai run mount lxc-list` 로 이름/상태/IP를 먼저 확인하세요.");
-        return;
-    };
-    if conn.scheme != "ssh" {
-        eprintln!("✗ LXC 직접 마운트는 sshfs 경로만 지원합니다.");
-        return;
-    }
-    let default_alias = conn_name.strip_prefix("lxc.").unwrap_or(&conn_name);
-    cmd_auto_add(&conn_name, path, alias.or(Some(default_alias)));
-}
-
 fn cmd_auto_remove(connection: &str, share: &str) {
     let mut entries = match card_mount_entries(connection) {
         Ok(v) => v,
@@ -1499,11 +1460,6 @@ fn cmd_auto_list() {
             mp.display()
         );
     }
-}
-
-fn cmd_auto_sync_lxc() {
-    println!("running LXC direct-mount 자동 동기화는 카드 SSOT 모드에서 비활성화되었습니다.");
-    println!("필요한 direct mount는 해당 카드의 mount_entries 에 직접 선언하세요.");
 }
 
 /// macOS 알림 센터에 메시지 표시. LaunchAgent 백그라운드에서도 동작.
