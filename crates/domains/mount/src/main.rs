@@ -55,6 +55,8 @@ enum Commands {
     AutoToggle { connection: String, share: String },
     /// 자동 마운트 설정 목록
     AutoList,
+    /// 카드 선언 기준으로 MOUNT 구조 정리
+    Reconcile,
     /// 자동 마운트 실행 (config 의 enabled 항목들 중 미마운트인 것 마운트)
     Auto,
     /// quarantine / backoff 상태 조회
@@ -82,6 +84,8 @@ use mac_common::{
     tui_spec::{self, TuiSpec},
 };
 
+const MOUNT_TRASH_RETENTION_DAYS: u64 = 7;
+
 fn home() -> String {
     paths::home()
 }
@@ -98,21 +102,100 @@ fn mount_point(connection: &str, share: &str) -> PathBuf {
     nas_root().join(connection).join(clean)
 }
 
-/// alias가 있으면 alias/<share의 마지막 경로>로 마운트.
-/// 예: alias=truenas, share=/mnt/truenas-organized → NAS/truenas/organized
-fn mount_point_auto(a: &AutoMount) -> PathBuf {
+fn mount_point_auto_under(root: &Path, a: &AutoMount) -> PathBuf {
     match &a.alias {
         Some(alias) => {
+            if a.share == "/" {
+                return root.join(alias);
+            }
             let leaf = a.share.rsplit('/').next().unwrap_or(&a.share);
-            // "truenas-organized" → "organized" (하이픈 앞이 alias와 같으면)
             let clean_leaf = if leaf.starts_with(&format!("{}-", alias)) {
                 &leaf[alias.len() + 1..]
             } else {
                 leaf
             };
-            nas_root().join(alias).join(clean_leaf)
+            root.join(alias).join(clean_leaf)
         }
-        None => mount_point(&a.connection, &a.share),
+        None => {
+            let clean = a.share.trim_start_matches('/');
+            root.join(&a.connection).join(clean)
+        }
+    }
+}
+
+/// alias가 있으면 alias/<share의 마지막 경로>로 마운트.
+/// 예: alias=truenas, share=/mnt/truenas-organized → NAS/truenas/organized
+fn mount_point_auto(a: &AutoMount) -> PathBuf {
+    mount_point_auto_under(&nas_root(), a)
+}
+
+fn volume_alias_path(a: &AutoMount) -> Option<PathBuf> {
+    if a.share != "/" {
+        return None;
+    }
+    let alias = a.alias.as_deref()?;
+    Some(PathBuf::from(format!("/Volumes/{}", alias)))
+}
+
+fn is_root_mount(a: &AutoMount) -> bool {
+    a.share == "/" && a.alias.is_some()
+}
+
+fn is_direct_mount(mp: &Path) -> bool {
+    is_direct_mount_in(&list_current_mounts(), mp)
+}
+
+fn is_direct_mount_in(active_mounts: &[(String, String)], mp: &Path) -> bool {
+    let mp_str = mp.to_string_lossy().to_string();
+    active_mounts.iter().any(|(_, m)| m == &mp_str)
+}
+
+fn is_alias_only_mount_under(root: &Path, active_mounts: &[(String, String)], a: &AutoMount) -> bool {
+    if !is_root_mount(a) {
+        return false;
+    }
+    let mp = mount_point_auto_under(root, a);
+    let Some(vol) = volume_alias_path(a) else {
+        return false;
+    };
+    if is_direct_mount_in(active_mounts, &mp) {
+        return false;
+    }
+    let vol_mounted = active_mounts.iter().any(|(_, m)| m == &vol.to_string_lossy());
+    if !vol_mounted {
+        return false;
+    }
+    let linked_to_vol = fs::read_link(&mp).map(|target| target == vol).unwrap_or(false);
+    linked_to_vol || !is_direct_mount_in(active_mounts, &mp)
+}
+
+fn is_alias_only_mount_in(active_mounts: &[(String, String)], a: &AutoMount) -> bool {
+    is_alias_only_mount_under(&nas_root(), active_mounts, a)
+}
+
+fn is_alias_only_mount(a: &AutoMount) -> bool {
+    is_alias_only_mount_in(&list_current_mounts(), a)
+}
+
+fn is_effectively_mounted(a: &AutoMount) -> bool {
+    let mp = mount_point_auto(a);
+    if is_mounted_at(&mp) {
+        return true;
+    }
+    if let Some(vol) = volume_alias_path(a) {
+        let vol_str = vol.to_string_lossy().to_string();
+        return list_current_mounts().into_iter().any(|(_, m)| m == vol_str);
+    }
+    false
+}
+
+fn remove_path_if_symlink(path: &Path) {
+    if path
+        .symlink_metadata()
+        .map(|m| m.file_type().is_symlink())
+        .unwrap_or(false)
+    {
+        let _ = fs::remove_file(path);
     }
 }
 
@@ -197,16 +280,35 @@ fn is_stale(mp: &PathBuf) -> bool {
 }
 
 fn unmount_path(mp: &PathBuf) -> Result<(), String> {
-    let out = Command::new("diskutil")
+    let try_diskutil = Command::new("diskutil")
         .args(["unmount", "force"])
         .arg(mp)
         .output()
-        .or_else(|_| Command::new("umount").arg("-f").arg(mp).output())
         .map_err(|e| e.to_string())?;
-    if out.status.success() {
+    if try_diskutil.status.success() {
+        if !is_mounted_at(mp) {
+            return Ok(());
+        }
+    }
+
+    let try_umount = Command::new("umount")
+        .arg("-f")
+        .arg(mp)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if try_umount.status.success() && !is_mounted_at(mp) {
         Ok(())
     } else {
-        Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+        let diskutil_err = String::from_utf8_lossy(&try_diskutil.stderr)
+            .trim()
+            .to_string();
+        let umount_err = String::from_utf8_lossy(&try_umount.stderr)
+            .trim()
+            .to_string();
+        Err(format!(
+            "unmount 실패 또는 잔류 (diskutil='{}', umount='{}')",
+            diskutil_err, umount_err
+        ))
     }
 }
 
@@ -581,7 +683,9 @@ fn list_ssh_dirs(conn: &Connection) -> Vec<String> {
 
 /// SSHFS로 마운트.
 fn mount_sshfs(conn: &Connection, remote_path: &str, mountpoint: &Path) -> Result<(), String> {
+    remove_path_if_symlink(mountpoint);
     fs::create_dir_all(mountpoint).map_err(|e| format!("디렉터리 생성 실패: {}", e))?;
+    cleanup_mount_processes(mountpoint);
     let source = format!("{}@{}:{}", conn.user, conn.host, remote_path);
     let mountpoint_str = mountpoint.to_string_lossy().to_string();
     let port_opt = format!("port={}", conn.port);
@@ -609,10 +713,77 @@ fn mount_sshfs(conn: &Connection, remote_path: &str, mountpoint: &Path) -> Resul
         .status()
         .map_err(|e| format!("sshfs 실행 실패: {} (sshfs 설치: brew install sshfs)", e))?;
     if status.success() {
-        Ok(())
-    } else {
-        Err("sshfs 마운트 실패".into())
+        let mount_buf = mountpoint.to_path_buf();
+        for _ in 0..10 {
+            if is_mounted_at(&mount_buf) || is_direct_mount(mountpoint) {
+                return Ok(());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(300));
+        }
+    } else if is_mounted_at(&mountpoint.to_path_buf()) || is_direct_mount(mountpoint) {
+        return Ok(());
     }
+    cleanup_mount_processes(mountpoint);
+    Err("sshfs 마운트 실패".into())
+}
+
+fn cleanup_mount_processes_for_path(path: &Path) {
+    let needle = path.to_string_lossy().to_string();
+    let out = Command::new("ps").args(["-axo", "pid=,command="]).output();
+    let Ok(o) = out else {
+        return;
+    };
+
+    let mut pids = Vec::new();
+    for line in String::from_utf8_lossy(&o.stdout).lines() {
+        if !line.contains(&needle) {
+            continue;
+        }
+        if !line.contains("sshfs") && !line.contains("mount_macfuse") {
+            continue;
+        }
+        let mut parts = line.trim().splitn(2, ' ');
+        let Some(pid) = parts.next() else {
+            continue;
+        };
+        if let Ok(pid_num) = pid.parse::<i32>() {
+            pids.push(pid_num);
+        }
+    }
+
+    pids.sort_unstable();
+    pids.dedup();
+    for pid in pids {
+        let _ = Command::new("kill").args(["-9", &pid.to_string()]).output();
+    }
+}
+
+fn cleanup_mount_processes(mountpoint: &Path) {
+    cleanup_mount_processes_for_path(mountpoint);
+}
+
+fn take_over_alias_mount(a: &AutoMount) -> Result<(), String> {
+    if !is_alias_only_mount(a) {
+        return Ok(());
+    }
+    let mp = mount_point_auto(a);
+    let Some(vol_path) = volume_alias_path(a) else {
+        return Ok(());
+    };
+
+    cleanup_mount_processes_for_path(&vol_path);
+    let _ = unmount_path(&vol_path);
+    cleanup_mount_processes_for_path(&vol_path);
+    remove_path_if_symlink(&mp);
+    fs::create_dir_all(&mp).map_err(|e| format!("디렉터리 생성 실패: {}", e))?;
+
+    if list_current_mounts()
+        .into_iter()
+        .any(|(_, mountpoint)| mountpoint == vol_path.to_string_lossy())
+    {
+        return Err(format!("{} 별칭 마운트 takeover 실패", vol_path.display()));
+    }
+    Ok(())
 }
 
 fn proxmox_connection() -> Option<Connection> {
@@ -872,6 +1043,7 @@ fn main() {
         Commands::AutoRemove { connection, share } => cmd_auto_remove(&connection, &share),
         Commands::AutoToggle { connection, share } => cmd_auto_toggle(&connection, &share),
         Commands::AutoList => cmd_auto_list(),
+        Commands::Reconcile => cmd_reconcile(),
         Commands::Auto => cmd_auto(),
         Commands::AutoStatus => cmd_auto_status(),
         Commands::AutoResume { target } => cmd_auto_resume(target.as_deref()),
@@ -1089,22 +1261,31 @@ fn sweep_nas_orphans() {
         return;
     }
 
-    let conns = load_all_connections();
-    let conn_names: std::collections::HashSet<String> =
-        conns.iter().map(|c| c.name.clone()).collect();
-
     let cfg = load_mount_config();
-    // enabled=true 인 자동마운트만 보존. off 는 격리 대상.
-    let auto_shares: std::collections::HashSet<String> = cfg
+    let declared_relpaths: std::collections::HashSet<String> = cfg
         .auto_mounts
         .iter()
         .filter(|a| a.enabled)
-        .map(|a| format!("{}/{}", a.connection, a.share))
+        .filter_map(|a| {
+            mount_point_auto(a)
+                .strip_prefix(&root)
+                .ok()
+                .map(|p| p.to_string_lossy().to_string())
+        })
         .collect();
-    // off 상태 항목은 auto-list 에서도 자동 제거.
-    let active_mounts: std::collections::HashSet<String> = list_current_mounts()
+    let active_relpaths: std::collections::HashSet<String> = list_current_mounts()
         .into_iter()
-        .map(|(_, mp)| mp)
+        .filter_map(|(_, mp)| {
+            PathBuf::from(mp)
+                .strip_prefix(&root)
+                .ok()
+                .map(|p| p.to_string_lossy().to_string())
+        })
+        .collect();
+    let protected_roots: std::collections::HashSet<String> = declared_relpaths
+        .iter()
+        .chain(active_relpaths.iter())
+        .filter_map(|p| p.split('/').next().map(String::from))
         .collect();
 
     let ts = Command::new("date")
@@ -1131,27 +1312,29 @@ fn sweep_nas_orphans() {
             moved += move_to_trash(&entry.path(), &root, &trash_base);
             continue;
         }
-        if conn_names.contains(&name) {
+        if protected_roots.contains(&name) {
             continue;
         }
         moved += move_to_trash(&entry.path(), &root, &trash_base);
     }
 
-    // 2단계: 카드 디렉터리 하위 — share 레벨 정리
-    for conn_name in &conn_names {
-        let conn_dir = root.join(conn_name);
-        if !conn_dir.exists() || !conn_dir.is_dir() {
+    // 2단계: 루트 보호 디렉터리 하위 — share 레벨 정리
+    for root_name in &protected_roots {
+        let mount_root = root.join(root_name);
+        if !mount_root.exists() || !mount_root.is_dir() {
             continue;
         }
-        let sub_entries = match fs::read_dir(&conn_dir) {
+        let sub_entries = match fs::read_dir(&mount_root) {
             Ok(it) => it.filter_map(|e| e.ok()).collect::<Vec<_>>(),
             Err(_) => continue,
         };
         for entry in &sub_entries {
             let share_name = entry.file_name().to_string_lossy().to_string();
-            let full_key = format!("{}/{}", conn_name, share_name);
             let mp = entry.path();
-            let mp_str = mp.to_string_lossy().to_string();
+            let rel = match mp.strip_prefix(&root) {
+                Ok(r) => r.to_string_lossy().to_string(),
+                Err(_) => continue,
+            };
 
             // dotfile → 격리
             if share_name.starts_with('.') {
@@ -1159,11 +1342,11 @@ fn sweep_nas_orphans() {
                 continue;
             }
             // 활성 마운트 → 보존
-            if active_mounts.contains(&mp_str) {
+            if active_relpaths.contains(&rel) {
                 continue;
             }
-            // 자동마운트 등록 → 보존 (마운트 안 됐어도 재시도 대상)
-            if auto_shares.contains(&full_key) {
+            // 카드 선언 경로 → 보존 (마운트 안 됐어도 재시도 대상)
+            if declared_relpaths.contains(&rel) {
                 continue;
             }
             // 비어있는 디렉터리 → 격리 (실패한 마운트 시도 잔재)
@@ -1190,6 +1373,155 @@ fn sweep_nas_orphans() {
     if moved == 0 {
         let _ = fs::remove_dir(&trash_base);
     }
+}
+
+fn unmount_unmanaged_mounts(
+    root: &Path,
+    declared_relpaths: &std::collections::HashSet<String>,
+) -> usize {
+    let mut unmounted = 0;
+    let mut candidates: Vec<PathBuf> = list_all_mounts()
+        .into_iter()
+        .filter_map(|(_, mp, _)| {
+            let path = PathBuf::from(mp);
+            if !path.starts_with(root) {
+                return None;
+            }
+            let rel = path
+                .strip_prefix(root)
+                .ok()
+                .map(|p| p.to_string_lossy().to_string())?;
+            if declared_relpaths.contains(&rel) {
+                None
+            } else {
+                Some(path)
+            }
+        })
+        .collect();
+    candidates.sort_by_key(|p| std::cmp::Reverse(p.components().count()));
+    for path in candidates {
+        if unmount_path(&path).is_ok() {
+            eprintln!("  🧹 선언 외 마운트 해제: {}", path.display());
+            unmounted += 1;
+        }
+    }
+    unmounted
+}
+
+fn materialize_volume_aliases(cfg: &MountConfig) -> (usize, usize) {
+    let mut prepared = 0;
+    let mut shadowed = 0;
+    let ts = Command::new("date")
+        .args(["+%y%m%d-%H%M%S"])
+        .output()
+        .ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_else(|| format!("epoch-{}", epoch_now()));
+    let trash_base = nas_root()
+        .join(".mountless-trash")
+        .join(ts)
+        .join("volume-alias");
+    for a in &cfg.auto_mounts {
+        if !a.enabled || a.share != "/" {
+            continue;
+        }
+        let Some(alias) = a.alias.as_deref() else {
+            continue;
+        };
+        let vol_path = PathBuf::from(format!("/Volumes/{}", alias));
+        let vol_mounted = list_current_mounts()
+            .into_iter()
+            .any(|(_, mp)| mp == vol_path.to_string_lossy());
+        if !vol_path.exists() || !vol_mounted {
+            continue;
+        }
+        let mp = mount_point_auto(a);
+        if is_direct_mount(&mp) {
+            continue;
+        }
+        let has_descendant_mounts = list_current_mounts().into_iter().any(|(_, mountpoint)| {
+            let p = PathBuf::from(mountpoint);
+            p.starts_with(&mp) && p != mp
+        });
+        if has_descendant_mounts {
+            eprintln!(
+                "  ⚠ /Volumes 별칭 보류: {} 아래에 활성 하위 마운트가 있어 건드리지 않음",
+                mp.display()
+            );
+            continue;
+        }
+        if mp
+            .symlink_metadata()
+            .map(|m| m.file_type().is_symlink())
+            .unwrap_or(false)
+        {
+            let _ = fs::remove_file(&mp);
+            if !mp.exists() {
+                let _ = fs::create_dir_all(&mp);
+                eprintln!("  🧭 직접 마운트 준비: {}", mp.display());
+                prepared += 1;
+            }
+            continue;
+        }
+        if mp.exists() {
+            shadowed += move_to_trash(&mp, &nas_root(), &trash_base);
+        }
+        if !mp.exists() {
+            let _ = fs::create_dir_all(&mp);
+            eprintln!("  🧭 직접 마운트 준비: {}", mp.display());
+            prepared += 1;
+        }
+    }
+    (prepared, shadowed)
+}
+
+fn cmd_reconcile() {
+    migrate_old_nas();
+    let cfg = load_mount_config();
+    let swept = sweep_stale_mounts();
+    let (prepared, shadowed) = materialize_volume_aliases(&cfg);
+    let declared_relpaths: std::collections::HashSet<String> = cfg
+        .auto_mounts
+        .iter()
+        .filter(|a| a.enabled)
+        .filter_map(|a| {
+            mount_point_auto(a)
+                .strip_prefix(nas_root())
+                .ok()
+                .map(|p| p.to_string_lossy().to_string())
+        })
+        .collect();
+    let unmanaged = unmount_unmanaged_mounts(&nas_root(), &declared_relpaths);
+    sweep_nas_orphans();
+    let pruned = prune_mountless_trash(MOUNT_TRASH_RETENTION_DAYS);
+    println!(
+        "✓ reconcile 완료{}{}{}{}{}",
+        if swept > 0 {
+            format!(" (stale 정리 {}개)", swept)
+        } else {
+            String::new()
+        },
+        if prepared > 0 {
+            format!(" (직접 마운트 준비 {}개)", prepared)
+        } else {
+            String::new()
+        },
+        if shadowed > 0 {
+            format!(" (그림자 경로 격리 {}개)", shadowed)
+        } else {
+            String::new()
+        },
+        if pruned > 0 {
+            format!(" (trash 정리 {}개)", pruned)
+        } else {
+            String::new()
+        },
+        if unmanaged > 0 {
+            format!(" (선언 외 마운트 해제 {}개)", unmanaged)
+        } else {
+            String::new()
+        }
+    );
 }
 
 /// src 를 trash_base 아래 원래 경로 구조로 이동. 성공 시 1, 실패 시 0.
@@ -1238,6 +1570,58 @@ fn copy_then_remove(src: &Path, dest: &Path) -> Result<(), String> {
         fs::remove_file(src).map_err(|e| format!("원본 파일 삭제 실패: {}", e))?;
     }
     Ok(())
+}
+
+fn mountless_trash_root() -> PathBuf {
+    nas_root().join(".mountless-trash")
+}
+
+fn should_prune_mountless_entry(now: u64, modified_secs: u64, days: u64) -> bool {
+    let retention_secs = days * 24 * 60 * 60;
+    now.saturating_sub(modified_secs) >= retention_secs
+}
+
+fn prune_mountless_trash_under(trash_root: &Path, now: u64, days: u64) -> usize {
+    if !trash_root.exists() {
+        return 0;
+    }
+    let mut removed = 0;
+    let entries = match fs::read_dir(trash_root) {
+        Ok(it) => it.filter_map(|e| e.ok()).collect::<Vec<_>>(),
+        Err(_) => return 0,
+    };
+    for entry in entries {
+        let path = entry.path();
+        let Ok(meta) = entry.metadata() else {
+            continue;
+        };
+        let Ok(modified) = meta.modified() else {
+            continue;
+        };
+        let Ok(age) = modified.duration_since(std::time::UNIX_EPOCH) else {
+            continue;
+        };
+        if !should_prune_mountless_entry(now, age.as_secs(), days) {
+            continue;
+        }
+        let result = if path.is_dir() {
+            fs::remove_dir_all(&path)
+        } else {
+            fs::remove_file(&path)
+        };
+        if result.is_ok() {
+            removed += 1;
+        }
+    }
+    if removed > 0 {
+        let _ = fs::remove_dir(trash_root);
+    }
+    removed
+}
+
+fn prune_mountless_trash(days: u64) -> usize {
+    let trash_root = mountless_trash_root();
+    prune_mountless_trash_under(&trash_root, epoch_now(), days)
 }
 
 /// rclone 카드의 (remote, path) 메타. env show 의 rclone_remote/rclone_path 필드.
@@ -1447,8 +1831,12 @@ fn cmd_auto_list() {
         let mp = mount_point_auto(a);
         let state = if !a.enabled {
             "✗ off"
+        } else if is_alias_only_mount(a) {
+            "↗ alias"
         } else if is_mounted_at(&mp) {
             if is_stale(&mp) { "⚠ STALE" } else { "✓ ON" }
+        } else if is_effectively_mounted(a) {
+            "✓ ON"
         } else {
             "○ idle"
         };
@@ -1588,19 +1976,13 @@ fn migrate_old_nas() {
 }
 
 fn cmd_auto() {
-    // 옛 NAS 경로 마운트 자동 정리 (NAS → MOUNT 마이그레이션)
-    migrate_old_nas();
-
     let cfg = load_mount_config();
     if cfg.auto_mounts.is_empty() {
         println!("자동 마운트 설정이 없습니다.");
         return;
     }
-    // [C] 사이클 시작 시 stale 일괄 청소 + MOUNT 잔재 정리.
-    sweep_stale_mounts();
-    if cfg.sweep_enabled {
-        sweep_nas_orphans();
-    }
+    // [A] 사이클 시작 시 카드 선언 기준으로 구조를 먼저 정리.
+    cmd_reconcile();
 
     let mut state = load_retry_state();
     let now = epoch_now();
@@ -1634,7 +2016,18 @@ fn cmd_auto() {
             }
         }
 
-        if is_mounted_at(&mp) {
+        if is_alias_only_mount(a) {
+            eprintln!(
+                "  ↗ {}/{}: /Volumes 별칭 마운트를 mai 직접 경로로 takeover 시도",
+                a.connection, a.share
+            );
+            if let Err(e) = take_over_alias_mount(a) {
+                eprintln!("  ✗ {}/{}: {}", a.connection, a.share, e);
+                failed_count += 1;
+                record_failure(&mut state, &key, now, "alias_takeover_fail");
+                continue;
+            }
+        } else if is_mounted_at(&mp) {
             if is_stale(&mp) {
                 eprintln!(
                     "  ⚠ {}/{}: stale 감지, 재마운트 시도",
@@ -1891,13 +2284,13 @@ fn record_failure(state: &mut RetryState, key: &str, now: u64, reason: &str) {
     entry.failures += 1;
     entry.last_reason = reason.into();
 
-    // 영구 실패가 3회 이상 누적되면 quarantine
-    if reason == "EACCES" && entry.failures >= 3 {
+    // 권한 거부는 빠르게 quarantine, 그 외도 5회 누적되면 수동 확인 단계로 넘긴다.
+    if (reason == "EACCES" && entry.failures >= 3) || entry.failures >= 5 {
         entry.quarantined = true;
         entry.next_attempt_at = u64::MAX;
         eprintln!(
-            "    🔒 {} quarantine (사유: 권한 거부 {}회). `mount auto-resume {}` 로 해제.",
-            key, entry.failures, key
+            "    🔒 {} quarantine (사유: {} / 누적 {}회). `mount auto-resume {}` 로 해제.",
+            key, reason, entry.failures, key
         );
         return;
     }
@@ -1929,7 +2322,8 @@ fn cmd_sweep(toggle: &str) {
         }
         "status" => {
             println!("sweep: 켜짐 (카드 SSOT 모드 기본값)");
-            let trash = nas_root().join(".mountless-trash");
+            println!("trash retention: {}일", MOUNT_TRASH_RETENTION_DAYS);
+            let trash = mountless_trash_root();
             if trash.exists() {
                 let count = fs::read_dir(&trash).map(|it| it.count()).unwrap_or(0);
                 println!(".mountless-trash: {}개 세션", count);
@@ -2087,7 +2481,11 @@ fn print_tui_spec() {
             let mp_str = mp.to_string_lossy().to_string();
             let state = if !a.enabled {
                 "off"
-            } else if mounted_set.contains(&mp_str) {
+            } else if mounted_set.contains(&mp_str)
+                || volume_alias_path(a)
+                    .map(|p| mounted_set.contains(&p.to_string_lossy().to_string()))
+                    .unwrap_or(false)
+            {
                 "✓ ON"
             } else {
                 "○ idle"
@@ -2178,3 +2576,6 @@ fn print_tui_spec() {
         .text("안내", "  자동 마운트 설정:\n    mai run mount auto-add <conn> <share>\n    mai run mount auto-toggle <conn> <share>\n    mai run mount auto-enable      # 로그인 시 + 5분마다 자동 실행\n\n  잔재 정리:\n    mai run mount sweep on|off|status\n    → auto 실행 시마다 ~/Documents/WORK/MOUNT/ 스캔, 카드/마운트에 없는 항목을\n      ~/MOUNT/.mountless-trash/YYMMDD-HHMMSS/ 로 격리 (삭제 아님)\n\n  수동:\n    mai run mount mount <name> <share>\n    mai run mount unmount <share>")
         .print();
 }
+
+#[cfg(test)]
+mod tests;
