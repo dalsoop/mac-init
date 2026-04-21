@@ -23,6 +23,12 @@ enum Commands {
     SetTarget { path: String },
     /// NAS 동기화 경로 설정
     SetSync { path: String },
+    /// 카드 마운트 alias 기준 NAS 동기화 경로 설정
+    SetSyncMount {
+        alias: String,
+        #[arg(default_value = "")]
+        subpath: String,
+    },
     /// NAS 동기화 on/off
     Sync { toggle: String },
     /// 백업 완료 후 SD 자동 추출 on/off
@@ -63,6 +69,7 @@ fn main() {
         Commands::Run => cmd_run(),
         Commands::SetTarget { path } => cmd_set_target(&path),
         Commands::SetSync { path } => cmd_set_sync(&path),
+        Commands::SetSyncMount { alias, subpath } => cmd_set_sync_mount(&alias, &subpath),
         Commands::Sync { toggle } => cmd_sync_toggle(&toggle),
         Commands::Eject { toggle } => cmd_eject_toggle(&toggle),
         Commands::Auto { toggle } => cmd_auto(&toggle),
@@ -99,6 +106,12 @@ struct Config {
     /// NAS 동기화 경로 (비어있으면 동기화 안 함)
     #[serde(default)]
     sync_target: String,
+    /// 카드 마운트 alias (예: truenas)
+    #[serde(default)]
+    sync_mount_alias: String,
+    /// alias 아래 추가 경로
+    #[serde(default)]
+    sync_mount_subpath: String,
     /// NAS 동기화 활성 (경로 있어도 off 가능)
     #[serde(default)]
     sync_enabled: bool,
@@ -256,6 +269,78 @@ fn release_lock() {
 
 fn expand(p: &str) -> String {
     paths::expand(p)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CardMountEntry {
+    share: String,
+    #[serde(default)]
+    enabled: bool,
+    #[serde(default)]
+    alias: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CardRecord {
+    name: String,
+    #[serde(default)]
+    mount_entries: Vec<CardMountEntry>,
+}
+
+fn load_card_records() -> Vec<CardRecord> {
+    let dir = paths::ssot_cards_dir();
+    if !dir.exists() {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    if let Ok(it) = fs::read_dir(dir) {
+        for e in it.filter_map(|x| x.ok()) {
+            if e.path().extension().and_then(|s| s.to_str()) != Some("json") {
+                continue;
+            }
+            if let Ok(content) = fs::read_to_string(e.path()) {
+                if let Ok(card) = serde_json::from_str::<CardRecord>(&content) {
+                    out.push(card);
+                }
+            }
+        }
+    }
+    out
+}
+
+fn mount_alias_path(alias: &str) -> Option<PathBuf> {
+    for card in load_card_records() {
+        for entry in card.mount_entries {
+            if entry.alias.as_deref() == Some(alias) {
+                let leaf = entry.share.rsplit('/').next().unwrap_or(&entry.share);
+                let clean_leaf = if leaf.starts_with(&format!("{}-", alias)) {
+                    &leaf[alias.len() + 1..]
+                } else {
+                    leaf
+                };
+                return Some(
+                    PathBuf::from(home())
+                        .join("Documents/WORK/MOUNT")
+                        .join(alias)
+                        .join(clean_leaf),
+                );
+            }
+        }
+    }
+    None
+}
+
+fn resolved_sync_target(cfg: &Config) -> Option<PathBuf> {
+    if !cfg.sync_mount_alias.is_empty() {
+        let base = mount_alias_path(&cfg.sync_mount_alias)?;
+        let sub = cfg.sync_mount_subpath.trim_matches('/');
+        return Some(if sub.is_empty() { base } else { base.join(sub) });
+    }
+    if cfg.sync_target.is_empty() {
+        None
+    } else {
+        Some(PathBuf::from(expand(&cfg.sync_target)))
+    }
 }
 
 fn now_str() -> String {
@@ -1157,6 +1242,8 @@ fn collect_media_files(dcim: &Path) -> Vec<PathBuf> {
 fn cmd_set_sync(path: &str) {
     let mut cfg = load_config();
     cfg.sync_target = path.to_string();
+    cfg.sync_mount_alias.clear();
+    cfg.sync_mount_subpath.clear();
     cfg.sync_enabled = true;
     save_config(&cfg);
     let expanded = expand(path);
@@ -1172,6 +1259,25 @@ fn cmd_set_sync(path: &str) {
     );
 }
 
+fn cmd_set_sync_mount(alias: &str, subpath: &str) {
+    let Some(base) = mount_alias_path(alias) else {
+        eprintln!("✗ mount alias '{}' 를 카드 SSOT에서 찾지 못했습니다.", alias);
+        std::process::exit(1);
+    };
+    let mut cfg = load_config();
+    cfg.sync_mount_alias = alias.to_string();
+    cfg.sync_mount_subpath = subpath.trim_matches('/').to_string();
+    cfg.sync_target.clear();
+    cfg.sync_enabled = true;
+    save_config(&cfg);
+    let resolved = if cfg.sync_mount_subpath.is_empty() {
+        base
+    } else {
+        base.join(&cfg.sync_mount_subpath)
+    };
+    println!("✓ NAS 동기화 카드 기준 설정: {} -> {}", alias, resolved.display());
+}
+
 fn cmd_sync_toggle(toggle: &str) {
     let mut cfg = load_config();
     match toggle.to_lowercase().as_str() {
@@ -1184,18 +1290,14 @@ fn cmd_sync_toggle(toggle: &str) {
             println!("✓ NAS 동기화 꺼짐");
         }
         "status" => {
+            let sync_path = resolved_sync_target(&cfg)
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| "미설정".into());
             println!(
                 "NAS 동기화: {}",
                 if cfg.sync_enabled { "켜짐" } else { "꺼짐" }
             );
-            println!(
-                "경로: {}",
-                if cfg.sync_target.is_empty() {
-                    "미설정"
-                } else {
-                    &cfg.sync_target
-                }
-            );
+            println!("경로: {}", sync_path);
         }
         _ => {
             eprintln!("사용법: sd-backup sync <on|off|status>");
@@ -1232,18 +1334,20 @@ fn cmd_eject_toggle(toggle: &str) {
 
 /// 로컬 백업 → NAS 동기화 (rsync)
 fn sync_to_nas(cfg: &Config, _device_type: &str) {
-    if !cfg.sync_enabled || cfg.sync_target.is_empty() {
+    if !cfg.sync_enabled {
         return;
     }
+    let Some(remote) = resolved_sync_target(cfg) else {
+        return;
+    };
     let local = PathBuf::from(expand(&cfg.backup_target));
-    let remote = PathBuf::from(expand(&cfg.sync_target));
     if !local.exists() {
         return;
     }
     if !remote.exists() {
         eprintln!(
             "  ⚠ NAS 동기화 경로 없음: {} (마운트 확인)",
-            cfg.sync_target
+            remote.display()
         );
         return;
     }
@@ -1557,11 +1661,12 @@ fn print_tui_spec() {
         "대기 중".into()
     };
 
-    let sync_status = if cfg.sync_target.is_empty() {
+    let resolved_sync = resolved_sync_target(&cfg);
+    let sync_status = if resolved_sync.is_none() {
         "미설정"
     } else if !cfg.sync_enabled {
         "꺼짐"
-    } else if Path::new(&expand(&cfg.sync_target)).exists() {
+    } else if resolved_sync.as_ref().map(|p| p.exists()).unwrap_or(false) {
         "✓ 켜짐 (접근 가능)"
     } else {
         "⚠ 켜짐 (경로 없음 — 마운트 확인)"
@@ -1613,8 +1718,11 @@ fn print_tui_spec() {
                 if cfg.backup_target.is_empty() { "error" } else { "ok" }),
             tui_spec::kv_item("NAS 동기화",
                 &format!("{} — {}", sync_status,
-                    if cfg.sync_target.is_empty() { "미설정".into() } else { cfg.sync_target.clone() }),
-                if cfg.sync_enabled && !cfg.sync_target.is_empty() { "ok" } else { "warn" }),
+                    resolved_sync
+                        .as_ref()
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_else(|| "미설정".into())),
+                if cfg.sync_enabled && resolved_sync.is_some() { "ok" } else { "warn" }),
             tui_spec::kv_item("자동 백업",
                 if cfg.auto_enabled { "✓ 켜짐 (SD 꽂으면 30초 내 시작)" } else { "꺼짐" },
                 if cfg.auto_enabled { "ok" } else { "warn" }),
@@ -1643,7 +1751,7 @@ fn print_tui_spec() {
                 "key": "e"
             }),
         ])
-        .text("안내", "  SD 꽂음 → 로컬 백업 (60MB/s) → NAS 동기화 (LAN 권장) → SD 추출\n\n  기기별·날짜별 자동 분류:\n    <로컬>/<기기명>/<YYYY-MM-DD>/파일들\n\n  설정:\n    mai run sd-backup set-target <로컬 경로>\n    mai run sd-backup set-sync <NAS 경로>\n    mai run sd-backup auto on\n    mai run sd-backup eject on")
+        .text("안내", "  SD 꽂음 → 로컬 백업 (60MB/s) → NAS 동기화 (LAN 권장) → SD 추출\n\n  기기별·날짜별 자동 분류:\n    <로컬>/<기기명>/<YYYY-MM-DD>/파일들\n\n  설정:\n    mai run sd-backup set-target <로컬 경로>\n    mai run sd-backup set-sync <NAS 경로>\n    mai run sd-backup set-sync-mount truenas [subpath]\n    mai run sd-backup auto on\n    mai run sd-backup eject on")
         .print();
 }
 

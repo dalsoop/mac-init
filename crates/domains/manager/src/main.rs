@@ -514,9 +514,14 @@ fn cmd_ssh(target: &str) {
         eprintln!("proxmox 도메인 미설치. mai install proxmox");
         return;
     }
-    // "proxmox" → 호스트 SSH
-    if target == "proxmox" {
-        let _ = std::os::unix::process::CommandExt::exec(Command::new(&proxmox_bin).arg("ssh"));
+    // "proxmox*" → 카드 기준 호스트 SSH
+    if target.starts_with("proxmox") {
+        let _ = std::os::unix::process::CommandExt::exec(
+            Command::new(&proxmox_bin)
+                .arg("--card")
+                .arg(target)
+                .arg("ssh"),
+        );
         return;
     }
     // LXC 이름 → lxc-shell
