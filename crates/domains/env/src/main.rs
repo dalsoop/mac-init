@@ -41,6 +41,8 @@ enum Commands {
         host: String,
         #[arg(long, default_value = "root")]
         user: String,
+        #[arg(long, default_value = "pam")]
+        realm: String,
         #[arg(long, default_value_t = 8006)]
         web_port: u16,
         #[arg(long)]
@@ -106,8 +108,8 @@ fn main() {
         Commands::Add { name, host, user, port, scheme, password, description } => {
             cmd_add(&name, &host, &user, port, &scheme, password.as_deref(), description.as_deref())
         }
-        Commands::SetupProxmox { host, user, web_port, password } => {
-            cmd_setup_proxmox(&host, &user, web_port, password.as_deref())
+        Commands::SetupProxmox { host, user, realm, web_port, password } => {
+            cmd_setup_proxmox(&host, &user, &realm, web_port, password.as_deref())
         }
         Commands::AddRclone { name, remote, path, description } => {
             cmd_add_rclone(&name, &remote, &path, description.as_deref())
@@ -396,7 +398,7 @@ fn cmd_add(
     println!("✓ 카드 추가: {}", name);
 }
 
-fn cmd_setup_proxmox(host: &str, user: &str, web_port: u16, password: Option<&str>) {
+fn cmd_setup_proxmox(host: &str, user: &str, realm: &str, web_port: u16, password: Option<&str>) {
     let card = Card {
         name: "proxmox".into(),
         host: host.into(),
@@ -419,6 +421,7 @@ fn cmd_setup_proxmox(host: &str, user: &str, web_port: u16, password: Option<&st
     for (key, value) in [
         ("PROXMOX_HOST", host),
         ("PROXMOX_USER", user),
+        ("PROXMOX_REALM", realm),
         ("PROXMOX_WEB_PORT", &web_port.to_string()),
     ] {
         if let Err(e) = dotenvx_set(key, value) {
@@ -436,7 +439,8 @@ fn cmd_setup_proxmox(host: &str, user: &str, web_port: u16, password: Option<&st
 
     println!("✓ proxmox 등록 완료");
     println!("  카드: proxmox (https://{}:{})", host, web_port);
-    println!("  .env : PROXMOX_HOST / PROXMOX_USER / PROXMOX_WEB_PORT{}", if password.is_some() { " / PROXMOX_PASSWORD" } else { "" });
+    println!("  realm: {}", realm);
+    println!("  .env : PROXMOX_HOST / PROXMOX_USER / PROXMOX_REALM / PROXMOX_WEB_PORT{}", if password.is_some() { " / PROXMOX_PASSWORD" } else { "" });
     println!("  열기: mai run env open proxmox");
 }
 
@@ -907,8 +911,9 @@ fn cmd_status() {
 
     let proxmox_host = dotenvx_get("PROXMOX_HOST");
     let proxmox_user = dotenvx_get("PROXMOX_USER");
+    let proxmox_realm = dotenvx_get("PROXMOX_REALM");
     let proxmox_port = dotenvx_get("PROXMOX_WEB_PORT");
-    if proxmox_host.is_some() || proxmox_user.is_some() || proxmox_port.is_some() {
+    if proxmox_host.is_some() || proxmox_user.is_some() || proxmox_realm.is_some() || proxmox_port.is_some() {
         println!("\n[proxmox]");
         println!(
             "  • web ui: https://{}:{}",
@@ -918,6 +923,10 @@ fn cmd_status() {
         println!(
             "  • user:   {}",
             proxmox_user.as_deref().unwrap_or("미설정"),
+        );
+        println!(
+            "  • realm:  {}",
+            proxmox_realm.as_deref().unwrap_or("pam"),
         );
         println!(
             "  • 비번:   {}",

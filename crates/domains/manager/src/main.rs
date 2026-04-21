@@ -38,7 +38,11 @@ enum Commands {
     /// 설정 상태 확인
     Doctor,
     /// 도메인 실행 (mai run keyboard status)
-    Run { name: String, args: Vec<String> },
+    Run {
+        name: String,
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
     /// LXC/호스트에 SSH 접속 (mai ssh gitlab, mai ssh proxmox)
     Ssh { target: String },
     /// 스케줄 tick (LaunchAgent에서 매분 호출 — 내부용)

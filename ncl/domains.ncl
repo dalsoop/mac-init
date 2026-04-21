@@ -151,7 +151,8 @@ in
       provides = ["proxmox status", "proxmox setup", "proxmox open",
                   "proxmox lxc-list", "proxmox vm-list",
                   "proxmox lxc-shell", "proxmox lxc-exec",
-                  "proxmox lxc-start", "proxmox lxc-stop", "proxmox ssh"],
+                  "proxmox lxc-start", "proxmox lxc-stop", "proxmox ssh",
+                  "proxmox ssh-setup"],
       i18n = {
         label = "Proxmox 서버", icon = "🧱", group = "infra",
         buttons = [
@@ -161,6 +162,7 @@ in
           { command = "lxc-list", label = "LXC 목록" },
           { command = "vm-list", label = "VM 목록" },
           { command = "setup", label = "기본 등록" },
+          { command = "ssh-setup", label = "SSH 키 등록" },
         ],
       },
     } | Domain,
