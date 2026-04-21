@@ -369,8 +369,30 @@ impl App {
         }
 
         let output = if self.output.is_empty() {
-            String::from(
-                "Enter/Space: 설치 또는 제거\nr: 새로고침\n\n현재 설치/삭제 결과와 진단 메시지가 여기에 표시됩니다.",
+            let enabled = self.cards.iter().filter(|(_, enabled)| *enabled).count();
+            let disabled = self.cards.len().saturating_sub(enabled);
+            let preview = self
+                .cards
+                .iter()
+                .take(4)
+                .map(|(name, enabled)| {
+                    format!(
+                        "{} {}",
+                        if *enabled { "✓" } else { "○" },
+                        name
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!(
+                "Enter/Space: 설치 또는 제거\nr: 새로고침\n\n카드: enabled {} / disabled {}\n{}\n\n현재 설치/삭제 결과와 진단 메시지가 여기에 표시됩니다.",
+                enabled,
+                disabled,
+                if preview.is_empty() {
+                    "카드 없음".to_string()
+                } else {
+                    preview
+                }
             )
         } else {
             self.output.clone()

@@ -10,6 +10,9 @@ use std::process::Command;
 pub trait Registry: Send + Sync + 'static {
     fn installed_domains(&self) -> Vec<String>;
     fn available_domains(&self) -> Vec<String>;
+    fn card_inventory(&self) -> Vec<(String, bool)> {
+        Vec::new()
+    }
     fn fetch_spec(&self, domain: &str) -> Option<DomainSpec>;
     fn run_action(&self, domain: &str, command: &str, args: &[String]) -> String;
     fn install_domain(&self, name: &str) -> String;
@@ -69,6 +72,25 @@ impl Registry for SystemRegistry {
             .skip(2)
             .filter_map(|line| line.split_whitespace().next().map(String::from))
             .filter(|s| !s.is_empty() && !s.starts_with('─'))
+            .collect()
+    }
+
+    fn card_inventory(&self) -> Vec<(String, bool)> {
+        let output = Command::new(manager_bin())
+            .args(["card", "list", "--all"])
+            .output();
+        let Ok(o) = output else {
+            return Vec::new();
+        };
+        let stdout = String::from_utf8_lossy(&o.stdout);
+        stdout
+            .lines()
+            .filter_map(|line| {
+                let mut parts = line.split_whitespace();
+                let state = parts.next()?;
+                let name = parts.next()?;
+                Some((name.to_string(), state == "enabled"))
+            })
             .collect()
     }
 

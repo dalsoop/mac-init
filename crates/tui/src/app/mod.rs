@@ -27,6 +27,7 @@ pub struct App {
     pub domains: Vec<String>,
     pub specs: Vec<Option<DomainSpec>>,
     pub available: Vec<String>,
+    pub cards: Vec<(String, bool)>,
     pub install_focus: usize,
     /// Computed during render, read by mouse handler. Interior mutability via Cell.
     pub(crate) install_area_top: Cell<u16>,
@@ -67,6 +68,7 @@ impl App {
             domains: Vec::new(),
             specs: Vec::new(),
             available: Vec::new(),
+            cards: Vec::new(),
             install_focus: 0,
             install_area_top: Cell::new(0),
             selected_tab: 0,
@@ -112,6 +114,7 @@ impl App {
         self.domains = self.reg.installed_domains();
         self.specs = vec![None; self.domains.len()];
         self.available = self.reg.available_domains();
+        self.cards = self.reg.card_inventory();
         self.rebuild_sidebar();
     }
 
@@ -123,6 +126,7 @@ impl App {
             .map(|d| self.reg.fetch_spec(d))
             .collect();
         self.available = self.reg.available_domains();
+        self.cards = self.reg.card_inventory();
         self.rebuild_sidebar();
         if self.selected_tab > self.domains.len() {
             self.selected_tab = 0;
