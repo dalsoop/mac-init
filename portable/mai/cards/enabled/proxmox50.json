@@ -20,18 +20,7 @@
   "mount_entries": [
     {
       "share": "/",
-      "enabled": true,
-      "alias": "proxmox"
-    },
-    {
-      "share": "/mnt/synology",
-      "enabled": true,
-      "alias": "synology"
-    },
-    {
-      "share": "/mnt/truenas-organized",
-      "enabled": true,
-      "alias": "truenas"
+      "enabled": true
     }
   ],
   "bind_mounts": []

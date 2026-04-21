@@ -102,24 +102,30 @@ fn mount_point(connection: &str, share: &str) -> PathBuf {
     nas_root().join(connection).join(clean)
 }
 
+fn card_root_path(root: &Path, connection: &str) -> PathBuf {
+    root.join(connection)
+}
+
+fn mount_entry_segment(a: &AutoMount) -> Option<String> {
+    if a.share == "/" {
+        return None;
+    }
+    if let Some(alias) = &a.alias {
+        if !alias.is_empty() {
+            return Some(alias.clone());
+        }
+    }
+    a.share
+        .rsplit('/')
+        .find(|segment| !segment.is_empty())
+        .map(|s| s.to_string())
+}
+
 fn mount_point_auto_under(root: &Path, a: &AutoMount) -> PathBuf {
-    match &a.alias {
-        Some(alias) => {
-            if a.share == "/" {
-                return root.join(alias);
-            }
-            let leaf = a.share.rsplit('/').next().unwrap_or(&a.share);
-            let clean_leaf = if leaf.starts_with(&format!("{}-", alias)) {
-                &leaf[alias.len() + 1..]
-            } else {
-                leaf
-            };
-            root.join(alias).join(clean_leaf)
-        }
-        None => {
-            let clean = a.share.trim_start_matches('/');
-            root.join(&a.connection).join(clean)
-        }
+    let card_root = card_root_path(root, &a.connection);
+    match mount_entry_segment(a) {
+        Some(segment) => card_root.join(segment),
+        None => card_root,
     }
 }
 
@@ -349,6 +355,8 @@ struct CardMountEntry {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CardRecord {
     name: String,
+    #[serde(default)]
+    kind: Option<String>,
     host: String,
     user: String,
     port: u16,
@@ -1282,11 +1290,12 @@ fn sweep_nas_orphans() {
                 .map(|p| p.to_string_lossy().to_string())
         })
         .collect();
-    let protected_roots: std::collections::HashSet<String> = declared_relpaths
+    let mut protected_roots: std::collections::HashSet<String> = declared_relpaths
         .iter()
         .chain(active_relpaths.iter())
         .filter_map(|p| p.split('/').next().map(String::from))
         .collect();
+    protected_roots.extend(visible_card_root_names());
 
     let ts = Command::new("date")
         .args(["+%y%m%d-%H%M%S"])
@@ -1475,11 +1484,26 @@ fn materialize_volume_aliases(cfg: &MountConfig) -> (usize, usize) {
     (prepared, shadowed)
 }
 
+fn materialize_card_roots(root: &Path) -> usize {
+    let mut created = 0;
+    for name in visible_card_root_names() {
+        let path = card_root_path(root, &name);
+        if path.exists() {
+            continue;
+        }
+        if fs::create_dir_all(&path).is_ok() {
+            created += 1;
+        }
+    }
+    created
+}
+
 fn cmd_reconcile() {
     migrate_old_nas();
     let cfg = load_mount_config();
     let swept = sweep_stale_mounts();
     let (prepared, shadowed) = materialize_volume_aliases(&cfg);
+    let card_roots = materialize_card_roots(&nas_root());
     let declared_relpaths: std::collections::HashSet<String> = cfg
         .auto_mounts
         .iter()
@@ -1495,7 +1519,7 @@ fn cmd_reconcile() {
     sweep_nas_orphans();
     let pruned = prune_mountless_trash(MOUNT_TRASH_RETENTION_DAYS);
     println!(
-        "✓ reconcile 완료{}{}{}{}{}",
+        "✓ reconcile 완료{}{}{}{}{}{}",
         if swept > 0 {
             format!(" (stale 정리 {}개)", swept)
         } else {
@@ -1508,6 +1532,11 @@ fn cmd_reconcile() {
         },
         if shadowed > 0 {
             format!(" (그림자 경로 격리 {}개)", shadowed)
+        } else {
+            String::new()
+        },
+        if card_roots > 0 {
+            format!(" (카드 루트 생성 {}개)", card_roots)
         } else {
             String::new()
         },
@@ -1704,6 +1733,21 @@ fn load_mount_config() -> MountConfig {
         };
     }
     MountConfig::default()
+}
+
+fn visible_card_root_names() -> Vec<String> {
+    let mut names: Vec<String> = load_card_records()
+        .into_iter()
+        .filter(|card| {
+            is_mountable_scheme(&card.scheme)
+                && (card.kind.as_deref() == Some("lxc")
+                    || card.mount_entries.iter().any(|entry| entry.enabled))
+        })
+        .map(|card| card.name)
+        .collect();
+    names.sort();
+    names.dedup();
+    names
 }
 
 fn cmd_auto_add(connection: &str, share: &str, alias: Option<&str>) {
