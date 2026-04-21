@@ -43,6 +43,8 @@ enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// LXC/호스트에 SSH 접속 (mai ssh gitlab, mai ssh proxmox)
+    Ssh { target: String },
     /// 스케줄 tick (LaunchAgent에서 매분 호출 — 내부용)
     Tick,
     /// 스케줄 작업 목록
@@ -181,6 +183,7 @@ fn main() {
         Commands::Setup => cmd_setup(),
         Commands::Doctor => cmd_doctor(),
         Commands::Run { name, args } => cmd_run(&name, &args),
+        Commands::Ssh { target } => cmd_ssh(&target),
         Commands::Tick => cmd_tick(),
         Commands::ScheduleList => cmd_schedule_list(),
         Commands::ScheduleAdd { name, command, cron, interval } => cmd_schedule_add(&name, &command, cron, interval),
@@ -407,6 +410,25 @@ fn cmd_upgrade() {
     cmd_update_all();
 
     println!("\n=== 업그레이드 완료 ===");
+}
+
+fn cmd_ssh(target: &str) {
+    let proxmox_bin = domain_bin_path("proxmox");
+    if !proxmox_bin.exists() {
+        eprintln!("proxmox 도메인 미설치. mai install proxmox");
+        return;
+    }
+    // "proxmox" → 호스트 SSH
+    if target == "proxmox" {
+        let _ = std::os::unix::process::CommandExt::exec(
+            Command::new(&proxmox_bin).arg("ssh")
+        );
+        return;
+    }
+    // LXC 이름 → lxc-shell
+    let _ = std::os::unix::process::CommandExt::exec(
+        Command::new(&proxmox_bin).args(["lxc-shell", target])
+    );
 }
 
 fn cmd_run(name: &str, args: &[String]) {

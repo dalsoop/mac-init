@@ -632,10 +632,10 @@ fn cmd_set_option(name: &str, key: &str, value: &str) {
 }
 
 /// `mount` 출력에서 "//user@host/<share> on <mp>" 패턴 중 우리가 만든
-/// ~/Documents/WORK/NAS/<card>/<share> 위치인 것을 찾아 unmount → mac-domain-mount mount 재호출.
+/// ~/Documents/WORK/MOUNT/<card>/<share> 위치인 것을 찾아 unmount → mac-domain-mount mount 재호출.
 fn remount_active_shares(card_name: &str) -> usize {
     let mount_bin = mount_binary();
-    let nas_prefix = format!("{}/Documents/WORK/NAS/{}/", home(), card_name);
+    let nas_prefix = format!("{}/Documents/WORK/MOUNT/{}/", home(), card_name);
     let out = match Command::new("mount").output() {
         Ok(o) => o,
         Err(_) => return 0,
