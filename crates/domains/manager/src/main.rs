@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -45,6 +46,11 @@ enum Commands {
     },
     /// LXC/호스트에 SSH 접속 (mai ssh gitlab, mai ssh proxmox)
     Ssh { target: String },
+    /// 카드 SSOT 관리
+    Card {
+        #[command(subcommand)]
+        action: CardAction,
+    },
     /// 스케줄 tick (LaunchAgent에서 매분 호출 — 내부용)
     Tick,
     /// 스케줄 작업 목록
@@ -62,6 +68,41 @@ enum Commands {
     ScheduleRemove { name: String },
     /// 스케줄 작업 토글
     ScheduleToggle { name: String },
+}
+
+#[derive(Subcommand)]
+enum CardAction {
+    /// 카드 목록
+    List,
+    /// 카드 상세
+    Show { name: String },
+    /// 카드 mount entry 추가
+    MountAdd {
+        card: String,
+        share: String,
+        #[arg(long)]
+        alias: Option<String>,
+    },
+    /// 카드 mount entry 제거
+    MountRemove {
+        card: String,
+        share: String,
+    },
+    /// 카드 bind entry 추가
+    BindAdd {
+        card: String,
+        lxc: String,
+        source: String,
+        target: String,
+        #[arg(long)]
+        readonly: bool,
+    },
+    /// 카드 bind entry 제거
+    BindRemove {
+        card: String,
+        lxc: String,
+        target: String,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -85,6 +126,199 @@ fn domains_dir() -> PathBuf {
 
 fn registry_path() -> PathBuf {
     domains_dir().join("registry.json")
+}
+
+fn cards_root() -> PathBuf {
+    mac_common::paths::ssot_cards_dir()
+}
+
+fn card_path(name: &str) -> PathBuf {
+    cards_root().join(format!("{}.json", name))
+}
+
+fn list_cards() -> Vec<String> {
+    let dir = cards_root();
+    if !dir.exists() {
+        return Vec::new();
+    }
+    let mut cards = Vec::new();
+    if let Ok(it) = fs::read_dir(dir) {
+        for e in it.filter_map(|x| x.ok()) {
+            if e.path().extension().and_then(|s| s.to_str()) != Some("json") {
+                continue;
+            }
+            if let Some(stem) = e.path().file_stem().and_then(|s| s.to_str()) {
+                cards.push(stem.to_string());
+            }
+        }
+    }
+    cards.sort();
+    cards
+}
+
+fn load_card_json(name: &str) -> Result<JsonValue, String> {
+    let path = card_path(name);
+    let content = fs::read_to_string(&path).map_err(|e| format!("{}: {}", path.display(), e))?;
+    serde_json::from_str(&content).map_err(|e| format!("{}: {}", path.display(), e))
+}
+
+fn save_card_json(name: &str, value: &JsonValue) -> Result<(), String> {
+    let path = card_path(name);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    fs::write(
+        &path,
+        serde_json::to_string_pretty(value).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())
+}
+
+fn cmd_card_list() {
+    let cards = list_cards();
+    if cards.is_empty() {
+        println!("카드가 없습니다.");
+        return;
+    }
+    for card in cards {
+        println!("{}", card);
+    }
+}
+
+fn cmd_card_show(name: &str) {
+    match load_card_json(name) {
+        Ok(v) => println!("{}", serde_json::to_string_pretty(&v).unwrap_or_default()),
+        Err(e) => {
+            eprintln!("✗ {}", e);
+            std::process::exit(1);
+        }
+    }
+}
+
+fn cmd_card_mount_add(card: &str, share: &str, alias: Option<&str>) {
+    let mut json = match load_card_json(card) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("✗ {}", e);
+            std::process::exit(1);
+        }
+    };
+    let obj = json.as_object_mut().expect("card must be object");
+    let arr = obj
+        .entry("mount_entries")
+        .or_insert_with(|| serde_json::json!([]))
+        .as_array_mut()
+        .expect("mount_entries must be array");
+    if arr.iter().any(|v| v.get("share").and_then(|x| x.as_str()) == Some(share)) {
+        println!("이미 존재: {} {}", card, share);
+        return;
+    }
+    arr.push(serde_json::json!({
+        "share": share,
+        "enabled": true,
+        "alias": alias,
+    }));
+    if let Err(e) = save_card_json(card, &json) {
+        eprintln!("✗ {}", e);
+        std::process::exit(1);
+    }
+    println!("✓ card mount 추가: {} {}", card, share);
+}
+
+fn cmd_card_mount_remove(card: &str, share: &str) {
+    let mut json = match load_card_json(card) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("✗ {}", e);
+            std::process::exit(1);
+        }
+    };
+    let obj = json.as_object_mut().expect("card must be object");
+    let arr = obj
+        .entry("mount_entries")
+        .or_insert_with(|| serde_json::json!([]))
+        .as_array_mut()
+        .expect("mount_entries must be array");
+    let before = arr.len();
+    arr.retain(|v| v.get("share").and_then(|x| x.as_str()) != Some(share));
+    if arr.len() == before {
+        println!("일치하는 mount entry 없음: {} {}", card, share);
+        return;
+    }
+    if let Err(e) = save_card_json(card, &json) {
+        eprintln!("✗ {}", e);
+        std::process::exit(1);
+    }
+    println!("✓ card mount 제거: {} {}", card, share);
+}
+
+fn cmd_card_bind_add(card: &str, lxc: &str, source: &str, target: &str, readonly: bool) {
+    let mut json = match load_card_json(card) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("✗ {}", e);
+            std::process::exit(1);
+        }
+    };
+    let obj = json.as_object_mut().expect("card must be object");
+    let arr = obj
+        .entry("bind_mounts")
+        .or_insert_with(|| serde_json::json!([]))
+        .as_array_mut()
+        .expect("bind_mounts must be array");
+    if let Some(existing) = arr.iter_mut().find(|v| {
+        v.get("lxc").and_then(|x| x.as_str()) == Some(lxc)
+            && v.get("target").and_then(|x| x.as_str()) == Some(target)
+    }) {
+        *existing = serde_json::json!({
+            "lxc": lxc,
+            "source": source,
+            "target": target,
+            "readonly": readonly,
+        });
+    } else {
+        arr.push(serde_json::json!({
+            "lxc": lxc,
+            "source": source,
+            "target": target,
+            "readonly": readonly,
+        }));
+    }
+    if let Err(e) = save_card_json(card, &json) {
+        eprintln!("✗ {}", e);
+        std::process::exit(1);
+    }
+    println!("✓ card bind 추가: {} {} -> {}", card, source, target);
+}
+
+fn cmd_card_bind_remove(card: &str, lxc: &str, target: &str) {
+    let mut json = match load_card_json(card) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("✗ {}", e);
+            std::process::exit(1);
+        }
+    };
+    let obj = json.as_object_mut().expect("card must be object");
+    let arr = obj
+        .entry("bind_mounts")
+        .or_insert_with(|| serde_json::json!([]))
+        .as_array_mut()
+        .expect("bind_mounts must be array");
+    let before = arr.len();
+    arr.retain(|v| {
+        !(v.get("lxc").and_then(|x| x.as_str()) == Some(lxc)
+            && v.get("target").and_then(|x| x.as_str()) == Some(target))
+    });
+    if arr.len() == before {
+        println!("일치하는 bind entry 없음: {} {} {}", card, lxc, target);
+        return;
+    }
+    if let Err(e) = save_card_json(card, &json) {
+        eprintln!("✗ {}", e);
+        std::process::exit(1);
+    }
+    println!("✓ card bind 제거: {} {} {}", card, lxc, target);
 }
 
 fn sync_portable_file(src: &Path, dst: &Path) -> Result<bool, String> {
@@ -241,6 +475,24 @@ fn main() {
         Commands::Doctor => cmd_doctor(),
         Commands::Run { name, args } => cmd_run(&name, &args),
         Commands::Ssh { target } => cmd_ssh(&target),
+        Commands::Card { action } => match action {
+            CardAction::List => cmd_card_list(),
+            CardAction::Show { name } => cmd_card_show(&name),
+            CardAction::MountAdd { card, share, alias } => {
+                cmd_card_mount_add(&card, &share, alias.as_deref())
+            }
+            CardAction::MountRemove { card, share } => cmd_card_mount_remove(&card, &share),
+            CardAction::BindAdd {
+                card,
+                lxc,
+                source,
+                target,
+                readonly,
+            } => cmd_card_bind_add(&card, &lxc, &source, &target, readonly),
+            CardAction::BindRemove { card, lxc, target } => {
+                cmd_card_bind_remove(&card, &lxc, &target)
+            }
+        },
         Commands::Tick => cmd_tick(),
         Commands::ScheduleList => cmd_schedule_list(),
         Commands::ScheduleAdd {
