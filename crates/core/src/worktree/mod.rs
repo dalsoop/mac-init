@@ -46,8 +46,8 @@ pub fn status() {
 
     if worktrees.is_empty() {
         println!("  활성 worktree 없음");
-        println!("\n  생성: mac-host-commands worktree add <project> <type> <name>");
-        println!("  예시: mac-host-commands worktree add veilkey feat auth");
+        println!("\n  생성: mai run git worktree add <project> <type> <name>");
+        println!("  예시: mai run git worktree add veilkey feat auth");
         return;
     }
 
@@ -103,7 +103,7 @@ pub fn add(project: &str, btype: &str, name: &str) {
     let count = count_worktrees(project);
     if count >= MAX_WORKTREES {
         eprintln!("[worktree] '{project}'의 worktree가 {MAX_WORKTREES}개 한도에 도달했습니다.");
-        eprintln!("  정리: mac-host-commands worktree remove {project} <type> <name>");
+        eprintln!("  정리: mai run git worktree remove {project} <type> <name>");
         std::process::exit(1);
     }
 
