@@ -23,28 +23,28 @@ in
   jobs = [
     {
       name = "file-organizer",
-      command = "mac run files organize && mac run files cleanup-temp",
+      command = "mai run files organize && mai run files cleanup-temp",
       schedule = { type = 'cron, cron = "0 9 * * *" },
       description = "Downloads 자동 분류 + 임시 30일+ 정리",
     } | Job,
 
     {
       name = "update-check",
-      command = "mac upgrade",
+      command = "mai upgrade",
       schedule = { type = 'cron, cron = "0 10 * * *" },
-      description = "mac + 도메인 자동 업데이트",
+      description = "mai + 도메인 자동 업데이트",
     } | Job,
 
     {
       name = "projects-sync",
-      command = "mac run projects sync",
+      command = "mai run projects sync",
       schedule = { type = 'watch, watch_path = "~/문서/프로젝트" },
       description = "프로젝트 폴더 변경 시 NCL 동기화",
     } | Job,
 
     {
       name = "sd-backup",
-      command = "mac run files sd-run",
+      command = "mai run files sd-run",
       schedule = { type = 'watch, watch_path = "/Volumes" },
       description = "SD 카드 삽입 시 자동 백업",
     } | Job,

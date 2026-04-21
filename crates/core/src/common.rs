@@ -53,6 +53,29 @@ pub fn env_file() -> PathBuf {
     home_path(".env")
 }
 
+pub fn manager_bin() -> PathBuf {
+    let local = home_path(".local/bin/mai");
+    if local.exists() {
+        return local;
+    }
+
+    let cargo = home_path(".cargo/bin/mai");
+    if cargo.exists() {
+        return cargo;
+    }
+
+    if let Ok(output) = Command::new("which").arg("mai").output() {
+        if output.status.success() {
+            let resolved = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !resolved.is_empty() {
+                return PathBuf::from(resolved);
+            }
+        }
+    }
+
+    PathBuf::from("mai")
+}
+
 /// Load ~/.env via dotenvx (handles encrypted values)
 /// Falls back to plain text parsing if dotenvx not available
 pub fn load_env() {

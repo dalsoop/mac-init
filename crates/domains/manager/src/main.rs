@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use mac_common::paths;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -110,6 +111,10 @@ fn save_registry(reg: &Registry) {
 
 fn arch() -> &'static str {
     if cfg!(target_arch = "aarch64") { "aarch64" } else { "x86_64" }
+}
+
+fn manager_bin_path() -> PathBuf {
+    paths::manager_bin()
 }
 
 fn asset_name(domain: &str) -> String {
@@ -328,7 +333,7 @@ fn cmd_update_all() {
 }
 
 fn cmd_self_update() {
-    println!("Updating mac manager...");
+    println!("Updating mai manager...");
 
     let asset = format!("mai-{}-apple-darwin.tar.gz", arch());
     let dest_dir = std::env::temp_dir();
@@ -383,7 +388,8 @@ fn cmd_self_update() {
 
     // Replace current binary
     let new_bin = dest_dir.join("mai");
-    let current_bin = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("/usr/local/bin/mac"));
+    let current_bin = std::env::current_exe()
+        .unwrap_or_else(|_| PathBuf::from(format!("{}/.local/bin/mai", home())));
 
     if let Err(e) = fs::copy(&new_bin, &current_bin) {
         eprintln!("✗ 바이너리 교체 실패: {}", e);
@@ -617,12 +623,31 @@ fn cmd_setup() {
         Err(e) => println!("    ⚠ {}", e),
     }
     let mut sched = mac_host_core::cron::load_schedule();
-    if !sched.jobs.iter().any(|j| j.name == "mac-upgrade") {
-        let mac_bin = std::env::current_exe()
-            .unwrap_or_else(|_| PathBuf::from(format!("{}/.local/bin/mac", home())));
+    let manager_bin = manager_bin_path();
+    let mut upgrade_job_found = false;
+    let mut schedule_changed = false;
+    for job in &mut sched.jobs {
+        if job.name == "mac-upgrade" || job.name == "mai-upgrade" {
+            upgrade_job_found = true;
+            let wanted_command = format!("{} upgrade", manager_bin.display());
+            if job.name != "mai-upgrade" {
+                job.name = "mai-upgrade".into();
+                schedule_changed = true;
+            }
+            if job.command != wanted_command {
+                job.command = wanted_command;
+                schedule_changed = true;
+            }
+            if job.description != "매일 10시 mai + 도메인 자동 업데이트" {
+                job.description = "매일 10시 mai + 도메인 자동 업데이트".into();
+                schedule_changed = true;
+            }
+        }
+    }
+    if !upgrade_job_found {
         sched.jobs.push(mac_host_core::models::cron::Job {
-            name: "mac-upgrade".into(),
-            command: format!("{} upgrade", mac_bin.display()),
+            name: "mai-upgrade".into(),
+            command: format!("{} upgrade", manager_bin.display()),
             schedule: mac_host_core::models::cron::ScheduleSpec {
                 stype: "cron".into(),
                 cron: Some("0 10 * * *".into()),
@@ -632,8 +657,11 @@ fn cmd_setup() {
             enabled: true,
             description: "매일 10시 mai + 도메인 자동 업데이트".into(),
         });
+        schedule_changed = true;
+        println!("    ✓ mai-upgrade 작업 추가");
+    }
+    if schedule_changed {
         let _ = mac_host_core::cron::save_schedule(&sched);
-        println!("    ✓ mac-upgrade 작업 추가");
     }
 
     // 6. locale.json
@@ -674,9 +702,9 @@ fn cmd_setup() {
 fn cmd_doctor() {
     println!("=== mac-app-init 상태 ===\n");
 
-    // 1. mac binary
-    let mac_bin = std::env::current_exe().unwrap_or_default();
-    println!("[mac 바이너리] ✓ {}", mac_bin.display());
+    // 1. mai binary
+    let manager_bin = std::env::current_exe().unwrap_or_else(|_| manager_bin_path());
+    println!("[mai 바이너리] ✓ {}", manager_bin.display());
 
     // 2. domains dir
     let dd = domains_dir();

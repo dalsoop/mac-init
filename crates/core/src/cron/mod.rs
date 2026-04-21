@@ -157,22 +157,12 @@ pub fn scheduler_installed() -> bool {
     scheduler_plist_path().exists()
 }
 
-/// mac 바이너리 경로 (`which mac` 결과)
-fn mac_bin() -> String {
-    Command::new("which").arg("mac").output()
-        .ok()
-        .and_then(|o| if o.status.success() {
-            Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
-        } else { None })
-        .unwrap_or_else(|| "mac".into())
-}
-
 pub fn install_scheduler() -> Result<String, String> {
     let home = std::env::var("HOME").map_err(|e| e.to_string())?;
     let plist_path = scheduler_plist_path();
     let log_dir = format!("{}/문서/시스템/로그", home);
     fs::create_dir_all(&log_dir).ok();
-    let mac_bin = mac_bin();
+    let manager_bin = common::manager_bin();
 
     let plist = format!(r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -182,7 +172,7 @@ pub fn install_scheduler() -> Result<String, String> {
     <string>{label}</string>
     <key>ProgramArguments</key>
     <array>
-        <string>{mac_bin}</string>
+        <string>{manager_bin}</string>
         <string>tick</string>
     </array>
     <key>StartInterval</key>
@@ -193,7 +183,7 @@ pub fn install_scheduler() -> Result<String, String> {
     <string>{log_dir}/scheduler.log</string>
 </dict>
 </plist>
-"#, label=SCHEDULER_LABEL, mac_bin=mac_bin, log_dir=log_dir);
+"#, label=SCHEDULER_LABEL, manager_bin=manager_bin.display(), log_dir=log_dir);
 
     if let Some(parent) = plist_path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
