@@ -1985,6 +1985,10 @@ fn cmd_auto() {
     cmd_reconcile();
 
     let mut state = load_retry_state();
+    let pruned_retry = prune_retry_state_for_config(&mut state, &cfg);
+    if pruned_retry > 0 {
+        eprintln!("  🧹 retry state 정리: {}개", pruned_retry);
+    }
     let now = epoch_now();
 
     let mut mounted_count = 0;
@@ -2167,7 +2171,12 @@ fn cmd_auto() {
 }
 
 fn cmd_auto_status() {
-    let s = load_retry_state();
+    let cfg = load_mount_config();
+    let mut s = load_retry_state();
+    let pruned = prune_retry_state_for_config(&mut s, &cfg);
+    if pruned > 0 {
+        let _ = save_retry_state(&s);
+    }
     if s.shares.is_empty() {
         println!("retry state 없음 (모든 자동마운트 정상).");
         return;
@@ -2199,7 +2208,9 @@ fn cmd_auto_status() {
 }
 
 fn cmd_auto_resume(target: Option<&str>) {
+    let cfg = load_mount_config();
     let mut s = load_retry_state();
+    let _ = prune_retry_state_for_config(&mut s, &cfg);
     let mut released = 0;
     let keys: Vec<String> = s.shares.keys().cloned().collect();
     for k in keys {
@@ -2258,6 +2269,21 @@ fn save_retry_state(s: &RetryState) -> Result<(), String> {
         fs::create_dir_all(parent).ok();
     }
     fs::write(&p, serde_json::to_string_pretty(s).unwrap_or_default()).map_err(|e| format!("{}", e))
+}
+
+fn config_retry_keys(cfg: &MountConfig) -> std::collections::HashSet<String> {
+    cfg.auto_mounts
+        .iter()
+        .filter(|a| a.enabled)
+        .map(|a| format!("{}/{}", a.connection, a.share))
+        .collect()
+}
+
+fn prune_retry_state_for_config(state: &mut RetryState, cfg: &MountConfig) -> usize {
+    let valid = config_retry_keys(cfg);
+    let before = state.shares.len();
+    state.shares.retain(|key, _| valid.contains(key));
+    before.saturating_sub(state.shares.len())
 }
 
 fn epoch_now() -> u64 {
