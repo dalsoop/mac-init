@@ -8,6 +8,14 @@ use crate::models::keyboard::KeyboardStatus;
 const PLIST_LABEL: &str = "com.mai.keyboard-remap";
 const LEGACY_PLIST_LABEL: &str = "com.mac-host-commands.keyboard-remap";
 
+fn uid() -> String {
+    Command::new("id")
+        .args(["-u"])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default()
+}
+
 fn launch_agents_dir() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_default();
     PathBuf::from(home)
@@ -26,13 +34,13 @@ fn legacy_plist_path() -> PathBuf {
     plist_path_for(LEGACY_PLIST_LABEL)
 }
 
-fn cleanup_launch_agent(path: &PathBuf) {
+fn cleanup_launch_agent(_label: &str, path: &PathBuf) {
     if !path.exists() {
         return;
     }
 
     let _ = Command::new("launchctl")
-        .args(["unload", &path.to_string_lossy()])
+        .args(["bootout", &format!("gui/{}", uid()), &path.to_string_lossy()])
         .output();
     let _ = fs::remove_file(path);
 }
@@ -72,7 +80,8 @@ pub fn setup() -> Result<Vec<String>, String> {
 
     // 2. Create LaunchAgent
     let plist = plist_path();
-    cleanup_launch_agent(&legacy_plist_path());
+    cleanup_launch_agent(LEGACY_PLIST_LABEL, &legacy_plist_path());
+    cleanup_launch_agent(PLIST_LABEL, &plist);
     let content = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -97,15 +106,27 @@ pub fn setup() -> Result<Vec<String>, String> {
     fs::write(&plist, content).map_err(|e| format!("plist 생성 실패: {}", e))?;
     log.push(format!("LaunchAgent 생성: {}", plist.display()));
 
-    // 3. Load
-    let _ = Command::new("launchctl")
-        .args(["unload", &plist.to_string_lossy()])
-        .output();
-    let (ok, _, stderr) = common::run_cmd("launchctl", &["load", &plist.to_string_lossy()]);
-    if ok {
-        log.push("LaunchAgent 로드됨".to_string());
+    // 3. Bootstrap + kickstart
+    let bootstrap = Command::new("launchctl")
+        .args(["bootstrap", &format!("gui/{}", uid()), &plist.to_string_lossy()])
+        .output()
+        .map_err(|e| format!("LaunchAgent bootstrap 실패: {}", e))?;
+    if bootstrap.status.success() {
+        log.push("LaunchAgent 등록됨".to_string());
     } else {
-        return Err(format!("LaunchAgent 로드 실패: {}", stderr.trim()));
+        let stderr = String::from_utf8_lossy(&bootstrap.stderr).trim().to_string();
+        log.push(format!("LaunchAgent bootstrap 경고: {}", stderr));
+    }
+
+    let kickstart = Command::new("launchctl")
+        .args(["kickstart", "-k", &format!("gui/{}/{}", uid(), PLIST_LABEL)])
+        .output()
+        .map_err(|e| format!("LaunchAgent kickstart 실패: {}", e))?;
+    if kickstart.status.success() {
+        log.push("LaunchAgent 즉시 실행됨".to_string());
+    } else {
+        let stderr = String::from_utf8_lossy(&kickstart.stderr).trim().to_string();
+        log.push(format!("LaunchAgent kickstart 경고: {}", stderr));
     }
 
     Ok(log)
@@ -128,8 +149,8 @@ pub fn remove() -> Result<Vec<String>, String> {
     let had_current = plist.exists();
     let had_legacy = legacy.exists();
 
-    cleanup_launch_agent(&plist);
-    cleanup_launch_agent(&legacy);
+    cleanup_launch_agent(PLIST_LABEL, &plist);
+    cleanup_launch_agent(LEGACY_PLIST_LABEL, &legacy);
 
     if had_current || had_legacy {
         log.push("LaunchAgent 제거됨".to_string());
