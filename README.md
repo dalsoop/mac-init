@@ -37,8 +37,10 @@ mai run env setup-proxmox --name proxmox50 --host 192.168.2.50 --user root --rea
 mai run env setup-proxmox --name proxmox60 --host 192.168.2.60 --user root --realm pam --web-port 8006
 mai card list
 mai card show proxmox50
-mai card mount-add proxmox50 /mnt/truenas-organized --alias truenas
-mai card bind-add proxmox50 gitlab /mnt/truenas-organized /mnt/truenas
+mai card mount add proxmox50 /mnt/truenas-organized --alias truenas
+mai card bind add proxmox50 gitlab /mnt/truenas-organized /mnt/truenas
+mai card disable proxmox60
+mai card enable proxmox60
 mai run proxmox --card proxmox50 bind-list
 mai run proxmox --card proxmox50 bind-add gitlab /mnt/truenas-organized/gitlab /srv/gitlab
 mai run proxmox --card proxmox50 bind-sync

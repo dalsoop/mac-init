@@ -83,7 +83,18 @@ enum CardAction {
     Enable { name: String },
     /// 카드 비활성화
     Disable { name: String },
+    /// 카드 mount 항목 관리
+    Mount {
+        #[command(subcommand)]
+        action: CardMountAction,
+    },
+    /// 카드 bind 항목 관리
+    Bind {
+        #[command(subcommand)]
+        action: CardBindAction,
+    },
     /// 카드 mount entry 추가
+    #[command(hide = true)]
     MountAdd {
         card: String,
         share: String,
@@ -91,11 +102,13 @@ enum CardAction {
         alias: Option<String>,
     },
     /// 카드 mount entry 제거
+    #[command(hide = true)]
     MountRemove {
         card: String,
         share: String,
     },
     /// 카드 bind entry 추가
+    #[command(hide = true)]
     BindAdd {
         card: String,
         lxc: String,
@@ -105,7 +118,39 @@ enum CardAction {
         readonly: bool,
     },
     /// 카드 bind entry 제거
+    #[command(hide = true)]
     BindRemove {
+        card: String,
+        lxc: String,
+        target: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum CardMountAction {
+    Add {
+        card: String,
+        share: String,
+        #[arg(long)]
+        alias: Option<String>,
+    },
+    Remove {
+        card: String,
+        share: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum CardBindAction {
+    Add {
+        card: String,
+        lxc: String,
+        source: String,
+        target: String,
+        #[arg(long)]
+        readonly: bool,
+    },
+    Remove {
         card: String,
         lxc: String,
         target: String,
@@ -556,6 +601,24 @@ fn main() {
             CardAction::Show { name } => cmd_card_show(&name),
             CardAction::Enable { name } => cmd_card_enable(&name),
             CardAction::Disable { name } => cmd_card_disable(&name),
+            CardAction::Mount { action } => match action {
+                CardMountAction::Add { card, share, alias } => {
+                    cmd_card_mount_add(&card, &share, alias.as_deref())
+                }
+                CardMountAction::Remove { card, share } => cmd_card_mount_remove(&card, &share),
+            },
+            CardAction::Bind { action } => match action {
+                CardBindAction::Add {
+                    card,
+                    lxc,
+                    source,
+                    target,
+                    readonly,
+                } => cmd_card_bind_add(&card, &lxc, &source, &target, readonly),
+                CardBindAction::Remove { card, lxc, target } => {
+                    cmd_card_bind_remove(&card, &lxc, &target)
+                }
+            },
             CardAction::MountAdd { card, share, alias } => {
                 cmd_card_mount_add(&card, &share, alias.as_deref())
             }
