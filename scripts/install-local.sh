@@ -10,6 +10,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEST="$HOME/.mac-app-init/domains"
 MANAGER_DEST="$HOME/.local/bin"
+LOCAL_VERSION="local-$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo dev)"
 mkdir -p "$DEST"
 mkdir -p "$MANAGER_DEST"
 
@@ -36,7 +37,43 @@ build_and_copy() {
   fi
   cp -f "$src" "$DEST/$crate"
   chmod +x "$DEST/$crate"
+  update_registry "$name"
   echo "  ✓ $DEST/$crate"
+}
+
+update_registry() {
+  local name="$1"
+  local registry="$DEST/registry.json"
+  python3 - "$registry" "$name" "$LOCAL_VERSION" <<'PY'
+import json
+import pathlib
+import sys
+
+registry = pathlib.Path(sys.argv[1])
+name = sys.argv[2]
+version = sys.argv[3]
+
+data = {"installed": []}
+if registry.exists():
+    try:
+        data = json.loads(registry.read_text())
+    except Exception:
+        data = {"installed": []}
+
+installed = data.get("installed")
+if not isinstance(installed, list):
+    installed = []
+    data["installed"] = installed
+
+for item in installed:
+    if isinstance(item, dict) and item.get("name") == name:
+        item["version"] = version
+        break
+else:
+    installed.append({"name": name, "version": version})
+
+registry.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+PY
 }
 
 build_manager() {
