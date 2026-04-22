@@ -19,7 +19,7 @@ pub fn list() {
     }
 }
 
-pub fn add(name: &str, username: &str, password: &str, server: Option<&str>) {
+pub fn add(name: &str, username: &str, password: Option<&str>, server: Option<&str>) {
     let mut config = load();
 
     if config.accounts.iter().any(|a| a.name == name) {
@@ -50,20 +50,41 @@ pub fn add(name: &str, username: &str, password: &str, server: Option<&str>) {
         .unwrap_or("")
         .to_string();
 
-    let status = Command::new("mai")
-        .args([
-            "run", "env", "add", &env_card,
-            "--host", &host, "--port", "80", "--scheme", "http",
-            "--user", username, "--password", password,
-            "--description", &format!("SVN 계정: {} ({})", name, srv),
-        ])
-        .status();
+    // Create env card (with or without password)
+    let mut env_args = vec![
+        "run", "env", "add", &env_card,
+        "--host", &host, "--port", "80", "--scheme", "http",
+        "--user", username,
+        "--description",
+    ];
+    let desc = format!("SVN 계정: {} ({})", name, srv);
+    env_args.push(&desc);
 
-    if let Ok(s) = status {
-        if !s.success() {
-            let _ = Command::new("mai")
-                .args(["run", "env", "set-password", &env_card, password])
-                .status();
+    if let Some(pw) = password {
+        env_args.extend_from_slice(&["--password", pw]);
+    }
+
+    let env_ok = Command::new("mai")
+        .args(&env_args)
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+
+    if !env_ok {
+        // Card might exist — try set-password if password provided
+        if let Some(pw) = password {
+            let set_ok = Command::new("mai")
+                .args(["run", "env", "set-password", &env_card, pw])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+            if !set_ok {
+                eprintln!("✗ env 카드 생성 실패: {}", env_card);
+                return;
+            }
+        } else {
+            eprintln!("✗ env 카드 생성 실패: {}", env_card);
+            return;
         }
     }
 
@@ -71,14 +92,16 @@ pub fn add(name: &str, username: &str, password: &str, server: Option<&str>) {
         name: name.into(),
         server: srv.clone(),
         username: username.into(),
-        env_card,
+        env_card: env_card.clone(),
     });
     save(&config);
-    println!("✓ 계정 추가: {} (server: {}, user: {})", name, srv, username);
+    let pw_hint = if password.is_some() { "" } else { " (비밀번호: mai run env set-password {env_card} <pw>)" };
+    println!("✓ 계정 추가: {} (server: {}, user: {}){}", name, srv, username, pw_hint);
 }
 
 pub fn rm(name: &str) {
     let mut config = load();
+    let card = config.accounts.iter().find(|a| a.name == name).cloned();
     let before = config.accounts.len();
     config.accounts.retain(|a| a.name != name);
     if config.accounts.len() == before {
@@ -86,5 +109,12 @@ pub fn rm(name: &str) {
         return;
     }
     save(&config);
-    println!("✓ 계정 삭제: {} (env 카드 수동 삭제: mai run env rm svn-{})", name, name);
+
+    // Attempt env card cleanup
+    if let Some(c) = card {
+        let _ = Command::new("mai")
+            .args(["run", "env", "rm", &c.env_card])
+            .status();
+    }
+    println!("✓ 계정 삭제: {} (env 카드도 정리됨)", name);
 }

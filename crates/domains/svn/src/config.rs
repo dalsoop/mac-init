@@ -92,7 +92,9 @@ pub fn save(config: &SvnConfig) {
         std::fs::create_dir_all(parent).ok();
     }
     let json = serde_json::to_string_pretty(config).unwrap_or_default();
-    std::fs::write(&path, json).ok();
+    if let Err(e) = std::fs::write(&path, &json) {
+        eprintln!("✗ svn.json 저장 실패: {}", e);
+    }
 }
 
 pub fn svn_root() -> PathBuf {

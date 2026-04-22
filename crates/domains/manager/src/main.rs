@@ -535,6 +535,7 @@ fn known_domains() -> Vec<String> {
         "shell",
         "wireguard",
         "tmux",
+        "svn",
     ]
     .into_iter()
     .map(String::from)

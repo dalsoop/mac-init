@@ -1,6 +1,7 @@
 //! 레포 카드 CRUD + checkout/update
 
 use crate::config::{self, get_password, load, save, svn_root};
+use crate::protect;
 use crate::svn;
 use mac_common::cmd;
 use std::path::PathBuf;
@@ -113,6 +114,7 @@ pub fn checkout(name: &str) {
     if let Some(parent) = PathBuf::from(&repo.local_path).parent() {
         std::fs::create_dir_all(parent).ok();
     }
+    protect::ensure();
 
     let password = get_password(&account);
     println!("체크아웃: {} → {}\n", url, repo.local_path);

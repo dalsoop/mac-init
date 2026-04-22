@@ -419,6 +419,6 @@ in
     finder = ["quickaction"],
     system = ["keyboard", "shell", "tmux", "wireguard"],
     full = ["bootstrap", "mount", "env", "host", "proxmox", "cron", "files", "sd-backup",
-            "git", "vscode", "container", "quickaction", "keyboard", "shell", "tmux", "wireguard", "obsidian"],
+            "git", "vscode", "container", "quickaction", "keyboard", "shell", "tmux", "wireguard", "obsidian", "svn"],
   },
 }

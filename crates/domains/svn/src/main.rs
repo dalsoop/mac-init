@@ -51,7 +51,7 @@ enum ServerAction {
 #[derive(Subcommand)]
 enum AccountAction {
     List,
-    Add { name: String, #[arg(long)] username: String, #[arg(long)] password: String, #[arg(long)] server: Option<String> },
+    Add { name: String, #[arg(long)] username: String, #[arg(long)] password: Option<String>, #[arg(long)] server: Option<String> },
     Rm { name: String },
 }
 
@@ -74,7 +74,7 @@ fn main() {
         Commands::Account { action } => match action {
             AccountAction::List => account::list(),
             AccountAction::Add { name, username, password, server } =>
-                account::add(&name, &username, &password, server.as_deref()),
+                account::add(&name, &username, password.as_deref(), server.as_deref()),
             AccountAction::Rm { name } => account::rm(&name),
         },
         Commands::Repo { action } => match action {
