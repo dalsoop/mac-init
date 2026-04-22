@@ -375,6 +375,28 @@ in
       },
     } | Domain,
 
+    svn = {
+      name = "svn",
+      description = "SVN 저장소 관리 (svn.50.internal.kr)",
+      tags = { product = 'dev, layer = 'remote },
+      requires = ["env"],
+      provides = ["svn status", "svn install", "svn server list", "svn server add",
+                  "svn account list", "svn account add", "svn repo list", "svn repo add",
+                  "svn checkout", "svn update", "svn test"],
+      i18n = {
+        label = "SVN 저장소", icon = "🗃️", group = "dev",
+        sections = { servers = "서버", accounts = "계정", repos = "레포" },
+        buttons = [
+          { command = "status", label = "상태 확인" },
+          { command = "install", label = "SVN 설치" },
+          { command = "server list", label = "서버 목록" },
+          { command = "account list", label = "계정 목록" },
+          { command = "repo list", label = "레포 목록" },
+          { command = "test", label = "연결 테스트" },
+        ],
+      },
+    } | Domain,
+
     obsidian = {
       name = "obsidian",
       description = "Obsidian 볼트 동기화 + 플러그인 관리",
@@ -393,7 +415,7 @@ in
     init = ["bootstrap"],
     infra = ["mount", "env", "host", "proxmox"],
     auto = ["cron", "files", "sd-backup"],
-    dev = ["git", "vscode", "container", "obsidian"],
+    dev = ["git", "vscode", "container", "obsidian", "svn"],
     finder = ["quickaction"],
     system = ["keyboard", "shell", "tmux", "wireguard"],
     full = ["bootstrap", "mount", "env", "host", "proxmox", "cron", "files", "sd-backup",

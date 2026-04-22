@@ -1296,6 +1296,7 @@ fn sweep_nas_orphans() {
         .filter_map(|p| p.split('/').next().map(String::from))
         .collect();
     protected_roots.extend(visible_card_root_names());
+    protected_roots.extend(load_external_protected_roots());
 
     let ts = Command::new("date")
         .args(["+%y%m%d-%H%M%S"])
@@ -1599,6 +1600,25 @@ fn copy_then_remove(src: &Path, dest: &Path) -> Result<(), String> {
         fs::remove_file(src).map_err(|e| format!("원본 파일 삭제 실패: {}", e))?;
     }
     Ok(())
+}
+
+/// 외부 도메인이 등록한 보호 경로 목록을 읽는다.
+/// ~/.mac-app-init/mount-protect.json 형식:
+/// { "protected": ["SVN", "other-dir"] }
+fn load_external_protected_roots() -> Vec<String> {
+    let path = PathBuf::from(home()).join(".mac-app-init/mount-protect.json");
+    if !path.exists() {
+        return Vec::new();
+    }
+    let content = fs::read_to_string(&path).unwrap_or_default();
+    #[derive(serde::Deserialize)]
+    struct Protect {
+        #[serde(default)]
+        protected: Vec<String>,
+    }
+    serde_json::from_str::<Protect>(&content)
+        .map(|p| p.protected)
+        .unwrap_or_default()
 }
 
 fn mountless_trash_root() -> PathBuf {
