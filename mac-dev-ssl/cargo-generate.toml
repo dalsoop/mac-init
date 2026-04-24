@@ -1,0 +1,24 @@
+# cargo-generate 템플릿 설정
+# 사용: cargo generate dalsoop/rust-ai-generate-template --name my-app
+#
+# Handlebars 변수:
+#   {{project-name}}  — kebab-case (예: my-app)
+#   {{crate_name}}    — snake_case  (예: my_app)
+
+[template]
+cargo_generate_version = ">=0.22"
+
+[hooks]
+pre = ["scripts/pre-generate.rhai"]
+
+[placeholders]
+# project-name과 crate_name은 cargo-generate 내장 변수이므로 별도 선언 불필요.
+# 추가 변수가 필요하면 여기에 선언.
+
+[conditional.'false']
+# 템플릿에만 있는 파일 — 생성된 프로젝트에서는 제외
+ignore = [
+  ".claude/**",
+  "cargo-generate.toml",
+  "scripts/pre-generate.rhai",
+]

@@ -1,0 +1,16 @@
+[package]
+name = "mac-dev-ssl-cert"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "mac-dev-ssl-cert"
+path = "src/main.rs"
+
+[dependencies]
+clap = { workspace = true }
+mac-dev-ssl-core = { workspace = true }
+anyhow = { workspace = true }
+
+[build-dependencies]
+hardcoded-lint = { git = "https://github.com/dalsoop/hardcoded-lint", rev = "c943f1f" }
