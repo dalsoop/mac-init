@@ -1,0 +1,6 @@
+[submodule "plugins/obsidian-plugin-cue"]
+	path = plugins/obsidian-plugin-cue
+	url = https://github.com/dalsoop/obsidian-plugin-cue.git
+[submodule "옵시디언"]
+	path = 옵시디언
+	url = https://github.com/dalsoop/obsidian-vault.git

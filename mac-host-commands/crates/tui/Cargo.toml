@@ -1,0 +1,12 @@
+[package]
+name = "mac-host-tui"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+mac-host-core = { path = "../core" }
+ratatui = "0.30"
+crossterm = "0.29"
+tokio = { version = "1", features = ["full"] }
+color-eyre = "0.6"
+serde_json = "1"

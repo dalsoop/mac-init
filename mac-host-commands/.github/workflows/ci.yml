@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            cli/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('cli/Cargo.lock') }}
+
+      - name: Build
+        working-directory: cli
+        run: cargo build --release
+
+      - name: Check
+        working-directory: cli
+        run: cargo check
+
+  cue-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install CUE
+        run: |
+          curl -LO https://github.com/cue-lang/cue/releases/latest/download/cue_v0.16.0_linux_amd64.tar.gz
+          tar xzf cue_v0.16.0_linux_amd64.tar.gz
+          sudo mv cue /usr/local/bin/
+
+      - name: Validate CUE schemas
+        run: |
+          cd cue && cue eval projects.cue -e _summary
+          cd ../vault && cue eval obsidian.spec.cue -e center.name
+
+  release:
+    needs: build
+    runs-on: macos-latest
+    if: github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, 'release:')
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release
+        working-directory: cli
+        run: cargo build --release
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: cli/target/release/mac-host-commands
+          generate_release_notes: true
