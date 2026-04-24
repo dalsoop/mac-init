@@ -1,0 +1,28 @@
+{
+  "recommendations": [
+    // HTML 실시간 미리보기 (Microsoft 공식)
+    "ms-vscode.live-server",
+
+    // 코드 포맷터
+    "esbenp.prettier-vscode",
+
+    // Git
+    "eamodio.gitlens",
+
+    // 자동 태그 닫기/이름변경
+    "formulahendry.auto-rename-tag",
+    "formulahendry.auto-close-tag",
+
+    // 아이콘 테마
+    "vscode-icons-team.vscode-icons",
+
+    // 에러 렌즈 (인라인 에러 표시)
+    "usernamehw.errorlens",
+
+    // 경로 자동완성
+    "christian-kohler.path-intellisense",
+
+    // 색상 하이라이트
+    "naumovs.color-highlight"
+  ]
+}
