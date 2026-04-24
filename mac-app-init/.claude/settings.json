@@ -1,0 +1,29 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'VAULT_DIR=\"$HOME/문서/프로젝트/mac-host-commands/옵시디언\"; FILE=\"$CLAUDE_TOOL_INPUT_FILE_PATH\"; if echo \"$FILE\" | grep -q \"$VAULT_DIR\" && ! echo \"$FILE\" | grep -q \".obsidian/\"; then echo \"BLOCK: vault 노트 직접 쓰기 금지. obsidian-center API를 사용하세요.\"; echo \"  curl -X POST http://localhost:8910/api/submit ...\"; exit 2; fi'"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "deny": [
+      "Write(//**/옵시디언/0*/**)",
+      "Write(//**/옵시디언/CLAUDE/**)",
+      "Write(//**/옵시디언/Dashboard.md)",
+      "Edit(//**/옵시디언/0*/**)",
+      "Edit(//**/옵시디언/CLAUDE/**)",
+      "Edit(//**/옵시디언/Dashboard.md)"
+    ],
+    "allow": [
+      "Write(//**/옵시디언/.obsidian/**)",
+      "Edit(//**/옵시디언/.obsidian/**)"
+    ]
+  }
+}

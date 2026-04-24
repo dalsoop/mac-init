@@ -1,0 +1,27 @@
+{
+  "name": "proxmox50",
+  "host": "192.168.2.50",
+  "user": "root",
+  "port": 22,
+  "web_port": 8006,
+  "scheme": "ssh",
+  "description": "portable proxmox 50 card",
+  "tags": [
+    "portable",
+    "proxmox"
+  ],
+  "password_ref": "dotenvx:PROXMOX50_PASSWORD",
+  "mount_options": {
+    "readonly": false,
+    "noappledouble": true,
+    "soft": true,
+    "nobrowse": true
+  },
+  "mount_entries": [
+    {
+      "share": "/",
+      "enabled": true
+    }
+  ],
+  "bind_mounts": []
+}

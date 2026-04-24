@@ -1,0 +1,101 @@
+name: Release Domain Binaries
+
+# 비활성화: macOS runner 비용 회피.
+# 로컬에서 scripts/release-local.sh <tag> 로 빌드 + 업로드함.
+# 다시 켜려면 아래 push trigger 주석 해제.
+on:
+  workflow_dispatch:
+  # push:
+  #   tags:
+  #     - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-domains:
+    strategy:
+      matrix:
+        domain:
+          - bootstrap
+          - container
+          - cron
+          - env
+          - files
+          - git
+          - host
+          - keyboard
+          - mount
+          - obsidian
+          - proxmox
+          - quickaction
+          - sd-backup
+          - shell
+          - tmux
+          - vscode
+          - wireguard
+
+    runs-on: macos-14
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Build aarch64
+        run: cargo build --release -p mac-domain-${{ matrix.domain }} --target aarch64-apple-darwin
+
+      - name: Build x86_64
+        run: cargo build --release -p mac-domain-${{ matrix.domain }} --target x86_64-apple-darwin
+
+      - name: Package
+        run: |
+          tar czf mac-domain-${{ matrix.domain }}-aarch64-apple-darwin.tar.gz \
+            -C target/aarch64-apple-darwin/release mac-domain-${{ matrix.domain }}
+          tar czf mac-domain-${{ matrix.domain }}-x86_64-apple-darwin.tar.gz \
+            -C target/x86_64-apple-darwin/release mac-domain-${{ matrix.domain }}
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            mac-domain-${{ matrix.domain }}-aarch64-apple-darwin.tar.gz
+            mac-domain-${{ matrix.domain }}-x86_64-apple-darwin.tar.gz
+
+  build-manager-and-tui:
+    runs-on: macos-14
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Build manager
+        run: |
+          cargo build --release -p mac-domain-manager --target aarch64-apple-darwin
+          cargo build --release -p mac-domain-manager --target x86_64-apple-darwin
+
+      - name: Build TUI v2
+        run: |
+          cargo build --release -p mac-host-tui --target aarch64-apple-darwin
+          cargo build --release -p mac-host-tui --target x86_64-apple-darwin
+
+      - name: Package
+        run: |
+          tar czf mai-aarch64-apple-darwin.tar.gz -C target/aarch64-apple-darwin/release mai
+          tar czf mai-x86_64-apple-darwin.tar.gz -C target/x86_64-apple-darwin/release mai
+          tar czf mai-tui-aarch64-apple-darwin.tar.gz -C target/aarch64-apple-darwin/release mai-tui
+          tar czf mai-tui-x86_64-apple-darwin.tar.gz -C target/x86_64-apple-darwin/release mai-tui
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            mai-aarch64-apple-darwin.tar.gz
+            mai-x86_64-apple-darwin.tar.gz
+            mai-tui-aarch64-apple-darwin.tar.gz
+            mai-tui-x86_64-apple-darwin.tar.gz

@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # 워크스페이스 컴파일 체크. macOS 전용 코드(NetFS 등)가 있어 macOS 필요하지만,
+  # 단일 잡으로 묶고 캐시 적극 사용해 분 소비 최소화.
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: cargo check (workspace)
+        run: cargo check --workspace
+
+      - name: cargo test (mount domain)
+        run: cargo test -p mac-domain-mount
+
+      - name: install-local smoke (manager + proxmox flow)
+        run: |
+          bash scripts/install-local.sh manager env proxmox
+          test -x "$HOME/.local/bin/mai"
+          test -x "$HOME/.mac-app-init/domains/mac-domain-env"
+          test -x "$HOME/.mac-app-init/domains/mac-domain-proxmox"
+          "$HOME/.local/bin/mai" run env setup-proxmox --host 127.0.0.1 --user root --realm pam --web-port 8006 --help > /dev/null
+          "$HOME/.local/bin/mai" run proxmox setup --host 127.0.0.1 --user root --realm pam --web-port 8006 --help > /dev/null
+          "$HOME/.local/bin/mai" run proxmox lxc-list --help > /dev/null
+
+  # Nickel 스키마 검증은 ubuntu (분당 단가 1/10).
+  ncl-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nickel
+        run: |
+          curl -L https://github.com/tweag/nickel/releases/latest/download/nickel-x86_64-linux \
+            -o /usr/local/bin/nickel
+          chmod +x /usr/local/bin/nickel
+
+      - name: Eval ncl/domains.ncl
+        run: nickel eval ncl/domains.ncl > /dev/null
+
+      - name: Eval ncl/cards.ncl
+        run: nickel eval ncl/cards.ncl > /dev/null

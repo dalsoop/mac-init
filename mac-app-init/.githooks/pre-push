@@ -1,0 +1,14 @@
+#!/bin/bash
+# main 직접 push 차단 — PR 통해서만 머지
+while read local_ref local_sha remote_ref remote_sha; do
+    if [[ "$remote_ref" == "refs/heads/main" ]]; then
+        echo "✗ main 직접 push 금지. PR을 만들어서 머지하세요."
+        echo ""
+        echo "  git checkout -b feat/my-change"
+        echo "  git push -u origin feat/my-change"
+        echo "  gh pr create"
+        echo ""
+        exit 1
+    fi
+done
+exit 0

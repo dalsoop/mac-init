@@ -1,0 +1,21 @@
+[package]
+name = "mac-domain-mount"
+version = "0.1.0"
+edition = "2024"
+license = "BUSL-1.1"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+mac-common = { path = "../../common" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.10"
+core-foundation-sys = "0.8"
+
+[features]
+default = ["netfs"]
+# Apple NetFS.framework 백엔드 (macOS 전용). 켜면 SMB/NFS 마운트를
+# mount_smbfs 대신 NetFSMountURLSync 로 시도하고, 실패 시 CLI 로 폴백.
+netfs = []
